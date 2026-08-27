@@ -5,6 +5,7 @@
 #include "inc/wifi_provisioning.h"
 #include "inc/energyboxx_api.h"
 #include "inc/api_storage.h"
+#include "inc/uri_decode.h"
 
 static const char *TAG = "[wifi_web]";
 
@@ -224,6 +225,13 @@ static esp_err_t connect_post_handler(httpd_req_t *req)
 
     httpd_query_key_value(body, "password", password, sizeof(password));
 
+    // httpd_query_key_value does not decode percent-escapes, so the values are
+    // still exactly as the browser encoded them.
+    if (!uri_decode(ssid) || !uri_decode(password)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Malformed ssid or password encoding");
+        return ESP_FAIL;
+    }
+
     esp_err_t err = wifi_prov_connect(ssid, password);
     if (err != ESP_OK) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Connect failed");
@@ -315,6 +323,12 @@ static esp_err_t api_check_post_handler(httpd_req_t *req)
         httpd_resp_set_type(req, "application/json");
         return httpd_resp_sendstr(req,
             "{\"ok\":false,\"message\":\"Invalid request\"}");
+    }
+
+    if (!uri_decode(client_id) || !uri_decode(client_secret)) {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_sendstr(req,
+            "{\"ok\":false,\"message\":\"Malformed credential encoding\"}");
     }
 
     esp_err_t err = energyboxx_api_setup(client_id, client_secret);

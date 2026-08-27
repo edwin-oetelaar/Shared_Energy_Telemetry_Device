@@ -8,6 +8,7 @@ idf_component_register(
         "src/wifi_storage.c"
         "src/api_storage.c"
         "src/status_led.c"
+        "src/uri_decode.c"
     INCLUDE_DIRS
         "."
         "inc"

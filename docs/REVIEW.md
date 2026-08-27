@@ -38,7 +38,7 @@ over een open access point.
 ## Voortgang
 
 ### Kritiek — vóór het eerste apparaat de deur uit gaat
-- [ ] **C1** Wifi-wachtwoord wordt niet URL-gedecodeerd
+- [x] **C1** Wifi-wachtwoord wordt niet URL-gedecodeerd — opgelost, `main/src/uri_decode.c`
 - [ ] **C2** Na vijf mislukte reconnects is het apparaat permanent dood
 - [ ] **C3** Twee taken doen tegelijk een tokenrequest, zonder lock
 - [ ] **C4** API-setup pagina gaat door een kapotte format string
@@ -59,6 +59,7 @@ over een open access point.
 - [ ] **M5** NVS-schrijfactie in de event handler
 - [ ] **M6** `app_main` kan oneindig blijven wachten
 - [ ] **M7** "Ring uit" betekent twee verschillende dingen
+- [ ] **M8** Twee responses op één request in het API-check pad
 
 ### Klein
 - [ ] **L1** Geen tests, geen CI, geen static analysis
@@ -93,6 +94,15 @@ deel van de klanten — krijgt het apparaat niet aan de praat, met als enige fee
 client_secret vóór gebruik. Kleine helper, één plek.
 
 **Verificatie:** zet een spatie in het wifi-wachtwoord en kijk wat er in NVS terechtkomt.
+
+> **Opgelost.** `main/src/uri_decode.c` + `main/inc/uri_decode.h` bevatten een
+> percent-decoder als expliciete drie-statige state machine met een lookup-tabel voor de
+> hexcijfers. `uri_decode()` assert op een NULL-pointer (contractschending van de eigen
+> code) maar wijst onzin van de klant — een `%` zonder twee hexcijfers erachter — af met
+> `false`, waarna de portal 400 antwoordt en het apparaat gewoon doordraait.
+> Toegepast op ssid, password, client_id en client_secret in `main/src/wifi_web.c`.
+> Op de host gecompileerd en getest met 17 gevallen (spaties, `+`, `%2B`, UTF-8, afgekapte
+> escapes); niet op hardware getest.
 
 ### C2 — Na vijf mislukte reconnects is het apparaat permanent dood
 `main/src/wifi_provisioning.c:62-73`
@@ -294,6 +304,21 @@ toont "alles in balans" terwijl er in werkelijkheid geen data is.
 
 **Fix:** geef "geen data" een eigen taal op de ring: een langzame ademende puls, of één gedimde
 pixel. Uit hoort "ik weet het en het is niets" te betekenen, niet "ik weet het niet".
+
+### M8 — Twee responses op één request in het API-check pad
+`main/src/wifi_web.c:284-307` en `main/src/wifi_web.c:309-318`
+
+`parse_api_credentials()` stuurt bij een fout zelf al een response met
+`httpd_resp_send_err()` en geeft daarna `ESP_FAIL` terug. De aanroeper
+`api_check_post_handler()` stuurt vervolgens nóg een response, het JSON-object
+`{"ok":false,"message":"Invalid request"}`. Er gaan dus twee volledige antwoorden over
+dezelfde verbinding.
+
+Gevonden tijdens het werk aan C1. Het nieuwe decodeerpad omzeilt dit door de controle in de
+aanroeper te doen, waar het antwoord thuishoort; de twee bestaande paden doen het nog wel.
+
+**Fix:** `parse_api_credentials()` alleen laten valideren en een foutcode teruggeven; het
+antwoord aan de aanroeper laten, die dat toch al doet.
 
 ---
 
