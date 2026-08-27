@@ -119,7 +119,12 @@ static esp_err_t api_setup_get_handler(httpd_req_t *req)
 {
     const bool api_ready = energyboxx_api_has_credentials() && energyboxx_api_is_valid_credentials();
 
-    const char *html =
+    //  The page goes out in pieces instead of through snprintf, because the
+    //  CSS below contains "width:100%" and printf reads that as a conversion
+    //  specification. The two variable pieces are the button's disabled
+    //  attribute and the flag the script reads.
+
+    const char *html_head =
         "<!DOCTYPE html><html><head>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
         "<title>SETD API Setup</title>"
@@ -144,13 +149,19 @@ static esp_err_t api_setup_get_handler(httpd_req_t *req)
         "<label for='clientSecret'>Client Secret</label>"
         "<input id='clientSecret' placeholder='Client Secret'>"
 
-        "<button id='checkBtn' onclick='checkKeys()' %s>Check and save</button>"
+        "<button id='checkBtn' onclick='checkKeys()' ";
+
+    const char *html_body =
+        ">Check and save</button>"
 
         "<div id='status'>Status: Ready</div>"
         "</div>"
 
         "<script>"
-        "const apiReady=%s;"
+        "const apiReady=";
+
+    const char *html_tail =
+        ";"
         "if(apiReady){document.getElementById('checkBtn').disabled=true;}"
         "async function checkKeys(){"
         " const status=document.getElementById('status');"
@@ -173,13 +184,30 @@ static esp_err_t api_setup_get_handler(httpd_req_t *req)
         "}"
         "</script></body></html>";
 
-    char page[4096];
-    snprintf(page, sizeof(page), html,
-             api_ready ? "disabled" : "",
-             api_ready ? "true" : "false");
+    const char *piece [] = {
+        html_head,
+        api_ready ? "disabled" : "",
+        html_body,
+        api_ready ? "true" : "false",
+        html_tail
+    };
 
     httpd_resp_set_type(req, "text/html");
-    return httpd_resp_send(req, page, HTTPD_RESP_USE_STRLEN);
+
+    for (size_t index = 0; index < sizeof (piece) / sizeof (piece [0]); index++) {
+        //  A zero-length chunk is how chunked encoding says "end of response",
+        //  so an empty piece has to be skipped rather than sent.
+        if (piece [index][0] == '\0')
+            continue;
+
+        esp_err_t err = httpd_resp_send_chunk(req, piece [index], HTTPD_RESP_USE_STRLEN);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to send API setup page: %s", esp_err_to_name(err));
+            return err;
+        }
+    }
+
+    return httpd_resp_send_chunk(req, NULL, 0);
 }
 
 static const char *state_to_string(wifi_prov_state_t state)

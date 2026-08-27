@@ -42,7 +42,7 @@ over een open access point.
 - [x] **C1** Wifi-wachtwoord wordt niet URL-gedecodeerd — opgelost, `main/src/uri_decode.c`
 - [x] **C2** Na vijf mislukte reconnects is het apparaat permanent dood — opgelost, backoff-tabel
 - [x] **C3** Twee taken doen tegelijk een tokenrequest, zonder lock — opgelost, module-lock
-- [ ] **C4** API-setup pagina gaat door een kapotte format string
+- [x] **C4** API-setup pagina gaat door een kapotte format string — opgelost, chunked
 - [ ] **C5** Secrets gaan open door de lucht tijdens provisioning
 
 ### Hoog
@@ -190,6 +190,19 @@ andere printf-implementatie kan de pagina stukmaken of de argumenten laten versc
 
 **Fix:** splits de pagina in een statisch deel en de twee dynamische stukjes
 (`httpd_resp_send_chunk`), of escape als `100%%`. Beter nog: HTML uit de C-code halen (L5).
+
+> **Opgelost.** De pagina is opgesplitst in drie vaste stukken met de twee variabele waarden
+> ertussen, en gaat er als array doorheen met `httpd_resp_send_chunk()`. Er komt geen
+> printf meer aan te pas, dus `width:100%` is weer gewoon tekst. De buffer van 4 KB op de
+> httpd-stack is daarmee ook verdwenen.
+>
+> Eén valkuil die het commentaar in de code benoemt: een chunk van lengte nul is in chunked
+> encoding het einde-signaal, dus het lege stuk (de niet-gezette `disabled`-attribuut) wordt
+> overgeslagen in plaats van verstuurd.
+>
+> Gebouwd voor esp32s3 op ESP-IDF 5.5.5. Niet op hardware getest — de zichtbare verificatie is
+> de API-setup pagina openen en kijken of hij compleet is, met een werkende knop in beide
+> toestanden.
 
 ### C5 — Secrets gaan open door de lucht tijdens provisioning
 `main/src/wifi_provisioning.c:24-25`, `main/src/wifi_provisioning.c:171`, hele portal in `wifi_web.c`
