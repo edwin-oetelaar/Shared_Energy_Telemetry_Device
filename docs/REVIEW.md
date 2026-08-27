@@ -40,7 +40,7 @@ over een open access point.
 
 ### Kritiek — vóór het eerste apparaat de deur uit gaat
 - [x] **C1** Wifi-wachtwoord wordt niet URL-gedecodeerd — opgelost, `main/src/uri_decode.c`
-- [ ] **C2** Na vijf mislukte reconnects is het apparaat permanent dood
+- [x] **C2** Na vijf mislukte reconnects is het apparaat permanent dood — opgelost, backoff-tabel
 - [ ] **C3** Twee taken doen tegelijk een tokenrequest, zonder lock
 - [ ] **C4** API-setup pagina gaat door een kapotte format string
 - [ ] **C5** Secrets gaan open door de lucht tijdens provisioning
@@ -120,6 +120,25 @@ Alleen de stekker eruit trekken helpt — en dat drie keer doen wist de opgeslag
 **Fix:** retries met exponentiële backoff en zonder bovengrens, of een teller die na N
 mislukkingen `esp_restart()` doet. Vijf pogingen en dan opgeven is voor firmware zonder
 toetsenbord geen strategie.
+
+> **Opgelost.** De teller met harde grens is vervangen door `s_retry_schedule`, een tabel in
+> `main/src/wifi_provisioning.c` waarin elke rij zegt hoe lang er gewacht wordt en wat het
+> apparaat ondertussen over zichzelf meldt: 0,5 s → 1 s → 2 s → 5 s → 10 s → 30 s → 60 s →
+> 5 min, waarna de laatste rij zich herhaalt zolang het netwerk wegblijft. Het hele
+> herstelbeleid staat daarmee in acht regels die je in één oogopslag overziet.
+>
+> Het wachten gebeurt met een `esp_timer`, niet met een blokkerende delay, zodat de
+> event-loop vrij blijft. Vanaf de tiende seconde meldt het apparaat `CONNECT_FAILED` — de
+> wifi-LED knippert dan — maar het blijft doorproberen. Bij een gelukte verbinding of nieuwe
+> credentials springt het schema terug naar de eerste rij.
+>
+> Bijeffect om te weten: er kan nu een reconnect-poging lopen terwijl het provisioningportaal
+> open staat. Dat is gewenst (het apparaat redt zichzelf als de router terugkomt) maar het
+> maakt **H3** makkelijker te raken, want een gelijktijdige scan uit de portal kan
+> `ESP_ERR_WIFI_STATE` opleveren en dat is daar nog een `ESP_ERROR_CHECK`. H3 is nu de
+> logische volgende stap.
+>
+> Gebouwd voor esp32s3 op ESP-IDF 5.5.5, geen waarschuwingen. Niet op hardware getest.
 
 ### C3 — Twee taken doen tegelijk een tokenrequest, zonder lock
 `main/src/wifi_provisioning.c:257-268` ↔ `main/src/wifi_web.c:320-332`

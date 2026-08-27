@@ -84,7 +84,12 @@ There are two ways to erase the saved Wi-Fi and Energyboxx credentials:
 
 After a successful ten-second boot, the rapid-boot counter is reset.
 
-At runtime, Wi-Fi performs up to five reconnection attempts after a disconnect.
+At runtime the device keeps trying to reconnect after a disconnect, following a
+backoff schedule of 0.5 s, 1 s, 2 s, 5 s, 10 s, 30 s, 60 s and then every five
+minutes for as long as the network stays away. The Wi-Fi status LED starts
+blinking once the schedule reaches its ten-second step. The schedule is the
+table `s_retry_schedule` in `main/src/wifi_provisioning.c`.
+
 Failed token or telemetry requests do not stop the firmware: the energy ring is
 cleared and the API is retried after ten seconds.
 

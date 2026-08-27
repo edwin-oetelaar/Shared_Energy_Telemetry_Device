@@ -2,8 +2,11 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 
+#include <assert.h>
+#include <inttypes.h>
 #include <string.h>
 
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_log.h"
@@ -18,8 +21,6 @@
 
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
-
-#define WIFI_MAX_RETRIES   5
 
 #define PROV_AP_SSID       "SETD_Provisioning"
 #define PROV_AP_PASSWORD   ""
@@ -36,7 +37,33 @@ static esp_netif_t *s_ap_netif = NULL;
 static const char *TAG = "[wifi_prov]";
 
 static wifi_prov_state_t s_state = WIFI_PROV_STATE_IDLE;
-static int s_retry_count = 0;
+
+//  Reconnect schedule. Each row says how long to wait before the next attempt
+//  and what the device reports about itself while it waits. The last row
+//  repeats for as long as the network stays away: a device on a windowsill has
+//  no keyboard, so giving up is not a strategy. The whole recovery policy is
+//  this table - to change how patient the device is, change these numbers.
+
+typedef struct {
+    uint32_t delay_ms;
+    wifi_prov_state_t state;
+} retry_step_t;
+
+static const retry_step_t s_retry_schedule [] = {
+    {    500, WIFI_PROV_STATE_CONNECTING     },
+    {   1000, WIFI_PROV_STATE_CONNECTING     },
+    {   2000, WIFI_PROV_STATE_CONNECTING     },
+    {   5000, WIFI_PROV_STATE_CONNECTING     },
+    {  10000, WIFI_PROV_STATE_CONNECT_FAILED },
+    {  30000, WIFI_PROV_STATE_CONNECT_FAILED },
+    {  60000, WIFI_PROV_STATE_CONNECT_FAILED },
+    { 300000, WIFI_PROV_STATE_CONNECT_FAILED }
+};
+
+#define RETRY_SCHEDULE_ROWS  (sizeof (s_retry_schedule) / sizeof (s_retry_schedule [0]))
+
+static esp_timer_handle_t s_retry_timer = NULL;
+static size_t s_retry_row = 0;
 
 static char current_ssid[33] = {0};
 static char current_password[65] = {0};
@@ -44,6 +71,63 @@ static char current_password[65] = {0};
 static void wifi_set_state(wifi_prov_state_t state)
 {
     s_state = state;
+}
+
+
+//  --------------------------------------------------------------------------
+//  The backoff delay has passed, so ask Wi-Fi to try again. A refusal here is
+//  not fatal: the disconnect event that follows schedules the next attempt.
+
+static void
+    s_retry_timer_expired (void *argument)
+{
+    (void) argument;
+
+    esp_err_t rc = esp_wifi_connect ();
+    if (rc != ESP_OK)
+        ESP_LOGW (TAG, "Reconnect attempt refused: %s", esp_err_to_name (rc));
+}
+
+
+//  --------------------------------------------------------------------------
+//  Arm the timer for the current row of the schedule and report the state that
+//  belongs to it, then step one row down. The last row is where we stay.
+
+static void
+    s_schedule_retry (void)
+{
+    assert (s_retry_timer);         //  Created by wifi_prov_init ()
+    assert (s_retry_row < RETRY_SCHEDULE_ROWS);
+
+    const retry_step_t *step = &s_retry_schedule [s_retry_row];
+    if (s_retry_row + 1 < RETRY_SCHEDULE_ROWS)
+        s_retry_row++;
+
+    wifi_set_state (step->state);
+    if (step->state == WIFI_PROV_STATE_CONNECT_FAILED)
+        xEventGroupSetBits (s_wifi_event_group, WIFI_FAIL_BIT);
+
+    ESP_LOGW (TAG, "Reconnecting in %" PRIu32 " ms", step->delay_ms);
+
+    esp_timer_stop (s_retry_timer);     //  Harmless when it is not running
+
+    esp_err_t rc = esp_timer_start_once (s_retry_timer,
+                                         (uint64_t) step->delay_ms * 1000);
+    assert (rc == ESP_OK);              //  Only fails on bad arguments
+    (void) rc;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Back to the top of the schedule. A connection that succeeded, or a fresh
+//  set of credentials, starts counting again from the shortest delay.
+
+static void
+    s_reset_retry_schedule (void)
+{
+    s_retry_row = 0;
+    if (s_retry_timer)
+        esp_timer_stop (s_retry_timer);
 }
 
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
@@ -59,18 +143,12 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 
         xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
 
-        if (s_retry_count < WIFI_MAX_RETRIES) {
-            s_retry_count++;
-            wifi_set_state(WIFI_PROV_STATE_CONNECTING);
-
-            ESP_LOGW(TAG, "Retrying WiFi connection %d/%d", s_retry_count, WIFI_MAX_RETRIES);
-
-            esp_wifi_connect();
-        } else {
-            ESP_LOGE(TAG, "WiFi connection failed");
-            wifi_set_state(WIFI_PROV_STATE_CONNECT_FAILED);
-            xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
-        }
+        //  Only chase a network we have credentials for. Without an SSID the
+        //  device is waiting to be provisioned, not for the router to return.
+        if (current_ssid [0] != '\0')
+            s_schedule_retry ();
+        else
+            wifi_set_state (WIFI_PROV_STATE_IDLE);
     }
 
     else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_START) {
@@ -93,7 +171,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 
         ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
 
-        s_retry_count = 0;
+        s_reset_retry_schedule ();
         wifi_set_state(WIFI_PROV_STATE_CONNECTED);
 
         wifi_storage_save_credentials(current_ssid, current_password);
@@ -150,6 +228,13 @@ esp_err_t wifi_prov_init(void)
         NULL
     ));
 
+    const esp_timer_create_args_t retry_timer_args = {
+        .callback = s_retry_timer_expired,
+        .name = "wifi_retry"
+    };
+
+    ESP_ERROR_CHECK(esp_timer_create(&retry_timer_args, &s_retry_timer));
+
     ESP_ERROR_CHECK(esp_wifi_start());
 
     wifi_set_state(WIFI_PROV_STATE_IDLE);
@@ -200,7 +285,7 @@ esp_err_t wifi_prov_connect(const char *ssid, const char *password)
         snprintf((char *)sta_config.sta.password, sizeof(sta_config.sta.password), "%s", password);
     }
 
-    s_retry_count = 0;
+    s_reset_retry_schedule ();
     wifi_set_state(WIFI_PROV_STATE_CONNECTING);
 
     xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
