@@ -18,6 +18,11 @@ typedef struct
     float community_shared_export_price_eur;
 } energyboxx_data_t;
 
+//  Creates the lock that guards the credentials and the token. Call once from
+//  app_main before any other function in this module; calling it twice is
+//  harmless.
+esp_err_t energyboxx_api_init(void);
+
 esp_err_t energyboxx_api_setup(const char *client_id, const char *client_secret);
 esp_err_t energyboxx_api_fetch_token(void);
 esp_err_t energyboxx_api_get_data(energyboxx_data_t* data);

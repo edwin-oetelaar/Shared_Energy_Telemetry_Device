@@ -180,6 +180,7 @@ void task_reset_boot_count(void *pvParameters)
 void app_main(void)
 {
     ESP_ERROR_CHECK(wifi_storage_init());
+    ESP_ERROR_CHECK(energyboxx_api_init());
     ESP_ERROR_CHECK(status_leds_init());
 
     //Read boot count from NVS

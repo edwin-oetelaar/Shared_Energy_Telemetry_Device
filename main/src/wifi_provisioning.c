@@ -22,6 +22,11 @@
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 
+//  How often the stored API credentials are retried while the provisioning
+//  portal is open. Slow on purpose: the portal is the normal way in, and this
+//  retry only exists to recover from an API that was down at boot.
+#define API_RETRY_WHILE_PROVISIONING_MS  30000
+
 #define PROV_AP_SSID       "SETD_Provisioning"
 #define PROV_AP_PASSWORD   ""
 #define PROV_AP_CHANNEL    1
@@ -349,14 +354,21 @@ void wifi_prov_wait_until_completed(void)
         pdTRUE,
         portMAX_DELAY);
 
-    if (energyboxx_api_has_credentials() && !energyboxx_api_is_valid_credentials()) {
-        energyboxx_api_fetch_token();
-    }
+    //  Wait until the API has been set up and validated. The portal is what
+    //  normally does that: /api-check calls setup and fetch_token in the httpd
+    //  task and records the result. Retrying here as well is only for the case
+    //  where the stored credentials are fine but the API was unreachable at
+    //  boot - so it happens on a slow tick, not once a second, and it goes
+    //  through the same lock as the portal.
 
-    // Wait until the API has been set up and validated
+    TickType_t next_retry = xTaskGetTickCount ();
+
     while (energyboxx_api_is_valid_credentials() == false) {
-        if (energyboxx_api_has_credentials()) {
+        if (energyboxx_api_has_credentials()
+        &&  (int32_t) (xTaskGetTickCount () - next_retry) >= 0) {
             energyboxx_api_fetch_token();
+            next_retry = xTaskGetTickCount ()
+                       + pdMS_TO_TICKS (API_RETRY_WHILE_PROVISIONING_MS);
         }
 
         vTaskDelay(pdMS_TO_TICKS(1000));

@@ -41,7 +41,7 @@ over een open access point.
 ### Kritiek — vóór het eerste apparaat de deur uit gaat
 - [x] **C1** Wifi-wachtwoord wordt niet URL-gedecodeerd — opgelost, `main/src/uri_decode.c`
 - [x] **C2** Na vijf mislukte reconnects is het apparaat permanent dood — opgelost, backoff-tabel
-- [ ] **C3** Twee taken doen tegelijk een tokenrequest, zonder lock
+- [x] **C3** Twee taken doen tegelijk een tokenrequest, zonder lock — opgelost, module-lock
 - [ ] **C4** API-setup pagina gaat door een kapotte format string
 - [ ] **C5** Secrets gaan open door de lucht tijdens provisioning
 
@@ -155,6 +155,24 @@ plus twee gelijktijdige requests naar de tokenendpoint.
 
 **Fix:** één mutex om de credential- en tokenstate. Beter nog: de provisioning-lus laten wachten
 op een event dat de webhandler zet, in plaats van te pollen op state die die handler schrijft.
+
+> **Opgelost, in twee delen.**
+>
+> 1. `energyboxx_api.c` heeft nu één statisch aangemaakte mutex over de credentials, het token
+>    en de bijbehorende vlaggen. `fetch_token` en `get_data` zijn interne `_locked`-functies
+>    geworden met een publieke wrapper eromheen, zodat geen enkel vroegtijdig `return` de lock
+>    kan laten staan. `energyboxx_api_init()` maakt hem aan en wordt als eerste in `app_main`
+>    aangeroepen; de andere functies asserten dat dat gebeurd is.
+>    `is_valid_credentials()` en `has_credentials()` lezen bewust zonder lock — de status-LED
+>    task vraagt ze twee keer per seconde en mag niet tien seconden achter een HTTP-request
+>    blijven hangen. Die twee vlaggen zijn daarom `volatile bool`.
+> 2. De poll-lus in `wifi_prov_wait_until_completed()` haalde elke seconde een token op. Dat
+>    was niet alleen de helft van de race, het beukte ook eens per seconde met verlopen
+>    credentials op de tokenendpoint. Die retry staat er nog — hij redt het geval waarin de
+>    opgeslagen sleutels goed zijn maar de API bij het opstarten onbereikbaar was — maar nu op
+>    een tick van 30 seconden, en via dezelfde lock als de portal.
+>
+> Gebouwd voor esp32s3 op ESP-IDF 5.5.5. Niet op hardware getest.
 
 ### C4 — De API-setup pagina wordt door een kapotte format string gehaald
 `main/src/wifi_web.c:129` + `main/src/wifi_web.c:175`
