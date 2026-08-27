@@ -1,5 +1,6 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "esp_wifi.h"
 
 #include "inc/wifi_web.h"
 #include "inc/wifi_provisioning.h"
@@ -242,6 +243,27 @@ static esp_err_t connect_post_handler(httpd_req_t *req)
     return httpd_resp_sendstr(req, "{\"ok\":true}");
 }
 
+//  How a refused scan is reported to the browser. The last row is the
+//  catch-all for anything not listed above it, so this table is never
+//  incomplete; add a row to give a specific failure its own answer.
+
+static const struct {
+    esp_err_t code;
+    const char *status;
+    const char *message;
+} s_scan_error [] = {
+    { ESP_ERR_WIFI_STATE,       "503 Service Unavailable",
+      "{\"error\":\"Scan busy, try again\"}"   },
+    { ESP_ERR_WIFI_NOT_STARTED, "503 Service Unavailable",
+      "{\"error\":\"Radio not ready yet\"}"    },
+    { ESP_ERR_WIFI_TIMEOUT,     "504 Gateway Timeout",
+      "{\"error\":\"Scan timed out\"}"         },
+    { ESP_FAIL,                 "500 Internal Server Error",
+      "{\"error\":\"Scan failed\"}"            }
+};
+
+#define SCAN_ERROR_ROWS  (sizeof (s_scan_error) / sizeof (s_scan_error [0]))
+
 static esp_err_t scan_get_handler(httpd_req_t *req)
 {
     wifi_ap_record_t aps[20];
@@ -249,8 +271,14 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
 
     esp_err_t err = wifi_prov_scan(aps, &count);
     if (err != ESP_OK) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Scan failed");
-        return err;
+        size_t row = 0;
+        while (row < SCAN_ERROR_ROWS - 1 && s_scan_error [row].code != err)
+            row++;
+
+        httpd_resp_set_status(req, s_scan_error [row].status);
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, s_scan_error [row].message);
+        return ESP_OK;
     }
 
     httpd_resp_set_type(req, "application/json");

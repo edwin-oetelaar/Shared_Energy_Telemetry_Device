@@ -311,11 +311,21 @@ wifi_prov_state_t wifi_prov_get_state(void)
 
 esp_err_t wifi_prov_scan(wifi_ap_record_t *records, uint16_t *count)
 {
+    assert (records);           //  Caller's contract, not client input
+    assert (count);
+
     wifi_scan_config_t scan_config = {
         .show_hidden = false,
     };
 
-    ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, true));
+    //  A scan can legitimately be refused - one is already running, or the
+    //  reconnect timer just asked for a connection. That is a busy signal for
+    //  whoever clicked "Refresh networks", not a reason to reboot the device.
+    esp_err_t err = esp_wifi_scan_start(&scan_config, true);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Scan refused: %s", esp_err_to_name(err));
+        return err;
+    }
 
     return esp_wifi_scan_get_ap_records(count, records);
 }

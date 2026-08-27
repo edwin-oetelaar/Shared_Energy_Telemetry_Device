@@ -48,7 +48,7 @@ over een open access point.
 ### Hoog
 - [ ] **H1** POST-body wordt in één keer gelezen in een te kleine buffer
 - [ ] **H2** Panic-op-alles plus wis-na-3-boots is een gevaarlijke combinatie
-- [ ] **H3** Een webrequest kan het apparaat laten crashen
+- [x] **H3** Een webrequest kan het apparaat laten crashen — opgelost, foutcode i.p.v. abort
 - [ ] **H4** Geen OTA, terwijl de partitietabel er twee slots voor heeft
 - [ ] **H5** Credentials liggen leesbaar in flash
 
@@ -231,6 +231,18 @@ buiten mag nooit tot een abort leiden.
 
 **Fix:** de returncode teruggeven aan de handler, die netjes 503 doet. De handler heeft de
 foutafhandeling al klaarstaan.
+
+> **Opgelost.** `wifi_prov_scan()` geeft de fout van `esp_wifi_scan_start()` nu terug in plaats
+> van te aborten, en assert alleen nog op zijn eigen parameters. De handler vertaalt de
+> foutcode via een tabel `s_scan_error` naar een HTTP-status: `ESP_ERR_WIFI_STATE` en
+> `ESP_ERR_WIFI_NOT_STARTED` worden 503 met "Scan busy, try again", een timeout wordt 504, en
+> de laatste rij vangt al het overige af als 500 — daardoor kan die tabel niet onvolledig zijn.
+>
+> Dit was extra dringend geworden door C2: de reconnect-timer kan nu een verbindingspoging doen
+> terwijl iemand in de portal op "Refresh networks" drukt, en dat is precies het geval dat
+> `ESP_ERR_WIFI_STATE` oplevert.
+>
+> Gebouwd voor esp32s3 op ESP-IDF 5.5.5. Niet op hardware getest.
 
 ### H4 — Geen OTA, terwijl de partitietabel er twee slots voor heeft
 `sdkconfig` (`CONFIG_PARTITION_TABLE_TWO_OTA_LARGE=y`), geen OTA-code in `main/`
