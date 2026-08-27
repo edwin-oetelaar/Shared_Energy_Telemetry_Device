@@ -392,7 +392,7 @@ void energyboxx_api_set_renew_token(bool renew){
     renew_token = renew;
 }
 
-bool energyboxx_api_is_valid_credentials(){
+bool energyboxx_api_is_valid_credentials(void){
     return valid_credentials;
 }
 

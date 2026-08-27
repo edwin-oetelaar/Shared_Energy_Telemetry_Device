@@ -1,6 +1,8 @@
 #ifndef API_STORAGE_H
 #define API_STORAGE_H
 
+#include <stddef.h>
+
 #include "esp_err.h"
 
 esp_err_t api_storage_save_credentials(const char *client_id, const char *client_secret);

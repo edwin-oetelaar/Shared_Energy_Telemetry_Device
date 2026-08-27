@@ -2,8 +2,9 @@
 
 **Commit:** `df51625` · **Datum:** 2026-08-27 · **Reviewer:** Edwin Oetelaar (met Claude)
 **Scope:** alle 2.698 regels C in `main/`, plus `sdkconfig`, `CMakeLists.txt` en `idf_component.yml`.
-**Methode:** handmatige review van de broncode. **Niet gecompileerd en niet op hardware getest** —
-er stond geen ESP-IDF op de reviewmachine.
+**Methode:** handmatige review van de broncode. Sinds 2026-08-28 is er wél een buildomgeving
+(ESP-IDF 5.5.5 uit de PlatformIO-installatie); fixes worden daarmee gecompileerd, maar nog
+steeds niet op hardware getest.
 
 Dit document is de werklijst. We werken het stap voor stap af; vink af wat af is en laat de
 bevinding staan als historie.
@@ -70,8 +71,8 @@ over een open access point.
 - [ ] **L6** Zeven keer hetzelfde JSON-parseerblok
 - [ ] **L7** Dode code
 - [ ] **L8** Ongebruikte macro naast een hardcoded URL
-- [ ] **L9** Headers zijn niet zelfstandig
-- [ ] **L10** `is_valid_credentials()` zonder `void`
+- [x] **L9** Headers zijn niet zelfstandig — opgelost, was een harde buildbreker op IDF 5.5.5
+- [x] **L10** `is_valid_credentials()` zonder `void` — opgelost
 - [ ] **L11** Client secret in een `type=text`-veld; `data` niet `static`
 
 ---
@@ -346,10 +347,14 @@ Geen van deze breekt iets, samen bepalen ze wel hoe het project over een jaar aa
   (`main/src/energyboxx_api.c:15`) is gedefinieerd maar de config gebruikt dezelfde URL letterlijk
   op regel 100. Twee plekken om te vergeten.
 - **L9 — Headers zijn niet zelfstandig.** `main/inc/api_storage.h` gebruikt `size_t` zonder
-  `<stddef.h>`, `main/src/api_storage.c` gebruikt `strlen` zonder `<string.h>`. Werkt nu via
-  transitieve includes; breekt zodra een include verschuift.
+  `<stddef.h>`, `main/src/api_storage.c` gebruikt `strlen` zonder `<string.h>`, en
+  `main/inc/energyboxx_api.h` gebruikt `bool` zonder `<stdbool.h>`.
+  **Opgelost — en dit was geen theoretisch punt:** op ESP-IDF 5.5.5 levert het meteen
+  `error: unknown type name 'bool'` op, waardoor het project daar helemaal niet bouwde. De
+  transitieve include waar het op leunde zit in nieuwere IDF-versies niet meer in `esp_err.h`.
 - **L10 — `bool energyboxx_api_is_valid_credentials();`** zonder `void` is geen prototype; de
-  compiler controleert de argumenten niet.
+  compiler controleert de argumenten niet. **Opgelost** — kwam samen met L9 naar boven als
+  `conflicting types ... have '_Bool()'`, omdat de compiler zonder `bool` terugviel op `int`.
 - **L11 — Client secret in een `type=text`-veld** (`main/src/wifi_web.c:143`), terwijl het
   wifi-wachtwoord wél op `password` staat. En `energyboxx_data_t data` in `main/main.c:19` is niet
   `static`.

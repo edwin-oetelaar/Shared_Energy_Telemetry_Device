@@ -1,3 +1,5 @@
+#include <string.h>
+
 #include "inc/api_storage.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
