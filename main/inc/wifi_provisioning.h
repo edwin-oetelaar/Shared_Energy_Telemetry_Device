@@ -22,6 +22,11 @@ esp_err_t wifi_prov_scan(wifi_ap_record_t *records, uint16_t *count);
 wifi_prov_state_t wifi_prov_get_state(void);
 bool wifi_prov_is_connected(void);
 void wifi_prov_wait_until_completed(void);
+
+//  Tell the provisioning wait that somebody is actually using the portal. Any
+//  handler that a person triggers calls this; without it the wait eventually
+//  gives up and restarts the device.
+void wifi_prov_note_portal_activity(void);
 bool wifi_prov_wait_for_connection_timeout(TickType_t timeout);
 
 #endif // WIFI_PROVISIONING_H

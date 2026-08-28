@@ -58,7 +58,7 @@ over een open access point.
 - [ ] **M3** Foutdetectie via `strstr` op de ruwe body
 - [x] **M4** Vaste retry van 10 seconden, oneindig lang — opgelost, backoff met jitter
 - [ ] **M5** NVS-schrijfactie in de event handler
-- [ ] **M6** `app_main` kan oneindig blijven wachten
+- [x] **M6** `app_main` kan oneindig blijven wachten — opgelost, stilte-timeout
 - [ ] **M7** "Ring uit" betekent twee verschillende dingen
 - [x] **M8** Twee responses op één request in het API-check pad — opgelost
 
@@ -413,6 +413,21 @@ het portaal opent blijft het apparaat daar staan — geen timeout, geen herstart
 en probeer de opgeslagen wifi opnieuw".
 
 **Fix:** een provisioning-timeout (bv. 15 minuten) met daarna een herstart.
+
+> **Opgelost.** Na vijftien minuten **stilte** herstart het apparaat en probeert het de
+> opgeslagen credentials opnieuw. Stilte, niet verstreken tijd: elke handler die een mens
+> aanraakt — de twee pagina's, `/connect`, `/api-check`, `/scan` — meldt activiteit via
+> `wifi_prov_note_portal_activity()` en zet de klok terug. Iemand die rustig zijn client secret
+> zit over te typen wordt dus niet onder zijn handen vandaan herstart.
+>
+> `/status` telt bewust **niet** mee: die wordt door de pagina zelf elke seconde gepollt, en
+> anders houdt één vergeten open tabblad het apparaat eeuwig in de portal.
+>
+> Dit componeert met H2: `esp_restart()` meldt `ESP_RST_SW`, en die reden telt niet mee voor de
+> drie-power-cycles-wist-credentials regel. De herstart kan dus niet per ongeluk de configuratie
+> van de klant wissen.
+>
+> Gebouwd voor esp32s3 op ESP-IDF 5.5.5. Niet op hardware getest.
 
 ### M7 — "Ring uit" betekent twee verschillende dingen
 `main/main.c:116`, `:126`, `:137` versus `main/main.c:159`

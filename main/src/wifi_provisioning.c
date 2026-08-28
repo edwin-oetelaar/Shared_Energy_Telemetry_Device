@@ -6,6 +6,7 @@
 #include <inttypes.h>
 #include <string.h>
 
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
@@ -21,6 +22,19 @@
 
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
+
+//  How long the device waits for somebody to finish provisioning before it
+//  restarts and tries the stored network again. Without this the wait is
+//  unbounded: a device whose API was briefly unreachable would sit on its
+//  windowsill showing a portal that nobody is looking at, forever. A restart
+//  costs a few seconds and gives the saved credentials a fresh chance; if
+//  nothing has changed the portal is simply back. The clock is reset by every
+//  handler a person triggers, so it measures silence, not elapsed time.
+//
+//  esp_restart () reports ESP_RST_SW, which main.c deliberately does not count
+//  towards the three-power-cycles credential wipe.
+
+#define PROVISIONING_SILENCE_TIMEOUT_MS  (15 * 60 * 1000)
 
 //  How often the stored API credentials are retried while the provisioning
 //  portal is open. Slow on purpose: the portal is the normal way in, and this
@@ -69,6 +83,8 @@ static const retry_step_t s_retry_schedule [] = {
 
 static esp_timer_handle_t s_retry_timer = NULL;
 static size_t s_retry_row = 0;
+
+static TickType_t s_last_portal_activity = 0;
 
 static char current_ssid[33] = {0};
 static char current_password[65] = {0};
@@ -268,6 +284,7 @@ esp_err_t wifi_prov_start_ap(void)
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
 
     wifi_set_state(WIFI_PROV_STATE_AP_ACTIVE);
+    wifi_prov_note_portal_activity();
 
     // Start the DNS server that will redirect all queries to the softAP IP
     dns_server_config_t dns_config = DNS_SERVER_CONFIG_SINGLE("*" /* all A queries */, "WIFI_AP_DEF" /* softAP netif ID */);
@@ -345,6 +362,11 @@ bool wifi_prov_is_connected(void)
     return (bits & WIFI_CONNECTED_BIT) != 0;
 }
 
+void wifi_prov_note_portal_activity(void)
+{
+    s_last_portal_activity = xTaskGetTickCount ();
+}
+
 void wifi_prov_wait_until_completed(void)
 {
     xEventGroupWaitBits(
@@ -362,6 +384,7 @@ void wifi_prov_wait_until_completed(void)
     //  through the same lock as the portal.
 
     TickType_t next_retry = xTaskGetTickCount ();
+    wifi_prov_note_portal_activity ();
 
     while (energyboxx_api_is_valid_credentials() == false) {
         if (energyboxx_api_has_credentials()
@@ -369,6 +392,14 @@ void wifi_prov_wait_until_completed(void)
             energyboxx_api_fetch_token();
             next_retry = xTaskGetTickCount ()
                        + pdMS_TO_TICKS (API_RETRY_WHILE_PROVISIONING_MS);
+        }
+
+        if (xTaskGetTickCount () - s_last_portal_activity
+        >   pdMS_TO_TICKS (PROVISIONING_SILENCE_TIMEOUT_MS)) {
+            ESP_LOGW (TAG, "Nobody used the portal for %d minutes, restarting to "
+                           "try the saved network again",
+                      PROVISIONING_SILENCE_TIMEOUT_MS / 60000);
+            esp_restart ();
         }
 
         vTaskDelay(pdMS_TO_TICKS(1000));

@@ -84,6 +84,8 @@ static esp_err_t favicon_get_handler(httpd_req_t *req)
 
 static esp_err_t root_get_handler(httpd_req_t *req)
 {
+    wifi_prov_note_portal_activity();
+
     if (wifi_prov_is_connected()) {
         httpd_resp_set_status(req, "303 See Other");
         httpd_resp_set_hdr(req, "Location", "/api-setup");
@@ -181,6 +183,8 @@ static esp_err_t root_get_handler(httpd_req_t *req)
 
 static esp_err_t api_setup_get_handler(httpd_req_t *req)
 {
+    wifi_prov_note_portal_activity();
+
     const bool api_ready = energyboxx_api_has_credentials() && energyboxx_api_is_valid_credentials();
 
     //  The page goes out in pieces instead of through snprintf, because the
@@ -298,6 +302,8 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 
 static esp_err_t connect_post_handler(httpd_req_t *req)
 {
+    wifi_prov_note_portal_activity();
+
     char body[WIFI_BODY_MAX] = {0};
     char ssid[WIFI_FIELD_SSID_MAX] = {0};
     char password[WIFI_FIELD_PASSWORD_MAX] = {0};
@@ -369,6 +375,8 @@ static const struct {
 
 static esp_err_t scan_get_handler(httpd_req_t *req)
 {
+    wifi_prov_note_portal_activity();
+
     wifi_ap_record_t aps[20];
     uint16_t count = 20;
 
@@ -469,6 +477,8 @@ static esp_err_t parse_api_credentials(httpd_req_t *req,
 
 static esp_err_t api_check_post_handler(httpd_req_t *req)
 {
+    wifi_prov_note_portal_activity();
+
     char client_id[128] = {0};
     char client_secret[256] = {0};
 
