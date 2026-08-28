@@ -55,7 +55,7 @@ over een open access point.
 ### Middel
 - [ ] **M1** SSID's worden ongeëscaped in JSON geplakt
 - [x] **M2** `%d` met een `size_t` — opgelost
-- [ ] **M3** Foutdetectie via `strstr` op de ruwe body
+- [x] **M3** Foutdetectie via `strstr` op de ruwe body — opgelost, structureel i.p.v. tekstueel
 - [x] **M4** Vaste retry van 10 seconden, oneindig lang — opgelost, backoff met jitter
 - [ ] **M5** NVS-schrijfactie in de event handler
 - [x] **M6** `app_main` kan oneindig blijven wachten — opgelost, stilte-timeout
@@ -371,6 +371,22 @@ zodra Energyboxx zijn foutformaat aanpast, en kan vals-positief zijn als die str
 legitieme data opduikt. De statuscodes 401/403 ernaast zijn de betrouwbare check.
 
 **Fix:** de body parsen en het foutveld gericht uitlezen, of alleen op statuscode vertrouwen.
+
+> **Opgelost — en er zat meer achter.** De `strstr` is weg; 401 en 403 blijven als
+> authenticatiecontrole. Het gat dat die `strstr` afdekte is nu structureel gedicht in plaats
+> van tekstueel: `community_power_result_kw` is een **verplicht** veld geworden.
+>
+> Dat bleek belangrijker dan de bevinding zelf. Alle velden werden bij afwezigheid op `0.0f`
+> gezet, dus een foutantwoord van de API — dat óók geldige JSON is — werd stilletjes gelezen
+> als "nul kilowatt" en gaf `ESP_OK` terug. De ring ging dan uit en toonde "gemeenschap in
+> balans": een zelfverzekerd antwoord opgebouwd uit niets. Nu levert een antwoord zonder dat
+> veld `ESP_ERR_INVALID_RESPONSE` op, waarna de aanroeper het token vernieuwt en het opnieuw
+> probeert — ongeacht welke foutcode de API verzonnen heeft.
+>
+> Dit haalt ook een deel van de angel uit **M7**: "ring uit" kan nu niet meer per ongeluk uit
+> een foutantwoord komen.
+>
+> Gebouwd voor esp32s3 op ESP-IDF 5.5.5. Niet op hardware getest.
 
 ### M4 — Vaste retry van 10 seconden, oneindig lang
 `main/main.c:26`, `main/main.c:117`, `main/main.c:128`, `main/main.c:139`

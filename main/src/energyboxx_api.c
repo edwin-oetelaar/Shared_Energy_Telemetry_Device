@@ -309,7 +309,7 @@ static esp_err_t s_get_data_locked(energyboxx_data_t* data)
         return err;
     }
 
-    if (status == 401 || status == 403 || strstr(response_buffer, "\"AUTH-1000\"")) {
+    if (status == 401 || status == 403) {
         ESP_LOGW(TAG, "Auth failed, token should be refreshed");
         valid_credentials = false;
         esp_http_client_cleanup(client);
@@ -358,15 +358,22 @@ static esp_err_t s_get_data_locked(energyboxx_data_t* data)
         {
             data->community_power_export_kw = 0.0f;
         }
+        //  The one field the device actually acts on, so it is required rather
+        //  than defaulted. An error body is valid JSON too, and quietly reading
+        //  it as zero would light the ring as "community balanced" - a
+        //  confident answer assembled out of nothing. Missing it means this is
+        //  not telemetry, whatever the status code said, and the caller renews
+        //  the token and tries again.
         cJSON *result_kw = cJSON_GetObjectItemCaseSensitive(root, "community_power_result_kw");
-        if (cJSON_IsNumber(result_kw))
+        if (!cJSON_IsNumber(result_kw))
         {
-            data->community_power_result_kw = (float)result_kw->valuedouble;
+            ESP_LOGE(TAG, "Response carries no community_power_result_kw, not treating it as telemetry");
+            cJSON_Delete(root);
+            esp_http_client_cleanup(client);
+            return ESP_ERR_INVALID_RESPONSE;
         }
-        else
-        {
-            data->community_power_result_kw = 0.0f;
-        }
+
+        data->community_power_result_kw = (float)result_kw->valuedouble;
 
         cJSON *import_price = cJSON_GetObjectItemCaseSensitive(root, "community_import_price_eur");
         if (cJSON_IsNumber(import_price))
