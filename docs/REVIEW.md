@@ -70,6 +70,7 @@ punt van de hele lijst.
 - [ ] **M5** NVS-schrijfactie in de event handler
 - [x] **M6** `app_main` kan oneindig blijven wachten — opgelost, stilte-timeout
 - [ ] **M7** "Ring uit" betekent twee verschillende dingen
+- [ ] **M10** Tijdens provisioning blijft het schema afgewezen credentials proberen
 - [x] **M8** Twee responses op één request in het API-check pad — opgelost
 - [x] **M9** De ESP-IDF-versie ligt nergens vast — opgelost, vastgelegd op v6.1
 
