@@ -54,7 +54,7 @@ over een open access point.
 
 ### Middel
 - [ ] **M1** SSID's worden ongeëscaped in JSON geplakt
-- [ ] **M2** `%d` met een `size_t`
+- [x] **M2** `%d` met een `size_t` — opgelost
 - [ ] **M3** Foutdetectie via `strstr` op de ruwe body
 - [x] **M4** Vaste retry van 10 seconden, oneindig lang — opgelost, backoff met jitter
 - [ ] **M5** NVS-schrijfactie in de event handler
@@ -361,7 +361,7 @@ setup die het niet doet door toedoen van een derde.
 behaviour. Zou met `-Wformat` moeten opvallen; dat het dat niet doet zegt iets over de
 warning-instellingen (L2).
 
-**Fix:** `%zu`.
+**Fix:** `%zu`. **Opgelost.**
 
 ### M3 — Foutdetectie via `strstr` op de ruwe body
 `main/src/energyboxx_api.c:251`

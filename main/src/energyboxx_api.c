@@ -213,7 +213,7 @@ static esp_err_t s_fetch_token_locked(void)
         token_acquired_us = esp_timer_get_time();
         expires_in_seconds = expires_json->valueint;
 
-        ESP_LOGI(TAG, "Stored token (%d chars)", strlen(access_token));
+        ESP_LOGI(TAG, "Stored token (%zu chars)", strlen(access_token));
 
         ESP_LOGI(TAG, "Token expires in %d seconds", expires_in_seconds);
 
