@@ -644,9 +644,8 @@ anders en is "het werkt bij mij" geen uitspraak over iets.
 **Board:** Seeed Studio XIAO ESP32-S3 Sense · ESP32-S3 rev v0.2 · 8 MB flash · 8 MB PSRAM
 **Datum:** 2026-08-28 · **Firmware:** deze branch, gebouwd met **ESP-IDF 5.5.5**
 
-> Deze ronde is gedaan vóór het besluit bij M9 om op v6.1 te bouwen. De uitkomsten blijven
-> geldig als bewijs dat de fixes werken, maar niet als bewijs voor de doelversie: v6 gebruikt
-> picolibc waar v5 newlib gebruikte. Herhaal deze ronde op een v6.1-build.
+> Deze ronde is gedaan vóór het besluit bij M9 om op v6.1 te bouwen. Zie de tweede ronde
+> hieronder voor de doelversie.
 **Uitgevoerd:** eerste boot, provisioning via het portaal, wifi verbinden, API-sleutels
 invoeren, token ophalen en twee telemetrierondes.
 
@@ -684,6 +683,43 @@ is het strengste geval: de browser codeert een spatie als `%20` en een procentte
 `%25`. Zonder decoder komt de letterlijke tekst `%20` en `%25` in NVS terecht en mislukt de
 verbinding, met als enige melding "Could not connect. Check password". Het apparaat verbindt
 en haalt telemetrie op, dus de decoder werkt op het lastigste teken dat er is.
+
+### Tweede ronde: op de doelversie
+
+**Datum:** 2026-08-28, later op de dag · **Firmware:** deze branch op commit `79405b3`,
+gebouwd met **ESP-IDF v6.1** · zelfde board.
+
+De opgeslagen credentials uit de eerste ronde stonden nog in NVS, dus deze boot sloeg de
+provisioning over en ging meteen verbinden en telemetrie ophalen.
+
+| Bevinding | Status op v6.1 | Grondslag |
+| --- | --- | --- |
+| **C2** Reconnect na een wegval | **Bevestigd** | `STA disconnected, reason=4` → `Reconnecting in 500 ms` → `Got IP` na 5,6 s. De eerste rij van de tabel vuurde en het herstel slaagde |
+| **H2** Resetreden | **Bevestigd** | `Reset reason 11, counts as user request: no` |
+| **M3** Verplicht telemetrieveld | **Bevestigd** | Geldige telemetrie doorgelaten, alle velden geparseerd |
+| **L9/L10** Zelfstandige headers | **Bevestigd** | Bouwt en draait op v6.1, geen waarschuwingen uit `main/` |
+| **C1, C3, C4, M1, M8** | **Niet herhaald** | Deze paden lopen alleen tijdens provisioning, en die werd overgeslagen. Wis NVS om ze opnieuw te beproeven |
+| **M4** Jitter | **Niet herhaald** | Er is maar één telemetrieronde waargenomen |
+
+Wat de overstap naar picolibc **niet** brak: de TLS-handshake vanuit `app_main`, het ophalen
+en opslaan van het token, het parseren van de JSON, en de drempellogica. Die laatste liet
+zich voor het eerst van de andere kant zien: `community_power_result_kw = +0,869` gaf
+"Community is exporting power", dus de groene tak. Beide takken zijn nu op hardware gezien.
+
+Verschillen tussen de twee versies, ter vergelijking:
+
+| | v5.5.5 | v6.1 |
+| --- | --- | --- |
+| C-bibliotheek | newlib | picolibc |
+| Vrije heap bij opstarten | 271 KiB | 279 KiB |
+| Binariegrootte | 1.061.040 bytes | 1.068.416 bytes |
+
+**H6 kreeg bevestiging uit onverwachte hoek.** ESP-IDF meldt bij het opstarten zelf:
+`cpu_start: GPIO 44 and 43 are used as console UART I/O pins`. De firmware zet daarna diezelfde
+GPIO 44 als uitgang voor de wifi-led. Op dit board hangt er geen bridge aan, dus er is geen
+strijd om de lijn — maar het conflict is nu zwart-op-wit uit de IDF zelf.
+
+**L12 blijft ongewijzigd zichtbaar:** drie lege regels vóór elk antwoord, ook op picolibc.
 
 ---
 
