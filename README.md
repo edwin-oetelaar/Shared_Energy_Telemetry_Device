@@ -205,6 +205,10 @@ Gebruik deze weg alleen als je geen eigen ESP-IDF hebt staan en snel iets wilt b
 **Let op: PlatformIO levert ESP-IDF 5.5.x, niet de v6.1 waar dit project op mikt.** Een
 build langs deze weg bewijst dus niet dat de firmware op de doelversie werkt.
 
+Het script zet variabelen in je shell die een gewone `export.sh` in dezelfde shell laten
+falen, met een foutmelding over `espidf.constraints`. Draai `idfenv_unset` voordat je een
+echte ESP-IDF activeert, of open een nieuwe shell.
+
 PlatformIO gebruikt `idf.py` zelf niet. De Python-omgeving die PlatformIO meelevert, mist
 daarom drie modules die `idf.py` nodig heeft: `esp_idf_monitor`, `pyyaml` en `esptool`. Er
 is geen omgeving die je kunt activeren waarmee `idf.py` het toch doet.
