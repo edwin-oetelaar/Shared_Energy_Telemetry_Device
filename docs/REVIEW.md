@@ -586,6 +586,36 @@ Geen van deze breekt iets, samen bepalen ze wel hoe het project over een jaar aa
   wifi-wachtwoord wél op `password` staat. En `energyboxx_data_t data` in `main/main.c:19` is niet
   `static`.
 
+### M10 — Tijdens provisioning blijft het schema afgewezen credentials proberen
+`main/src/wifi_provisioning.c` (`s_schedule_retry`, ingevoerd bij C2)
+
+Waargenomen op hardware op 2026-08-28, tijdens een mislukte provisioning:
+
+```
+[wifi_prov]: STA disconnected, reason=15      (4-way handshake timeout)
+[wifi_prov]: Reconnecting in 60000 ms
+[wifi_prov]: STA disconnected, reason=2       (auth expired)
+[wifi_prov]: Reconnecting in 300000 ms
+```
+
+Het reconnect-schema van C2 loopt door zolang `current_ssid` gevuld is. Bij een 4-way
+handshake timeout weten we echter dat het wachtwoord niet klopt: opnieuw proberen met
+diezelfde credentials kan per definitie niet slagen. Alleen nieuwe credentials helpen, en
+die komen via het portaal.
+
+Twee gevolgen:
+
+1. Het apparaat blijft het accesspoint van de gebruiker benaderen met een wachtwoord dat al
+   is afgewezen. Sommige routers gaan een client daarna tijdelijk blokkeren — de tweede
+   poging hierboven strandde al in de authenticatiefase (reason 2) in plaats van bij de
+   handshake, wat op zoiets kan wijzen.
+2. De radio is bezet met die pogingen terwijl de gebruiker in het portaal staat.
+
+**Fix:** zolang het provisioningportaal open staat, het schema begrenzen of stoppen bij een
+reden die op verkeerde credentials wijst (`WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT`,
+`WIFI_REASON_AUTH_FAIL`). Doorproberen slaat pas aan als er credentials zijn die ooit hebben
+gewerkt.
+
 ### M9 — De ESP-IDF-versie ligt nergens vast
 `sdkconfig` (t/m commit 08908ec), `.github/workflows/ci.yml`
 
