@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'hardening/**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  host-tests:
+    name: Host tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Modules without ESP-IDF dependencies are compiled and run here, which
+      # takes a second and needs no toolchain. See test/README.md.
+      - name: Run host tests
+        run: make -C test check
+
+  static-analysis:
+    name: cppcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cppcheck
+        run: sudo apt-get update && sudo apt-get install -y cppcheck
+
+      # dns_server.c is Espressif's captive-portal example, taken verbatim with
+      # its original licence header. Its style findings are not ours to fix, so
+      # it is excluded rather than silently tolerated across the whole project.
+      - name: Analyse
+        run: |
+          cppcheck --error-exitcode=1 \
+                   --enable=warning,performance,style \
+                   --inline-suppr --std=c11 --quiet \
+                   --suppress=missingInclude \
+                   --suppress=missingIncludeSystem \
+                   --suppress=unusedFunction \
+                   -i main/src/dns_server.c \
+                   -I main -I main/inc \
+                   main/main.c main/src
+
+  firmware-build:
+    name: Build for ESP32-S3
+    runs-on: ubuntu-latest
+    # Pin this to an exact patch release once the project settles on one; the
+    # branch tag moves and can change the toolchain under you.
+    container: espressif/idf:release-v5.5
+    steps:
+      - uses: actions/checkout@v4
+
+      # No set-target here on purpose: the committed sdkconfig already selects
+      # the ESP32-S3, and set-target would throw the rest of that file away.
+      - name: Build
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          idf.py build
+
+      - name: Report binary size
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          idf.py size

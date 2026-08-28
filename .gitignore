@@ -3,3 +3,4 @@ build
 managed_components
 dependencies.lock
 main/inc/secrets.h
+test/test_uri_decode

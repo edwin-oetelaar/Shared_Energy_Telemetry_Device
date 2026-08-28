@@ -63,7 +63,7 @@ over een open access point.
 - [x] **M8** Twee responses op één request in het API-check pad — opgelost
 
 ### Klein
-- [ ] **L1** Geen tests, geen CI, geen static analysis
+- [x] **L1** Geen tests, geen CI, geen static analysis — opgezet
 - [ ] **L2** Compilerwaarschuwingen staan op de standaard
 - [ ] **L3** `sdkconfig` én `sdkconfig.old` ingecheckt
 - [ ] **L4** Geen LICENSE-bestand
@@ -468,8 +468,16 @@ antwoord aan de aanroeper laten, die dat toch al doet.
 
 Geen van deze breekt iets, samen bepalen ze wel hoe het project over een jaar aanvoelt.
 
-- **L1 — Geen tests, geen CI, geen static analysis.** Minstens een GitHub Action die
-  `idf.py build` draait, plus `clang-tidy` of `cppcheck`. Bij deze omvang een middag werk.
+- **L1 — Geen tests, geen CI, geen static analysis.** **Opgezet.**
+  `.github/workflows/ci.yml` draait bij elke push drie jobs: de host-tests uit `test/`, een
+  `cppcheck`-pass over `main/`, en een volledige ESP32-S3 build in de officiële
+  `espressif/idf`-container. Alle drie zijn lokaal gedraaid vóór ze zijn ingecheckt.
+  De cppcheck-pass staat op `warning,performance,style` met `--error-exitcode=1` en sluit
+  `main/src/dns_server.c` uit: dat is Espressif's voorbeeldbestand, letterlijk overgenomen, en
+  zijn stijlbevindingen zijn niet de onze om te repareren. Op de rest van `main/` is de check
+  schoon, dus de lat kan blijven staan waar hij nu staat.
+  Nog open: de containertag `release-v5.5` beweegt; die zou op een exacte patchrelease gepind
+  moeten worden zodra het project er een kiest.
 - **L2 — Compilerwaarschuwingen staan op de standaard.** Geen `CONFIG_COMPILER_WARN_*` in
   `sdkconfig`. `-Wall -Wextra` had M2 en waarschijnlijk C4 gevonden.
 - **L3 — `sdkconfig` én `sdkconfig.old` zijn ingecheckt.** De conventie is `sdkconfig.defaults`

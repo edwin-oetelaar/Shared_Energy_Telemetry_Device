@@ -112,6 +112,19 @@ The project uses the ESP-IDF Component Manager for these dependencies:
 
 The checked-in configuration currently selects an ESP32-S3 with 8 MB flash.
 
+## Tests and checks
+
+Modules that do not depend on ESP-IDF are compiled and run on the development
+machine:
+
+```bash
+make -C test check
+```
+
+Every push runs three jobs in GitHub Actions: these host tests, a `cppcheck`
+pass over `main/`, and a full ESP32-S3 firmware build. See
+`.github/workflows/ci.yml`.
+
 ## Flashing and monitoring
 
 With the board connected, replace `PORT` with its serial port:
@@ -150,9 +163,13 @@ main/
     ├── dns_server.c          Captive-portal DNS redirection
     ├── energyboxx_api.c      OAuth token and telemetry requests
     ├── status_led.c          LED rings and discrete status LEDs
+    ├── uri_decode.c          Percent-decoding for form values
     ├── wifi_provisioning.c   Wi-Fi state and provisioning AP
     ├── wifi_storage.c        Wi-Fi credentials in NVS
     └── wifi_web.c            Provisioning web interface
+
+docs/REVIEW.md                Pre-production review and its worklist
+test/                         Host tests for the ESP-IDF-free modules
 ```
 
 ## Runtime overview
