@@ -58,6 +58,7 @@ punt van de hele lijst.
 - [x] **H1** POST-body wordt in één keer gelezen in een te kleine buffer — opgelost
 - [x] **H2** Panic-op-alles plus wis-na-3-boots is een gevaarlijke combinatie — opgelost
 - [x] **H3** Een webrequest kan het apparaat laten crashen — opgelost, foutcode i.p.v. abort
+- [ ] **H6** De wifi-status-led zit op GPIO 44, dat is U0RXD
 - [ ] **H4** Geen OTA, terwijl de partitietabel er twee slots voor heeft
 - [ ] **H5** Credentials liggen leesbaar in flash
 
@@ -326,6 +327,31 @@ foutafhandeling al klaarstaan.
 > `ESP_ERR_WIFI_STATE` oplevert.
 >
 > Gebouwd voor esp32s3 op ESP-IDF 5.5.5. Niet op hardware getest.
+
+### H6 — De wifi-status-led zit op GPIO 44, dat is U0RXD
+`main/inc/status_led.h:15`, `sdkconfig.defaults` (console)
+
+`STATUS_LED_WIFI_GPIO` staat op `GPIO_NUM_44`. Op de ESP32-S3 is dat **U0RXD**, de
+ontvangstlijn van UART0. De consoleconfiguratie zet UART0 als primaire uitvoer
+(`CONFIG_ESP_CONSOLE_UART_DEFAULT`, met USB-Serial-JTAG als secundaire).
+
+`status_leds_init()` configureert die pin als push-pull uitgang. Op elk board met een
+USB-UART-bridge op GPIO 43/44 gaan er dan twee drivers tegen elkaar in op dezelfde lijn: de
+bridge stuurt zijn TX naar de ESP-RX, terwijl de ESP diezelfde lijn hoog en laag trekt voor
+de led. Gevolgen, oplopend in ernst:
+
+1. Seriële invoer richting het apparaat werkt niet meer. Uitvoer (GPIO 43) blijft werken.
+2. Twee tegen elkaar in werkende push-pull uitgangen betekent kortsluitstroom door beide
+   pinnen zolang ze verschillen. Dat is geen theoretische zorg maar een pinbelasting.
+
+De README noemt de pin al als "D7 / RX", dus het is gezien maar niet als conflict herkend.
+
+**Fix:** kies een pin die niet aan UART0 vastzit, of zet de console op USB-Serial-JTAG als het
+board via de USB-poort van de chip zelf loopt. Tot dat besluit genomen is: flash en monitor via
+de **native USB-poort** van het board, niet via de UART-bridge.
+
+**Nog te bevestigen op hardware.** Of dit conflict optreedt hangt af van het board: heeft het
+een bridge op GPIO 43/44, of alleen de native USB-poort?
 
 ### H4 — Geen OTA, terwijl de partitietabel er twee slots voor heeft
 `sdkconfig` (`CONFIG_PARTITION_TABLE_TWO_OTA_LARGE=y`), geen OTA-code in `main/`
