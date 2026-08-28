@@ -2,6 +2,7 @@
 #include "freertos/task.h"
 
 #include "esp_log.h"
+#include "esp_random.h"
 #include "esp_system.h"
 #include "nvs.h"
 #include "driver/gpio.h"
@@ -26,11 +27,25 @@ energyboxx_data_t data;
 
 #define BRIGHTNESS_PERCENTAGE 10.0f // Brightness percentage for the LED rings
 #define POWER_BALANCE_DEADBAND_KW 0.05f
-#define API_RETRY_DELAY_MS 10000
+
+//  How long to wait before asking the API again after a failed round. The last
+//  row repeats, so a long outage settles at one attempt every five minutes
+//  instead of six per minute per device - with a few hundred devices that
+//  difference is the one between polling and a self-inflicted flood.
+
+static const uint32_t s_api_retry_delay_ms [] = {
+    10000, 20000, 40000, 80000, 160000, 300000
+};
+
+#define API_RETRY_ROWS  (sizeof (s_api_retry_delay_ms) / sizeof (s_api_retry_delay_ms [0]))
+
+#define TELEMETRY_INTERVAL_MS   (60 * 1000)
+#define WIFI_WAIT_POLL_MS       10000
 
 static led_ring_t led_ring_1;
 static led_ring_t led_ring_2;
 static volatile bool data_connection_ok = false;
+static size_t api_retry_row = 0;
 
 
 //  --------------------------------------------------------------------------
@@ -167,6 +182,35 @@ static bool validate_stored_api_credentials(void)
 }
 
 //  --------------------------------------------------------------------------
+//  Spread a delay by up to a fifth, so devices that failed at the same moment -
+//  a street coming back after a power cut, an API that was down for everyone -
+//  drift apart instead of returning in lockstep.
+
+static uint32_t
+    s_with_jitter (uint32_t delay_ms)
+{
+    return delay_ms + (uint32_t) (esp_random () % (delay_ms / 5 + 1));
+}
+
+
+//  --------------------------------------------------------------------------
+//  Wait out the current backoff row, then step one row down. The last row is
+//  where a long outage settles.
+
+static void
+    s_api_backoff_wait (void)
+{
+    uint32_t delay_ms = s_with_jitter (s_api_retry_delay_ms [api_retry_row]);
+
+    if (api_retry_row + 1 < API_RETRY_ROWS)
+        api_retry_row++;
+
+    ESP_LOGW (TAG, "Next API attempt in %" PRIu32 " ms", delay_ms);
+    vTaskDelay (pdMS_TO_TICKS (delay_ms));
+}
+
+
+//  --------------------------------------------------------------------------
 //  Bring up the provisioning access point and its portal. Returns false when
 //  either refuses to start; the caller then does not wait for a portal that is
 //  not there, and the reconnect schedule keeps trying the saved network.
@@ -194,9 +238,11 @@ static void energyboxx_task(void *pvParameters)
     while(true)
     {
         if (!wifi_prov_is_connected()) {
+            //  Nothing was asked of the API, so the backoff row stays put; this
+            //  is just waiting for the radio to come back.
             data_connection_ok = false;
             s_log_if_failed("clearing the energy ring", led_ring_clear(&led_ring_2));
-            vTaskDelay(pdMS_TO_TICKS(API_RETRY_DELAY_MS));
+            vTaskDelay(pdMS_TO_TICKS(WIFI_WAIT_POLL_MS));
             continue;
         }
 
@@ -207,7 +253,7 @@ static void energyboxx_task(void *pvParameters)
             data_connection_ok = false;
             s_log_if_failed("clearing the energy ring", led_ring_clear(&led_ring_2));
             energyboxx_api_set_renew_token(true);
-            vTaskDelay(pdMS_TO_TICKS(API_RETRY_DELAY_MS));
+            s_api_backoff_wait();
             continue;
         }
 
@@ -217,13 +263,13 @@ static void energyboxx_task(void *pvParameters)
             ESP_LOGE(TAG, "Failed to perform API call: %s", esp_err_to_name(err));
             data_connection_ok = false;
             s_log_if_failed("clearing the energy ring", led_ring_clear(&led_ring_2));
-            ESP_LOGW(TAG, "Renewing token in 10 seconds...");
-            vTaskDelay(pdMS_TO_TICKS(API_RETRY_DELAY_MS));
             energyboxx_api_set_renew_token(true);
+            s_api_backoff_wait();
             continue;
         }
 
         data_connection_ok = true;
+        api_retry_row = 0;              //  A good round starts the backoff over
         energyboxx_data_print(&data);
         if(data.community_power_result_kw < -POWER_BALANCE_DEADBAND_KW)
         {
@@ -241,7 +287,9 @@ static void energyboxx_task(void *pvParameters)
             led_ring_clear(&led_ring_2);
         }
 
-        vTaskDelay(pdMS_TO_TICKS(60 * 1000)); // Wait for 60 seconds.
+        //  Jittered as well: without it a fleet that booted together keeps
+        //  asking together, once a minute, forever.
+        vTaskDelay(pdMS_TO_TICKS(s_with_jitter(TELEMETRY_INTERVAL_MS)));
     }
 
     vTaskDelete(NULL);

@@ -56,7 +56,7 @@ over een open access point.
 - [ ] **M1** SSID's worden ongeëscaped in JSON geplakt
 - [ ] **M2** `%d` met een `size_t`
 - [ ] **M3** Foutdetectie via `strstr` op de ruwe body
-- [ ] **M4** Vaste retry van 10 seconden, oneindig lang
+- [x] **M4** Vaste retry van 10 seconden, oneindig lang — opgelost, backoff met jitter
 - [ ] **M5** NVS-schrijfactie in de event handler
 - [ ] **M6** `app_main` kan oneindig blijven wachten
 - [ ] **M7** "Ring uit" betekent twee verschillende dingen
@@ -379,6 +379,20 @@ apparaten is dat 6× per minuut per apparaat tegen een endpoint dat al in de pro
 
 **Fix:** exponentiële backoff 10s → 20s → 40s → ... tot 5 min, plus willekeurige jitter zodat de
 vloot niet synchroon loopt.
+
+> **Opgelost.** `s_api_retry_delay_ms` is een tabel — 10, 20, 40, 80, 160, 300 seconden — waarvan
+> de laatste rij zich herhaalt. Een lange storing zakt daarmee naar één poging per vijf minuten
+> per apparaat in plaats van zes per minuut.
+>
+> Alle wachttijden krijgen tot een vijfde extra als jitter, óók de normale poll van 60 seconden.
+> Dat laatste was strikt genomen geen onderdeel van de bevinding, maar het is dezelfde zorg: een
+> straat die na een stroomstoring tegelijk opstart blijft anders tot in de eeuwigheid tegelijk
+> vragen. Een geslaagde ronde zet de backoff terug op rij nul.
+>
+> Wachten op wifi telt bewust niet mee in het schema — er is dan niets aan de API gevraagd — en
+> houdt zijn eigen vaste poll van 10 seconden.
+>
+> Gebouwd voor esp32s3 op ESP-IDF 5.5.5. Niet op hardware getest.
 
 ### M5 — NVS-schrijfactie in de event handler
 `main/src/wifi_provisioning.c:99`
