@@ -623,8 +623,8 @@ De kolom zegt wat de test **bewijst**, niet wat er is opgelost.
 | **M8** Eén antwoord per request | **Bevestigd** | Het portaal verwerkt het JSON-antwoord van `/api-check` correct |
 | **L9/L10** Zelfstandige headers | **Bevestigd** | De firmware bouwt en draait |
 | **H2** Resetreden | **Deels** | `ESP_RST_USB` correct herkend en niet meegeteld. Power-on nog niet getest |
-| **H1** Body volledig lezen | **Deels** | Beide formulieren verwerkt. De te lange body is niet beproefd |
-| **C1** URL-decoding | **Deels** | Het decodeerpad liep en bedierf niets. Of er tekens in zaten die decodering nodig hadden, is niet vastgesteld |
+| **H1** Body volledig lezen | **Deels** | Beide formulieren verwerkt, en de gecodeerde vorm van het wachtwoord was langer dan de waarde zelf. Een body die de buffer overschrijdt is niet beproefd |
+| **C1** URL-decoding | **Bevestigd** | Wifiwachtwoord met spaties én procenten. Zonder de fix waren die als `%20` en `%25` in NVS beland en had de verbinding gefaald |
 | **M3** Verplicht telemetrieveld | **Deels** | Geldige telemetrie wordt niet ten onrechte afgewezen. Het foutpad is niet beproefd |
 | **C2** Reconnect-backoff | **Niet getest** | Er is geen verbinding weggevallen |
 | **H3** Geweigerde scan | **Niet getest** | Er is niet twee keer snel gescand |
@@ -638,7 +638,14 @@ nadat de client het accesspoint verliet.
 
 De eerste meting was `community_power_result_kw = -3,171`, ruim onder de drempel van
 -0,05 kW. Het apparaat meldde "Community is importing power" en zette de ring op geel. De
-drempellogica klopt dus ook met echte waarden.
+drempellogica klopt dus ook met echte waarden. Latere metingen lopen op tot -9,114 kW, met
+telkens hetzelfde oordeel.
+
+**C1 verdient een aparte vermelding.** Het wachtwoord bevatte spaties én procenttekens. Dat
+is het strengste geval: de browser codeert een spatie als `%20` en een procentteken als
+`%25`. Zonder decoder komt de letterlijke tekst `%20` en `%25` in NVS terecht en mislukt de
+verbinding, met als enige melding "Could not connect. Check password". Het apparaat verbindt
+en haalt telemetrie op, dus de decoder werkt op het lastigste teken dat er is.
 
 ---
 
