@@ -71,7 +71,7 @@ punt van de hele lijst.
 - [x] **M6** `app_main` kan oneindig blijven wachten — opgelost, stilte-timeout
 - [ ] **M7** "Ring uit" betekent twee verschillende dingen
 - [x] **M8** Twee responses op één request in het API-check pad — opgelost
-- [ ] **M9** De ESP-IDF-versie ligt nergens vast
+- [x] **M9** De ESP-IDF-versie ligt nergens vast — opgelost, vastgelegd op v6.1
 
 ### Klein
 - [x] **L1** Geen tests, geen CI, geen static analysis — opgezet
@@ -603,12 +603,50 @@ door deze opruiming.
 niet `release-v5.5`, want die tag beweegt). Zolang dat niet gebeurt, bouwt iedereen net iets
 anders en is "het werkt bij mij" geen uitspraak over iets.
 
+> **Opgelost: het project mikt op ESP-IDF v6.1.**
+>
+> Espressif geeft elke release 30 maanden ondersteuning: 12 maanden service, daarna 18 maanden
+> maintenance waarin alleen ernstige en security-problemen nog een fix krijgen. Sinds juli 2020
+> is er geen apart LTS-begrip meer; alle releases krijgen dezelfde termijn.
+>
+> Dat maakt de keuze eenduidig. v5.5 kwam uit in juli 2025 en is **sinds ~21 juli 2026 uit de
+> service-periode**; ondersteuning loopt tot ~januari 2028, maar alleen nog voor ernstige zaken.
+> Espressif raadt voor een nieuw project expliciet een release "in service" aan. v6.1 is de
+> huidige stable en zit tot medio 2027 in service, met ondersteuning tot begin 2029.
+>
+> Er zat één afweging tegenin: v6.1 is weken oud en dus een `.0`. Die weegt hier minder zwaar,
+> omdat er nog niets is uitgeleverd, omdat de oorspronkelijke firmware al op 6.1 is ontwikkeld,
+> en omdat er inmiddels CI en een testboard zijn om een regressie op te vangen.
+>
+> Vastgelegd op drie plekken:
+>
+> - `README.md` noemt v6.1 als doelversie, met de normale ESP-IDF-installatie als bouwweg.
+> - `.github/workflows/ci.yml` gebruikt de **vaste** tag `espressif/idf:v6.1`. Niet
+>   `release-v6.1`: die beweegt mee met de branch en verandert de toolchain onder je handen.
+> - `tools/idfenv.sh` is gedegradeerd tot terugvaloptie en waarschuwt als de gevonden IDF niet
+>   v6.1 is. PlatformIO levert 5.5.x, dus een build langs die weg bewijst niets over de
+>   doelversie.
+>
+> **De CI controleert nu ook of de configuratie echt is toegepast.** `sdkconfig.defaults` wordt
+> stilzwijgend genegeerd voor elk symbool dat de gebruikte ESP-IDF niet kent. Precies zo raakte
+> `CONFIG_ESP_MAIN_TASK_STACK_SIZE` bij L3 al een keer zoek, en de default van 3584 bytes is
+> veel te klein voor een `app_main` die een TLS-request doet. De buildjob vergelijkt daarom de
+> gegenereerde `sdkconfig` met vier verwachte waarden en faalt als er één ontbreekt.
+>
+> **Gevolg voor de hardwaretests:** v6 gebruikt picolibc waar v5 newlib gebruikte. De zeven
+> bevindingen die op 2026-08-28 op hardware zijn bevestigd, zijn bevestigd op een build met
+> ESP-IDF 5.5.5. Die tests moeten opnieuw op een v6.1-build.
+
 ---
 
 ## Bevestigd op hardware
 
 **Board:** Seeed Studio XIAO ESP32-S3 Sense · ESP32-S3 rev v0.2 · 8 MB flash · 8 MB PSRAM
-**Datum:** 2026-08-28 · **Firmware:** deze branch, gebouwd met ESP-IDF 5.5.5
+**Datum:** 2026-08-28 · **Firmware:** deze branch, gebouwd met **ESP-IDF 5.5.5**
+
+> Deze ronde is gedaan vóór het besluit bij M9 om op v6.1 te bouwen. De uitkomsten blijven
+> geldig als bewijs dat de fixes werken, maar niet als bewijs voor de doelversie: v6 gebruikt
+> picolibc waar v5 newlib gebruikte. Herhaal deze ronde op een v6.1-build.
 **Uitgevoerd:** eerste boot, provisioning via het portaal, wifi verbinden, API-sleutels
 invoeren, token ophalen en twee telemetrierondes.
 

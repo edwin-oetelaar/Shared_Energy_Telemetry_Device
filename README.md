@@ -133,7 +133,15 @@ zet die klok terug. De teller meet dus stilte, geen verstreken tijd.
 
 ## Bouwen
 
-Installeer en activeer een ESP-IDF-omgeving. Draai daarna:
+Dit project bouwt tegen **ESP-IDF v6.1**. Die versie staat vast: de CI bouwt tegen de
+vaste containertag `espressif/idf:v6.1`.
+
+Installeer ESP-IDF v6.1 volgens de handleiding van Espressif. Activeer de omgeving en
+bouw:
+
+```bash
+. $IDF_PATH/export.sh
+```
 
 ```bash
 idf.py build
@@ -156,9 +164,10 @@ Het project haalt twee afhankelijkheden op met de ESP-IDF Component Manager:
 `sdkconfig.defaults` kiest een ESP32-S3 met 8 MB flash en een partitie-indeling met twee
 OTA-slots.
 
-De ESP-IDF-versie ligt nog niet vast. De configuratie die eerder in Git stond kwam uit
-ESP-IDF 6.1.0, terwijl de CI tegen 5.5 bouwt. Zie bevinding M9 in
-[docs/REVIEW.md](docs/REVIEW.md).
+Kies bewust wanneer je naar een nieuwere ESP-IDF gaat. Bouw en flash daarna een board, en
+loop de tests uit [docs/REVIEW.md](docs/REVIEW.md) opnieuw na. Een nieuwe hoofdversie kan
+onderliggende onderdelen vervangen: v6 gebruikt bijvoorbeeld picolibc waar v5 newlib
+gebruikte.
 
 ## Tests en controles
 
@@ -189,15 +198,18 @@ idf.py -p /dev/ttyACM0 flash monitor
 
 Sluit de seriële monitor af met `Ctrl+]`.
 
-### Werken met de ESP-IDF van PlatformIO
+### Terugvaloptie: de ESP-IDF van PlatformIO
 
-PlatformIO gebruikt `idf.py` zelf niet. De Python-omgeving die PlatformIO
-meelevert, mist daarom drie modules die `idf.py` nodig heeft:
-`esp_idf_monitor`, `pyyaml` en `esptool`. Er is geen omgeving die je kunt
-activeren waarmee `idf.py` het toch doet.
+Gebruik deze weg alleen als je geen eigen ESP-IDF hebt staan en snel iets wilt bouwen.
 
-Gebruik in dat geval `tools/idfenv.sh`. Dat script stuurt CMake en ninja
-rechtstreeks aan:
+**Let op: PlatformIO levert ESP-IDF 5.5.x, niet de v6.1 waar dit project op mikt.** Een
+build langs deze weg bewijst dus niet dat de firmware op de doelversie werkt.
+
+PlatformIO gebruikt `idf.py` zelf niet. De Python-omgeving die PlatformIO meelevert, mist
+daarom drie modules die `idf.py` nodig heeft: `esp_idf_monitor`, `pyyaml` en `esptool`. Er
+is geen omgeving die je kunt activeren waarmee `idf.py` het toch doet.
+
+`tools/idfenv.sh` stuurt in dat geval CMake en ninja rechtstreeks aan:
 
 ```bash
 . tools/idfenv.sh
@@ -284,7 +296,7 @@ main/
 docs/REVIEW.md                Review vóór productie, met werklijst
 docs/energiegemeenschap-wilhelminaweg.md   Het project waar dit apparaat bij hoort
 test/                         Host-tests voor de modules zonder ESP-IDF
-tools/idfenv.sh               Bouwomgeving als je de ESP-IDF van PlatformIO gebruikt
+tools/idfenv.sh               Terugvaloptie: bouwen met de ESP-IDF van PlatformIO (5.5.x)
 tools/monitor.py              Seriële monitor met tijdstempels
 ```
 

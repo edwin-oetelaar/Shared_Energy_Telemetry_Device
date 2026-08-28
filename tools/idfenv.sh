@@ -3,11 +3,14 @@
 #
 #      . tools/idfenv.sh
 #
-#  Why this exists: PlatformIO does not use idf.py, so the Python environment
-#  it ships is incomplete for it - esp_idf_monitor, pyyaml and esptool are
-#  missing. Driving CMake and ninja directly works around that. If you install
-#  ESP-IDF the normal way (git clone + install.sh), use its own export.sh
-#  instead and ignore this file; idf.py then works in full.
+#  This is the fallback route. The project targets ESP-IDF v6.1, and PlatformIO
+#  ships 5.5.x - so a build made this way does not prove the firmware works on
+#  the version that ships. Install ESP-IDF v6.1 the normal way and use its own
+#  export.sh; idf.py then works in full, monitor included.
+#
+#  Why this file exists at all: PlatformIO does not use idf.py, so the Python
+#  environment it ships is incomplete for it - esp_idf_monitor, pyyaml and
+#  esptool are missing. Driving CMake and ninja directly works around that.
 #
 #  Override any of these before sourcing if your paths differ.
 
@@ -41,7 +44,12 @@ export IDF_MAINTAINER=1
 
 export ESP_ROM_ELF_DIR="$PIO_HOME/packages/tool-esp-rom-elfs"
 
-echo "idfenv: ESP-IDF $(cat "$IDF_PATH/version.txt" 2>/dev/null) from $IDF_PATH"
+idf_version=$(cat "$IDF_PATH/version.txt" 2>/dev/null)
+echo "idfenv: ESP-IDF $idf_version from $IDF_PATH"
+case "$idf_version" in
+    v6.1*|6.1*) ;;
+    *) echo "idfenv: WARNING - this project targets ESP-IDF v6.1, see README.md" >&2 ;;
+esac
 echo "idfenv: configure with  cmake -S . -B build -G Ninja -DPYTHON=\"\$IDF_PYTHON_ENV_PATH/bin/python\" -DPYTHON_DEPS_CHECKED=1"
 echo "idfenv: build with       ninja -C build"
 echo "idfenv: flash with       ESPPORT=/dev/ttyACM0 ninja -C build flash"
