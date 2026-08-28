@@ -3,10 +3,6 @@
 Dit document beschrijft het project waar dit apparaat bij hoort. Het legt uit wat de
 energiegemeenschap wil bereiken en hoe zij dat doet.
 
-De tekst volgt de principes van Simplified Technical English, in het Nederlands: korte
-zinnen, actieve vorm, tegenwoordige tijd, en één vaste term per begrip. De woordenlijst
-onderaan legt die termen vast.
-
 ---
 
 ## 1. Doel
@@ -72,7 +68,15 @@ De ontheffing geeft de gemeenschap twee mogelijkheden:
 - De deelnemers gebruiken het zelfleveringsplatform van OM.
 - De deelnemers hanteren een eigen tarief voor de zonnestroom die zij delen.
 
-## 8. Betrokken partijen
+## 8. Pilot voor de netbeheerder, volgende stap voor de deelnemers
+
+Liander voert het project uit als pilot. De deelnemers zien het anders. Voor hen is de
+energiegemeenschap een volgende stap in de ontwikkeling van de energiemarkt.
+
+Die verwachting blijkt uit de investeringen. Een deelnemer koopt een thuisbatterij niet
+voor de duur van een proef.
+
+## 9. Betrokken partijen
 
 | Partij | Rol |
 | --- | --- |
@@ -83,7 +87,7 @@ De ontheffing geeft de gemeenschap twee mogelijkheden:
 | Manfred van der Voort (ICR3ATE) | Bedenker van het concept, met de batterijenbuurt |
 | ACM | Verleent de ontheffing voor de pilot |
 
-## 9. Tijdlijn
+## 10. Tijdlijn
 
 | Periode | Gebeurtenis |
 | --- | --- |
@@ -91,7 +95,7 @@ De ontheffing geeft de gemeenschap twee mogelijkheden:
 | Eind 2024 | Het initiatief voor de energiegemeenschap start |
 | Augustus 2025 | De deelnemers brengen de installaties en het gebruik in kaart |
 
-## 10. Status in augustus 2025
+## 11. Status in augustus 2025
 
 De deelnemers zetten de puntjes op de i. Zij brengen twee dingen in kaart:
 
@@ -100,7 +104,7 @@ De deelnemers zetten de puntjes op de i. Zij brengen twee dingen in kaart:
 
 Die twee gegevens bepalen hoeveel energie de gemeenschap werkelijk kan delen.
 
-## 11. De rol van dit apparaat
+## 12. De rol van dit apparaat
 
 Dit apparaat maakt de toestand van de gemeenschap zichtbaar in huis. Het haalt elke minuut
 de meetwaarden op bij de Energyboxx-API en toont het resultaat op een ledring:
@@ -116,9 +120,7 @@ of een auto te laden. Zo verschuift het gebruik naar de momenten waarop de gemee
 zelf energie over heeft. De technische beschrijving van het apparaat staat in de
 [README](../README.md).
 
-## 12. Woordenlijst
-
-De tekst gebruikt deze termen steeds in dezelfde betekenis.
+## 13. Woordenlijst
 
 | Term | Betekenis |
 | --- | --- |
@@ -134,19 +136,6 @@ De tekst gebruikt deze termen steeds in dezelfde betekenis.
 | Ontheffing | Toestemming van de ACM om af te wijken van de standaardregels |
 | Pilot | Een proef waarin de gemeenschap de opzet in de praktijk beproeft |
 
----
+## 14. Contact
 
-## Openstaand punt
-
-De brontekst eindigt halverwege een zin:
-
-> "Het project is voor Liander een Pilot, maar voor ons een …"
-
-De zin is niet afgemaakt en dit document vult hem niet in. Het punt lijkt te zijn dat de
-gemeenschap het project anders ziet dan de netbeheerder: voor Liander is het een proef,
-voor de bewoners iets blijvends. Vul de bedoelde formulering aan, dan neem ik hem over.
-
----
-
-*Bron: projectbeschrijving Energiegemeenschap Wilhelminaweg. Herschreven op 2026-08-28 in
-STE-stijl. De feiten, namen en data komen uit de brontekst; er is niets aan toegevoegd.*
+Stel vragen over het project aan Paddy Noë, paddy@wilhelminaweg5.nl.
