@@ -85,6 +85,7 @@ punt van de hele lijst.
 - [x] **L9** Headers zijn niet zelfstandig — opgelost, was een harde buildbreker op IDF 5.5.5
 - [x] **L10** `is_valid_credentials()` zonder `void` — opgelost
 - [ ] **L11** Client secret in een `type=text`-veld; `data` niet `static`
+- [ ] **L12** Losse `printf` in de HTTP-eventhandler vervuilt de log
 
 ---
 
@@ -574,6 +575,13 @@ Geen van deze breekt iets, samen bepalen ze wel hoe het project over een jaar aa
 - **L10 — `bool energyboxx_api_is_valid_credentials();`** zonder `void` is geen prototype; de
   compiler controleert de argumenten niet. **Opgelost** — kwam samen met L9 naar boven als
   `conflicting types ... have '_Bool()'`, omdat de compiler zonder `bool` terugviel op `int`.
+- **L12 — Losse `printf` in de HTTP-eventhandler vervuilt de log.**
+  `main/src/energyboxx_api.c:57` doet een `printf("\n")` bij elk ontvangen datastuk, buiten de
+  `if/else` om. In de seriële log staan daardoor drie lege regels vóór elk antwoord. Gezien op
+  hardware op 2026-08-28. Het is bovendien een `printf` per chunk, buiten het logsysteem om,
+  dus zonder tag en zonder niveau. **Fix:** weghalen, of vervangen door één `ESP_LOGD` met het
+  aantal ontvangen bytes.
+
 - **L11 — Client secret in een `type=text`-veld** (`main/src/wifi_web.c:143`), terwijl het
   wifi-wachtwoord wél op `password` staat. En `energyboxx_data_t data` in `main/main.c:19` is niet
   `static`.
@@ -594,6 +602,43 @@ door deze opruiming.
 **Fix:** kies een versie, zet hem in de README én in de CI-containertag (een exacte patchrelease,
 niet `release-v5.5`, want die tag beweegt). Zolang dat niet gebeurt, bouwt iedereen net iets
 anders en is "het werkt bij mij" geen uitspraak over iets.
+
+---
+
+## Bevestigd op hardware
+
+**Board:** Seeed Studio XIAO ESP32-S3 Sense · ESP32-S3 rev v0.2 · 8 MB flash · 8 MB PSRAM
+**Datum:** 2026-08-28 · **Firmware:** deze branch, gebouwd met ESP-IDF 5.5.5
+**Uitgevoerd:** eerste boot, provisioning via het portaal, wifi verbinden, API-sleutels
+invoeren, token ophalen en twee telemetrierondes.
+
+De kolom zegt wat de test **bewijst**, niet wat er is opgelost.
+
+| Bevinding | Status | Grondslag |
+| --- | --- | --- |
+| **C4** API-setup pagina | **Bevestigd** | De pagina rendert en is bruikbaar; sleutels ingevoerd en geaccepteerd |
+| **M1** Netwerklijst als JSON | **Bevestigd** | De browser parseert de lijst en een netwerk is gekozen |
+| **C3** Lock op de tokenstate | **Bevestigd** | `setup` en `fetch_token` vanuit de httpd-taak, daarna `skipping fetch` vanuit de wachtlus. Geen deadlock, geen corruptie |
+| **M4** Jitter op het interval | **Bevestigd** | Gemeten interval 71,8 s. Zonder jitter zou dat exact 60,0 s zijn |
+| **M8** Eén antwoord per request | **Bevestigd** | Het portaal verwerkt het JSON-antwoord van `/api-check` correct |
+| **L9/L10** Zelfstandige headers | **Bevestigd** | De firmware bouwt en draait |
+| **H2** Resetreden | **Deels** | `ESP_RST_USB` correct herkend en niet meegeteld. Power-on nog niet getest |
+| **H1** Body volledig lezen | **Deels** | Beide formulieren verwerkt. De te lange body is niet beproefd |
+| **C1** URL-decoding | **Deels** | Het decodeerpad liep en bedierf niets. Of er tekens in zaten die decodering nodig hadden, is niet vastgesteld |
+| **M3** Verplicht telemetrieveld | **Deels** | Geldige telemetrie wordt niet ten onrechte afgewezen. Het foutpad is niet beproefd |
+| **C2** Reconnect-backoff | **Niet getest** | Er is geen verbinding weggevallen |
+| **H3** Geweigerde scan | **Niet getest** | Er is niet twee keer snel gescand |
+| **M6** Stilte-timeout | **Niet getest** | De provisioning was binnen vijftien minuten klaar |
+| **M4** Backoff bij storing | **Niet getest** | Er is geen API-aanvraag mislukt |
+
+Wat verder werkte zonder dat het een bevinding was: de captive portal-detectie van Windows
+(`/connecttest.txt` krijgt een redirect), de DNS-omleiding, het valideren van het
+servercertificaat via de bundel, het opslaan in NVS, en het omschakelen naar station-modus
+nadat de client het accesspoint verliet.
+
+De eerste meting was `community_power_result_kw = -3,171`, ruim onder de drempel van
+-0,05 kW. Het apparaat meldde "Community is importing power" en zette de ring op geel. De
+drempellogica klopt dus ook met echte waarden.
 
 ---
 
