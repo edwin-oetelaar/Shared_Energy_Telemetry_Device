@@ -84,6 +84,20 @@ static const struct {
     { ESP_RST_WDT,      false },
     { ESP_RST_BROWNOUT, false },
     { ESP_RST_SW,       false },
+
+    //  Seen on the XIAO ESP32-S3: the host toggling the reset line over the
+    //  native USB port reports ESP_RST_USB. That is a developer flashing or
+    //  resetting the board, not somebody pulling a plug, so it does not count.
+    //  JTAG is the same class of event.
+    { ESP_RST_USB,      false },
+    { ESP_RST_JTAG,     false },
+
+    //  Firmware failing, like a panic or a watchdog bite.
+    { ESP_RST_CPU_LOCKUP, false },
+
+    //  A power problem, but not a deliberate power cycle.
+    { ESP_RST_PWR_GLITCH, false },
+
     { ESP_RST_UNKNOWN,  false }
 };
 

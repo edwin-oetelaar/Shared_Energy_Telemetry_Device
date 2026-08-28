@@ -178,13 +178,63 @@ De opzet staat in `.github/workflows/ci.yml`.
 
 ## Flashen en meekijken
 
-Sluit het board aan. Vervang `PORT` door de seriële poort:
+Sluit het board aan met de **native USB-poort** van de ESP32-S3. Op een XIAO
+ESP32-S3 is dat de enige poort. Het board meldt zich dan als `/dev/ttyACM0`.
+
+Met een gewone ESP-IDF-installatie gaat flashen zo:
 
 ```bash
-idf.py -p PORT flash monitor
+idf.py -p /dev/ttyACM0 flash monitor
 ```
 
 Sluit de seriële monitor af met `Ctrl+]`.
+
+### Werken met de ESP-IDF van PlatformIO
+
+PlatformIO gebruikt `idf.py` zelf niet. De Python-omgeving die PlatformIO
+meelevert, mist daarom drie modules die `idf.py` nodig heeft:
+`esp_idf_monitor`, `pyyaml` en `esptool`. Er is geen omgeving die je kunt
+activeren waarmee `idf.py` het toch doet.
+
+Gebruik in dat geval `tools/idfenv.sh`. Dat script stuurt CMake en ninja
+rechtstreeks aan:
+
+```bash
+. tools/idfenv.sh
+```
+
+Configureer de build één keer:
+
+```bash
+cmake -S . -B build -G Ninja -DPYTHON="$IDF_PYTHON_ENV_PATH/bin/python" -DPYTHON_DEPS_CHECKED=1
+```
+
+Bouwen en flashen:
+
+```bash
+ninja -C build
+```
+
+```bash
+ESPPORT=/dev/ttyACM0 ninja -C build flash
+```
+
+Meekijken met de logs:
+
+```bash
+python tools/monitor.py /dev/ttyACM0
+```
+
+`tools/monitor.py` toont dezelfde regels als `idf.py monitor`, met een
+tijdstempel per regel. Het script vertaalt geen backtrace-adressen naar
+functienamen. Installeer daarvoor ESP-IDF op de gewone manier.
+
+Geef een aantal seconden mee om vanzelf te stoppen. Voeg `reset` toe om het
+board eerst te herstarten:
+
+```bash
+python tools/monitor.py /dev/ttyACM0 30 reset
+```
 
 ## Configuratie
 
@@ -234,6 +284,8 @@ main/
 docs/REVIEW.md                Review vóór productie, met werklijst
 docs/energiegemeenschap-wilhelminaweg.md   Het project waar dit apparaat bij hoort
 test/                         Host-tests voor de modules zonder ESP-IDF
+tools/idfenv.sh               Bouwomgeving als je de ESP-IDF van PlatformIO gebruikt
+tools/monitor.py              Seriële monitor met tijdstempels
 ```
 
 ## Verloop na het opstarten
