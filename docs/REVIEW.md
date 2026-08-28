@@ -719,8 +719,14 @@ en haalt telemetrie op, dus de decoder werkt op het lastigste teken dat er is.
 **Datum:** 2026-08-28, later op de dag · **Firmware:** deze branch op commit `79405b3`,
 gebouwd met **ESP-IDF v6.1** · zelfde board.
 
-De opgeslagen credentials uit de eerste ronde stonden nog in NVS, dus deze boot sloeg de
-provisioning over en ging meteen verbinden en telemetrie ophalen.
+Deze ronde bestond uit twee delen. Eerst een boot met de credentials uit de eerste ronde nog
+in NVS, waarbij de provisioning werd overgeslagen. Daarna is NVS gewist en is de provisioning
+volledig opnieuw doorlopen via het portaal.
+
+Voor C4, M1 en M8 is de grondslag dat de provisioning van begin tot eind is voltooid: zonder
+een leesbare pagina, een bruikbare netwerklijst en één verwerkbaar antwoord op `/api-check`
+komt een gebruiker niet aan de andere kant uit. Dat is een gevolgtrekking uit het resultaat,
+geen regel uit de log.
 
 | Bevinding | Status op v6.1 | Grondslag |
 | --- | --- | --- |
@@ -728,7 +734,11 @@ provisioning over en ging meteen verbinden en telemetrie ophalen.
 | **H2** Resetreden | **Bevestigd** | `Reset reason 11, counts as user request: no` |
 | **M3** Verplicht telemetrieveld | **Bevestigd** | Geldige telemetrie doorgelaten, alle velden geparseerd |
 | **L9/L10** Zelfstandige headers | **Bevestigd** | Bouwt en draait op v6.1, geen waarschuwingen uit `main/` |
-| **C1, C3, C4, M1, M8** | **Niet herhaald** | Deze paden lopen alleen tijdens provisioning, en die werd overgeslagen. Wis NVS om ze opnieuw te beproeven |
+| **C1** URL-decoding | **Bevestigd** | Provisioning met een wachtwoord met spaties én procenttekens, en het apparaat verbindt |
+| **C4** API-setup pagina | **Bevestigd** | De pagina rendert en accepteert de sleutels; daarna haalt het apparaat telemetrie op |
+| **M1** Netwerklijst als JSON | **Bevestigd** | Het netwerk is uit de lijst gekozen, dus de browser parseerde hem |
+| **M8** Eén antwoord per request | **Bevestigd** | Het portaal verwerkt het antwoord van `/api-check` en gaat door naar de volgende stap |
+| **C3** Lock op de tokenstate | **Niet herhaald** | Provisioning verliep binnen dertig seconden, dus de tweede taak vroeg geen token op. Er was geen overlap om te beproeven |
 | **M4** Jitter | **Niet herhaald** | Er is maar één telemetrieronde waargenomen |
 
 Wat de overstap naar picolibc **niet** brak: de TLS-handshake vanuit `app_main`, het ophalen
@@ -750,6 +760,17 @@ GPIO 44 als uitgang voor de wifi-led. Op dit board hangt er geen bridge aan, dus
 strijd om de lijn — maar het conflict is nu zwart-op-wit uit de IDF zelf.
 
 **L12 blijft ongewijzigd zichtbaar:** drie lege regels vóór elk antwoord, ook op picolibc.
+
+**Een valse start om te onthouden.** De eerste poging tot herprovisioning mislukte met
+`reason=15`, een 4-way handshake timeout. Omdat dezelfde code op v5.5.5 wél werkte en er
+procenttekens in het wachtwoord zaten, lag een decodeerfout door de versiesprong voor de hand.
+Dat bleek onjuist: er was een typefout in het wachtwoord. `reason=15` betekent letterlijk
+"de sleutel klopt niet", en dat is precies wat een typefout ook oplevert.
+
+Twee dingen zijn daar toch uit gekomen. `httpd_query_key_value` is in v6.1 nagelezen in de
+broncode en decodeert nog steeds niet, dus de dubbele-decodering waar de verdenking op viel
+bestaat niet. En het gedrag van het reconnect-schema tijdens die mislukte pogingen leverde
+**M10** op.
 
 ---
 
