@@ -46,7 +46,7 @@ over een open access point.
 - [ ] **C5** Secrets gaan open door de lucht tijdens provisioning
 
 ### Hoog
-- [ ] **H1** POST-body wordt in één keer gelezen in een te kleine buffer
+- [x] **H1** POST-body wordt in één keer gelezen in een te kleine buffer — opgelost
 - [ ] **H2** Panic-op-alles plus wis-na-3-boots is een gevaarlijke combinatie
 - [x] **H3** Een webrequest kan het apparaat laten crashen — opgelost, foutcode i.p.v. abort
 - [ ] **H4** Geen OTA, terwijl de partitietabel er twee slots voor heeft
@@ -60,7 +60,7 @@ over een open access point.
 - [ ] **M5** NVS-schrijfactie in de event handler
 - [ ] **M6** `app_main` kan oneindig blijven wachten
 - [ ] **M7** "Ring uit" betekent twee verschillende dingen
-- [ ] **M8** Twee responses op één request in het API-check pad
+- [x] **M8** Twee responses op één request in het API-check pad — opgelost
 
 ### Klein
 - [ ] **L1** Geen tests, geen CI, geen static analysis
@@ -236,6 +236,22 @@ gebruiker een onverklaarbare verbindingsfout.
 **Fix:** buffer op `req->content_len` baseren (met bovengrens) en in een lus lezen tot alles
 binnen is.
 
+> **Opgelost.** Eén helper `s_receive_body()` leest nu beide formulieren: hij weigert een body
+> die niet past in plaats van hem stil af te kappen, en leest door tot `content_len` bytes
+> binnen zijn. Een socket-timeout wordt hooguit drie keer verdragen — de server heeft één
+> worker, dus een client die bytes zit te druppelen mag hem niet vasthouden.
+>
+> De veldbuffers zijn op de **gecodeerde** lengte gedimensioneerd (3× de waarde, want elke byte
+> kan `%XX` worden). Dat was een tweede, verborgen versie van hetzelfde probleem: een SSID als
+> `a b c d e f g h i j k l m n o p` is 31 tekens maar 61 gecodeerd, en werd daarvoor door
+> `httpd_query_key_value()` afgekapt tot "Missing ssid" — een volstrekt legitiem netwerk dat
+> niet te kiezen was. Na het decoderen wordt de echte lengte gecontroleerd (32 voor de SSID,
+> 63 voor het wachtwoord) en te lang wordt geweigerd in plaats van later stilletjes
+> ingekort. Ook de returncode van het wachtwoordveld wordt nu bekeken: ontbreken mag (open
+> netwerk), afgekapt worden niet.
+>
+> Gebouwd voor esp32s3 op ESP-IDF 5.5.5. Niet op hardware getest.
+
 ### H2 — Panic-op-alles plus wis-na-3-boots is een gevaarlijke combinatie
 `main/main.c` (34× `ESP_ERROR_CHECK`), `main/main.c:206-214`
 
@@ -382,6 +398,14 @@ aanroeper te doen, waar het antwoord thuishoort; de twee bestaande paden doen he
 
 **Fix:** `parse_api_credentials()` alleen laten valideren en een foutcode teruggeven; het
 antwoord aan de aanroeper laten, die dat toch al doet.
+
+> **Opgelost.** `parse_api_credentials()` stuurt niets meer — het bevat geen enkele
+> `httpd_resp`-aanroep. Het leest, decodeert, controleert de lengtes tegen de buffers van de
+> aanroeper en geeft alleen een foutcode terug; `api_check_post_handler()` is de enige die
+> antwoordt, in JSON, precies één keer. Daarmee is ook het aparte decodeerblok dat bij C1 in
+> de aanroeper stond weer opgeruimd: dat zit nu waar het hoort.
+>
+> Gebouwd voor esp32s3 op ESP-IDF 5.5.5. Niet op hardware getest.
 
 ---
 

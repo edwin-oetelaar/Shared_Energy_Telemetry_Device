@@ -1,3 +1,6 @@
+#include <assert.h>
+#include <string.h>
+
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
@@ -10,7 +13,68 @@
 
 static const char *TAG = "[wifi_web]";
 
+//  A percent-encoded value is at worst three times its own length, so every
+//  buffer that holds a field as it arrives is sized for the encoded form and
+//  shrunk by uri_decode () afterwards. The body buffers hold the whole form:
+//  the fields plus their names and separators, with room to spare.
+
+#define WIFI_FIELD_SSID_MAX      (3 * 32 + 1)
+#define WIFI_FIELD_PASSWORD_MAX  (3 * 64 + 1)
+#define WIFI_BODY_MAX            384
+
+#define API_FIELD_ID_MAX         (3 * 128)
+#define API_FIELD_SECRET_MAX     (3 * 256)
+#define API_BODY_MAX             1280
+
+//  How often a socket timeout is tolerated while reading one body. Bounded on
+//  purpose: the server has a single worker, so a client that dribbles bytes
+//  must not be able to hold it forever.
+
+#define BODY_RECV_TIMEOUT_RETRIES  3
+
 static httpd_handle_t s_server = NULL;
+
+//  --------------------------------------------------------------------------
+//  Read a complete request body and terminate it. httpd_req_recv () may return
+//  less than was asked for, so this keeps reading until content_len bytes have
+//  arrived. A body that does not fit is refused rather than silently cut in
+//  half, which is what used to turn a long password into a wrong one.
+
+static esp_err_t
+    s_receive_body (httpd_req_t *req, char *body, size_t body_size)
+{
+    assert (req);               //  Caller's contract, not client input
+    assert (body);
+    assert (body_size > 1);
+
+    size_t expected = req->content_len;
+
+    if (expected == 0)
+        return ESP_ERR_INVALID_ARG;         //  Nothing to parse
+    if (expected > body_size - 1)
+        return ESP_ERR_INVALID_SIZE;        //  More than this form can hold
+
+    size_t received = 0;
+    int timeouts = 0;
+
+    while (received < expected) {
+        int chunk = httpd_req_recv (req, body + received, expected - received);
+
+        if (chunk == HTTPD_SOCK_ERR_TIMEOUT) {
+            if (++timeouts > BODY_RECV_TIMEOUT_RETRIES)
+                return ESP_ERR_TIMEOUT;
+            continue;
+        }
+        if (chunk <= 0)
+            return ESP_FAIL;                //  Connection closed or broken
+
+        received += (size_t) chunk;
+    }
+    body [received] = '\0';
+
+    return ESP_OK;
+}
+
 
 static esp_err_t favicon_get_handler(httpd_req_t *req)
 {
@@ -234,25 +298,29 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 
 static esp_err_t connect_post_handler(httpd_req_t *req)
 {
-    char body[160] = {0};
+    char body[WIFI_BODY_MAX] = {0};
+    char ssid[WIFI_FIELD_SSID_MAX] = {0};
+    char password[WIFI_FIELD_PASSWORD_MAX] = {0};
 
-    int received = httpd_req_recv(req, body, sizeof(body) - 1);
-    if (received <= 0) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No body");
+    esp_err_t err = s_receive_body(req, body, sizeof(body));
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Could not read the form data");
         return ESP_FAIL;
     }
-
-    body[received] = '\0';
-
-    char ssid[33] = {0};
-    char password[65] = {0};
 
     if (httpd_query_key_value(body, "ssid", ssid, sizeof(ssid)) != ESP_OK) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing ssid");
         return ESP_FAIL;
     }
 
-    httpd_query_key_value(body, "password", password, sizeof(password));
+    //  An open network has no password field at all, which is fine. Anything
+    //  else - a truncated value in particular - is not, because a silently
+    //  shortened password is exactly the failure this fix is about.
+    esp_err_t password_err = httpd_query_key_value(body, "password", password, sizeof(password));
+    if (password_err != ESP_OK && password_err != ESP_ERR_NOT_FOUND) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Password field could not be read");
+        return ESP_FAIL;
+    }
 
     // httpd_query_key_value does not decode percent-escapes, so the values are
     // still exactly as the browser encoded them.
@@ -261,7 +329,14 @@ static esp_err_t connect_post_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    esp_err_t err = wifi_prov_connect(ssid, password);
+    // Decoded now, so these are the lengths Wi-Fi actually has to store. Too
+    // long is refused here rather than quietly cut down to size later.
+    if (strlen(ssid) == 0 || strlen(ssid) > 32 || strlen(password) > 63) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Network name or password is too long");
+        return ESP_FAIL;
+    }
+
+    err = wifi_prov_connect(ssid, password);
     if (err != ESP_OK) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Connect failed");
         return err;
@@ -345,27 +420,49 @@ esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err)
     return ESP_OK;
 }
 
+//  --------------------------------------------------------------------------
+//  Pull the two credential fields out of the body and decode them. Returns an
+//  error code and nothing else: the caller owns the response, because it
+//  answers in JSON and two responses on one request corrupt the exchange.
+
 static esp_err_t parse_api_credentials(httpd_req_t *req,
                                        char *client_id,
                                        size_t client_id_len,
                                        char *client_secret,
                                        size_t client_secret_len)
 {
-    char body[512] = {0};
+    assert (req);               //  Caller's contract, not client input
+    assert (client_id);
+    assert (client_secret);
 
-    int received = httpd_req_recv(req, body, sizeof(body) - 1);
-    if (received <= 0) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No body");
-        return ESP_FAIL;
+    char body[API_BODY_MAX] = {0};
+    char id_field[API_FIELD_ID_MAX] = {0};
+    char secret_field[API_FIELD_SECRET_MAX] = {0};
+
+    esp_err_t err = s_receive_body(req, body, sizeof(body));
+    if (err != ESP_OK) {
+        return err;
     }
 
-    body[received] = '\0';
-
-    if (httpd_query_key_value(body, "client_id", client_id, client_id_len) != ESP_OK ||
-        httpd_query_key_value(body, "client_secret", client_secret, client_secret_len) != ESP_OK) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing credentials");
-        return ESP_FAIL;
+    if (httpd_query_key_value(body, "client_id", id_field, sizeof(id_field)) != ESP_OK ||
+        httpd_query_key_value(body, "client_secret", secret_field, sizeof(secret_field)) != ESP_OK) {
+        return ESP_ERR_INVALID_ARG;
     }
+
+    if (!uri_decode(id_field) || !uri_decode(secret_field)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    size_t id_length = strlen(id_field);
+    size_t secret_length = strlen(secret_field);
+
+    if (id_length == 0 || id_length >= client_id_len ||
+        secret_length == 0 || secret_length >= client_secret_len) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    memcpy(client_id, id_field, id_length + 1);
+    memcpy(client_secret, secret_field, secret_length + 1);
 
     return ESP_OK;
 }
@@ -379,12 +476,6 @@ static esp_err_t api_check_post_handler(httpd_req_t *req)
         httpd_resp_set_type(req, "application/json");
         return httpd_resp_sendstr(req,
             "{\"ok\":false,\"message\":\"Invalid request\"}");
-    }
-
-    if (!uri_decode(client_id) || !uri_decode(client_secret)) {
-        httpd_resp_set_type(req, "application/json");
-        return httpd_resp_sendstr(req,
-            "{\"ok\":false,\"message\":\"Malformed credential encoding\"}");
     }
 
     esp_err_t err = energyboxx_api_setup(client_id, client_secret);
