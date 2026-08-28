@@ -1,5 +1,11 @@
 # Shared Energy Telemetry Device
 
+This device belongs to the Wilhelminaweg energy community in Wageningen, a group
+of households that share surplus solar energy. What that project sets out to do,
+and how, is described in
+[docs/energiegemeenschap-wilhelminaweg.md](docs/energiegemeenschap-wilhelminaweg.md)
+(in Dutch).
+
 ESP32-S3 firmware that retrieves shared-community energy data from the
 Energyboxx API and presents the current power state using an addressable LED
 ring. Wi-Fi and API credentials can be configured from a captive web portal,
