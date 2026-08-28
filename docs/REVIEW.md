@@ -47,7 +47,7 @@ over een open access point.
 
 ### Hoog
 - [x] **H1** POST-body wordt in één keer gelezen in een te kleine buffer — opgelost
-- [ ] **H2** Panic-op-alles plus wis-na-3-boots is een gevaarlijke combinatie
+- [x] **H2** Panic-op-alles plus wis-na-3-boots is een gevaarlijke combinatie — opgelost
 - [x] **H3** Een webrequest kan het apparaat laten crashen — opgelost, foutcode i.p.v. abort
 - [ ] **H4** Geen OTA, terwijl de partitietabel er twee slots voor heeft
 - [ ] **H5** Credentials liggen leesbaar in flash
@@ -267,6 +267,32 @@ opnieuw provisionen.
 **Fix:** `ESP_ERROR_CHECK` reserveren voor echt onherstelbare init-fouten; de rest loggen en
 doorgaan. En de bootteller pas ophogen ná een minimale uptime, of alleen tellen bij een schone
 power-on reset (`esp_reset_reason()`), niet bij een panic-reset.
+
+> **Opgelost, beide helften.**
+>
+> `main.c` ging van 34 naar 5 `ESP_ERROR_CHECK`-aanroepen. Wat overblijft is echt
+> onherstelbaar: NVS-init, het aanmaken van de API-lock, de GPIO-configuratie van de
+> status-LEDs, de wifi-stack en het aanmaken van de eerste task. Al het andere gaat via
+> `s_log_if_failed()` — een LED die niet brandt, een teller die niet wegschrijft, een
+> LED-ring die niet initialiseert. Zo'n apparaat is nuttiger draaiend met één kapot onderdeel
+> dan eeuwig herstartend. `status_led.c` had er ook nog drie, waaronder één in `led_ring_show()`
+> dat vanuit de telemetrietaak loopt; die geven nu een foutcode terug.
+>
+> De bootteller kijkt nu naar `esp_reset_reason()` via een tabel: alleen `ESP_RST_POWERON` en
+> `ESP_RST_EXT` tellen mee. Een panic, een watchdog-beet of een brownout is de firmware die
+> faalt, niet de gebruiker die om een reset vraagt — die tellen dus niet meer mee. Daarmee is
+> de gevaarlijke koppeling weg: een bug vroeg in `app_main` kan de configuratie van de klant
+> niet langer zelf wissen. De laatste rij van de tabel is de catch-all, dus onbekende
+> resetredenen tellen veilig níét mee.
+>
+> Het pad dat het provisioningportaal opstart is samengetrokken in
+> `start_provisioning_portal()`, die `false` teruggeeft als het AP of de webserver niet start.
+> De aanroeper wacht dan niet op een portaal dat er niet is, en het reconnect-schema van C2
+> blijft ondertussen het opgeslagen netwerk proberen.
+>
+> README bijgewerkt: die beschreef "power-cycle or reset three times" zonder onderscheid.
+>
+> Gebouwd voor esp32s3 op ESP-IDF 5.5.5. Niet op hardware getest.
 
 ### H3 — Een webrequest kan het apparaat laten crashen
 `main/src/wifi_provisioning.c:233`

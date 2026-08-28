@@ -80,9 +80,12 @@ device switches to station-only Wi-Fi mode.
 There are two ways to erase the saved Wi-Fi and Energyboxx credentials:
 
 - Hold the GPIO 17 reset button low for at least three seconds during startup.
-- Power-cycle or reset the device three times within ten seconds.
+- Power-cycle the device three times within ten seconds.
 
-After a successful ten-second boot, the rapid-boot counter is reset.
+After a successful ten-second boot, the rapid-boot counter is reset. Only a
+deliberate power cycle counts towards it: a reset caused by a firmware panic,
+a watchdog or a brownout is deliberately ignored, so a software fault cannot
+erase the stored credentials on its own.
 
 At runtime the device keeps trying to reconnect after a disconnect, following a
 backoff schedule of 0.5 s, 1 s, 2 s, 5 s, 10 s, 30 s, 60 s and then every five
