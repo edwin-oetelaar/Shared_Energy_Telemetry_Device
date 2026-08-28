@@ -53,7 +53,7 @@ over een open access point.
 - [ ] **H5** Credentials liggen leesbaar in flash
 
 ### Middel
-- [ ] **M1** SSID's worden ongeëscaped in JSON geplakt
+- [x] **M1** SSID's worden ongeëscaped in JSON geplakt — opgelost, cJSON
 - [x] **M2** `%d` met een `size_t` — opgelost
 - [x] **M3** Foutdetectie via `strstr` op de ruwe body — opgelost, structureel i.p.v. tekstueel
 - [x] **M4** Vaste retry van 10 seconden, oneindig lang — opgelost, backoff met jitter
@@ -353,6 +353,17 @@ bovendien afkappen midden in een string. Geen XSS (de pagina gebruikt `textConte
 setup die het niet doet door toedoen van een derde.
 
 **Fix:** cJSON is al een dependency — gebruik `cJSON_CreateArray()` in plaats van `snprintf`.
+
+> **Opgelost.** De netwerklijst wordt met `cJSON_CreateArray()` opgebouwd en in één keer
+> verstuurd. Een SSID wordt gekozen door wie het access point bezit en is dus invoer van
+> buiten; cJSON escapet hem in plaats van hem rauw in de structuur te plakken. De `item[128]`
+> buffer die midden in een string kon afkappen is weg.
+>
+> Blijft staan: een SSID met bytes die geen geldige UTF-8 zijn komt als vervangingsteken in de
+> browser terecht. Dat is cosmetisch — de structuur van het antwoord kan er niet meer door
+> breken, en dat was het punt.
+>
+> Gebouwd voor esp32s3 op ESP-IDF 5.5.5. Niet op hardware getest.
 
 ### M2 — `%d` met een `size_t`
 `main/src/energyboxx_api.c:164`

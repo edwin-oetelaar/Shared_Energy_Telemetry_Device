@@ -5,6 +5,8 @@
 #include "esp_log.h"
 #include "esp_wifi.h"
 
+#include "cJSON.h"
+
 #include "inc/wifi_web.h"
 #include "inc/wifi_provisioning.h"
 #include "inc/energyboxx_api.h"
@@ -392,26 +394,42 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
-    httpd_resp_set_type(req, "application/json");
-
-    httpd_resp_sendstr_chunk(req, "[");
-
-    for (int i = 0; i < count; i++) {
-        char item[128];
-
-        snprintf(item, sizeof(item),
-                 "%s{\"ssid\":\"%s\",\"rssi\":%d}",
-                 i == 0 ? "" : ",",
-                 (char *)aps[i].ssid,
-                 aps[i].rssi);
-
-        httpd_resp_sendstr_chunk(req, item);
+    //  Built with cJSON rather than glued together with snprintf. An SSID is
+    //  chosen by whoever owns the access point, so it is untrusted input: a
+    //  network named  Net","rssi":0},{"ssid":"X  used to break the structure of
+    //  this list, and one containing a quote or a backslash made the whole
+    //  network picker come up empty. cJSON escapes it instead.
+    cJSON *networks = cJSON_CreateArray();
+    if (networks == NULL) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+        return ESP_ERR_NO_MEM;
     }
 
-    httpd_resp_sendstr_chunk(req, "]");
-    httpd_resp_sendstr_chunk(req, NULL);
+    for (int i = 0; i < count; i++) {
+        cJSON *network = cJSON_CreateObject();
+        if (network == NULL) {
+            break;              //  Send what we have rather than nothing
+        }
 
-    return ESP_OK;
+        cJSON_AddStringToObject(network, "ssid", (const char *) aps[i].ssid);
+        cJSON_AddNumberToObject(network, "rssi", aps[i].rssi);
+        cJSON_AddItemToArray(networks, network);
+    }
+
+    char *body = cJSON_PrintUnformatted(networks);
+    cJSON_Delete(networks);
+
+    if (body == NULL) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+        return ESP_ERR_NO_MEM;
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    esp_err_t send_err = httpd_resp_sendstr(req, body);
+
+    cJSON_free(body);
+
+    return send_err;
 }
 
 // HTTP Error (404) Handler - Redirects all requests to the root page
