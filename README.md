@@ -94,7 +94,15 @@ blinking once the schedule reaches its ten-second step. The schedule is the
 table `s_retry_schedule` in `main/src/wifi_provisioning.c`.
 
 Failed token or telemetry requests do not stop the firmware: the energy ring is
-cleared and the API is retried after ten seconds.
+cleared and the API is retried on a backoff schedule of 10 s, 20 s, 40 s, 80 s,
+160 s and then every 5 minutes, until a request succeeds. Every wait, including
+the normal one-minute telemetry interval, is spread by up to a fifth so a fleet
+that booted together does not keep asking together. The schedule is the table
+`s_api_retry_delay_ms` in `main/main.c`.
+
+If nobody uses the provisioning portal for fifteen minutes, the device restarts
+and tries its saved credentials again. Any page or action in the portal resets
+that clock, so it measures silence rather than elapsed time.
 
 ## Building
 
@@ -153,11 +161,23 @@ The principal prototype settings are defined near the top of `main/main.c`:
 | --- | --- | --- |
 | `BRIGHTNESS_PERCENTAGE` | `10.0` | LED-ring brightness |
 | `POWER_BALANCE_DEADBAND_KW` | `0.05` | Balanced-power threshold |
-| `API_RETRY_DELAY_MS` | `10000` | Delay after an API failure |
+| `TELEMETRY_INTERVAL_MS` | `60000` | Time between telemetry requests |
+| `WIFI_WAIT_POLL_MS` | `10000` | How often to check whether Wi-Fi is back |
 | `RESET_HOLD_MS` | `3000` | Reset-button hold duration |
 
+Three schedules are tables rather than single values, so the whole policy is
+visible at a glance:
+
+| Table | File | Governs |
+| --- | --- | --- |
+| `s_api_retry_delay_ms` | `main/main.c` | Backoff after a failed API round |
+| `s_retry_schedule` | `main/src/wifi_provisioning.c` | Wi-Fi reconnect attempts |
+| `s_reset_reason` | `main/main.c` | Which resets count towards the credential wipe |
+
 The Energyboxx token and telemetry URLs, token refresh margin, and response
-buffer size are defined in `main/src/energyboxx_api.c`.
+buffer size are defined in `main/src/energyboxx_api.c`. The provisioning
+silence timeout is `PROVISIONING_SILENCE_TIMEOUT_MS` in
+`main/src/wifi_provisioning.c`.
 
 `main/inc/secrets.h` is ignored by Git and is not used by the current runtime
 provisioning flow. Do not commit real credentials.

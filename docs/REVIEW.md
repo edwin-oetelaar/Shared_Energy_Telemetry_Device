@@ -1,38 +1,47 @@
 # Firmware review — Shared Energy Telemetry Device
 
-**Commit:** `df51625` · **Datum:** 2026-08-27 · **Reviewer:** Edwin Oetelaar (met Claude)
-**Scope:** alle 2.698 regels C in `main/`, plus `sdkconfig`, `CMakeLists.txt` en `idf_component.yml`.
-**Methode:** handmatige review van de broncode. Sinds 2026-08-28 is er wél een buildomgeving
-(ESP-IDF 5.5.5 uit de PlatformIO-installatie); fixes worden daarmee gecompileerd, maar nog
-steeds niet op hardware getest.
+**Uitgangspunt:** commit `df51625` · **Review gestart:** 2026-08-27 · **Bijgewerkt:** 2026-08-28
+**Reviewer:** Edwin Oetelaar (met Claude) · **Auteur van de firmware:** JobMeulenbeld
+**Scope:** alle 2.698 regels C in `main/`, plus de buildconfiguratie.
+**Status:** dit is een review vóór productie; er is nog niets uitgeleverd.
 
-Dit document is de werklijst. We werken het stap voor stap af; vink af wat af is en laat de
-bevinding staan als historie.
+**Methode:** handmatige review van de broncode, daarna fixes op de branch
+`hardening/review-findings`. Elke fix is gecompileerd voor de ESP32-S3 met ESP-IDF 5.5.5, en
+sinds L1 draait er CI die dat bij elke push herhaalt, samen met `cppcheck` en de host-tests.
+**Nog steeds niet op hardware getest** — zie "Wat niet is gecontroleerd" onderaan.
+
+Dit document is de werklijst. We werken het stap voor stap af; opgeloste bevindingen blijven
+staan als historie, met een blokcitaat waarin staat wat er precies is gebeurd.
 
 ---
 
 ## Oordeel
 
-Als prototype is dit goed werk: de module-indeling is logisch, HTTPS gebruikt de certificate
-bundle, credentials worden pas opgeslagen nadat ze bewezen werken, en de README is eerlijk over
-wat er wel en niet af is.
+**Bij aanvang:** als prototype goed werk — logische module-indeling, HTTPS met de certificate
+bundle, credentials pas opgeslagen nadat ze bewezen werken, en een eerlijke README. Als product
+haalde het de streep niet: een wifi-wachtwoord met een spatie erin werd verkeerd opgeslagen, het
+apparaat kwam na vijf mislukte reconnects nooit meer online zonder stekker eruit, en een
+firmwarebug kon zelf de configuratie van de klant wissen.
 
-Als product dat bij mensen thuis aan het stopcontact hangt haalt het de streep nog niet. De vijf
-kritieke punten zijn geen stijlkwesties: een wifi-wachtwoord met een spatie erin wordt verkeerd
-opgeslagen, het apparaat komt na vijf mislukte reconnects nooit meer online zonder stekker eruit,
-en tijdens provisioning gaan het wifi-wachtwoord én het API-secret onversleuteld door de lucht
-over een open access point.
+**Nu:** 17 van de 30 bevindingen zijn opgelost. Van het kritieke blok resteert alleen C5, en de
+twee overgebleven hoge punten (H4, H5) zijn geen code maar beslissingen. Wat er nu ligt is
+firmware die een routerherstart overleeft, die geen enkele reboot meer laat uitlokken door een
+webrequest, en waarvan elke wijziging automatisch wordt gebouwd, geanalyseerd en getest.
 
-| Norm | Oordeel | Waarom |
-| --- | --- | --- |
-| Correctheid | **Zakt** | Wachtwoorden niet URL-gedecodeerd; format string met UB; datarace op tokenstate |
-| Betrouwbaarheid in het veld | **Zakt** | Na 5 mislukte reconnects geen herstelpad; geen backoff, geen reboot |
-| Security | **Zwak** | Open AP + plain HTTP voor secrets; plaintext NVS; flash encryption en secure boot uit |
-| Onderhoudbaarheid | Matig | Nette moduleopdeling, maar HTML als C-string, 7× copy-paste JSON, dode code |
-| Updatebaarheid | **Zakt** | Twee OTA-partities, geen regel OTA-code |
-| Testbaarheid | **Zakt** | Geen tests, geen CI, geen static analysis |
-| Reproduceerbaarheid | Matig | `sdkconfig` en `sdkconfig.old` ingecheckt i.p.v. `sdkconfig.defaults` |
-| Documentatie | Goed | README beschrijft pinout, LED-semantiek en provisioning accuraat |
+**Wat de doorslag geeft voor productie:** de drie openstaande beslissingen (C5, H4, H5) en het
+feit dat nog niets op hardware is bevestigd. Dat laatste is inmiddels het zwaarste openstaande
+punt van de hele lijst.
+
+| Norm | Bij aanvang | Nu | Toelichting |
+| --- | --- | --- | --- |
+| Correctheid | **Zakt** | Goed | C1–C4 opgelost: decoding, format string, datarace, body-lezen |
+| Betrouwbaarheid in het veld | **Zakt** | Goed | Backoff zonder bovengrens, geen aborts meer op externe input |
+| Security | **Zwak** | Zwak | C5, H5 open: open AP + plain HTTP, plaintext NVS, geen flash encryption |
+| Onderhoudbaarheid | Matig | Matig | L5–L8 open: HTML als C-string, copy-paste JSON, dode code |
+| Updatebaarheid | **Zakt** | **Zakt** | H4 open: twee OTA-partities, geen regel OTA-code |
+| Testbaarheid | **Zakt** | Redelijk | CI met host-tests, cppcheck en firmwarebuild; nog geen hardwaretest |
+| Reproduceerbaarheid | Matig | Redelijk | `sdkconfig.defaults` op orde; M9 open: IDF-versie niet gepind |
+| Documentatie | Goed | Goed | README loopt mee met elke gedragswijziging |
 
 ---
 
@@ -582,28 +591,45 @@ Niet als beleefdheid — dit zijn de dingen die niet veranderd moeten worden.
 
 ## Voorgestelde volgorde
 
-1. **Halve dag — de twee showstoppers.** C1 (URL-decoding) en C2 (onbegrensde reconnect met
-   backoff). Hierna doet het apparaat het bij klanten met een spatie in hun wachtwoord, en
-   overleeft het een routerherstart.
-2. **Halve dag — crashes en races.** H2 (`ESP_ERROR_CHECK`-opruiming), H3 (scan-crash),
-   C3 (tokenrace), C4 (format string).
-3. **Eén dag — provisioning dichttimmeren.** C5 (WPA2 met per-apparaat wachtwoord) en H1
-   (body-lezen).
-4. **Beslismoment vóór de eerste serie.** H4 en H5 (OTA, flash encryption, secure boot). De enige
-   punten die achteraf niet meer recht te zetten zijn op uitgeleverde apparaten.
-5. **Daarna de rest.** M4, M7, M1, L1 en de opruimpunten — die kunnen mee met een OTA-update,
-   zodra die er is.
+Stappen 1 en 2 zijn afgerond (C1–C4, H1–H3, M1–M4, M6, M8, L1, L3, L9, L10). Wat resteert:
+
+1. **Eerst op hardware.** Zeventien fixes zijn gecompileerd maar nooit uitgevoerd. Een board
+   flashen en de vijf scenario's hieronder doorlopen weegt zwaarder dan welke volgende bevinding
+   ook — zie "Wat niet is gecontroleerd".
+2. **Beslissen vóór de eerste serie.** C5 (WPA2 met per-apparaat wachtwoord op het
+   provisioning-AP), H4 (OTA) en H5 (flash encryption, secure boot, NVS-encryptie). Alle drie
+   raken het productieproces, niet alleen de firmware, en H4 en H5 zijn na uitlevering niet meer
+   aan te zetten. Ook M9 hoort hier: leg de ESP-IDF-versie vast.
+3. **Gedrag afmaken.** M7 (LED-semantiek: "uit" betekent nog twee dingen) en M5 (NVS-schrijfactie
+   uit de event handler).
+4. **Opruimen.** L2 en L4–L8, L11. Geen daarvan verandert gedrag; ze bepalen hoe het project over
+   een jaar aanvoelt. L2 (compilerwaarschuwingen aanzetten) heeft de beste verhouding tussen
+   moeite en opbrengst — dat had M2 en waarschijnlijk C4 vanzelf gevonden.
 
 ---
 
 ## Wat niet is gecontroleerd
 
-Er stond geen ESP-IDF op de reviewmachine, dus de code is **niet gecompileerd en niet op hardware
-getest**. Alle bevindingen komen uit het lezen van de bron. Twee verdienen een expliciete
-kanttekening:
+De oorspronkelijke review is gedaan zonder buildomgeving. Sinds 2026-08-28 is die er wel
+(ESP-IDF 5.5.5 uit de PlatformIO-installatie, plus een CI-build in de officiële
+`espressif/idf`-container), en **elke fix op deze branch is gecompileerd** — meerdere keren met
+resultaat: L9 bleek een harde buildbreker, en zowel de mbedTLS-instelling bij L3 als een
+ontbrekende main-task stack werden alleen door een echte build gevonden.
 
-- **C4** is undefined behaviour volgens de standaard, maar newlib gedraagt zich in de praktijk
-  mild — mogelijk ziet de pagina er vandaag gewoon goed uit. Het punt blijft staan: het is geen
-  gedrag waar je op mag bouwen.
-- **C1** is in dertig seconden te bevestigen: zet een spatie in het wifi-wachtwoord en kijk wat
-  er in NVS terechtkomt.
+Wat nog steeds ontbreekt: **geen enkele fix is op hardware uitgevoerd.** Compileren bewijst dat
+de code klopt volgens de compiler, niet dat het apparaat doet wat we denken. Met zeventien fixes
+op de teller is dit het zwaarste openstaande punt van deze lijst.
+
+De vijf scenario's die het meeste opleveren, in volgorde:
+
+1. **Wifi-wachtwoord met een spatie erin** (C1). De fix waar de meeste klanten last van hadden.
+2. **Een SSID met een spatie of leesteken kiezen uit de lijst** (M1, plus de verborgen tweede
+   helft van H1: veldbuffers die op de gecodeerde lengte moesten worden gedimensioneerd).
+3. **De API-setup pagina openen**, knop in beide toestanden (C4).
+4. **Router vijf minuten uitzetten** (C2). In de seriële log loopt het backoff-schema zichtbaar op.
+5. **Twee keer snel op "Refresh networks"** tijdens provisioning (H3). Moet een nette melding
+   geven, geen reboot.
+
+Let op bij het flashen: door L3 is de configuratie nu die van de gebruikte IDF-versie in plaats
+van een gemigreerd bestand van ESP-IDF 6.1.0. Het binaire bestand is daardoor ~40 KB van formaat
+veranderd. Bouw met de versie waarmee je in productie gaat — en leg die vast (M9).
