@@ -51,8 +51,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # No set-target here on purpose: the committed sdkconfig already selects
-      # the ESP32-S3, and set-target would throw the rest of that file away.
+      # No set-target here on purpose: sdkconfig.defaults selects the
+      # ESP32-S3, and set-target would discard the rest of those settings.
       - name: Build
         shell: bash
         run: |

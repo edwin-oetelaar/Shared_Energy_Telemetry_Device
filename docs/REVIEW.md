@@ -61,11 +61,12 @@ over een open access point.
 - [x] **M6** `app_main` kan oneindig blijven wachten — opgelost, stilte-timeout
 - [ ] **M7** "Ring uit" betekent twee verschillende dingen
 - [x] **M8** Twee responses op één request in het API-check pad — opgelost
+- [ ] **M9** De ESP-IDF-versie ligt nergens vast
 
 ### Klein
 - [x] **L1** Geen tests, geen CI, geen static analysis — opgezet
 - [ ] **L2** Compilerwaarschuwingen staan op de standaard
-- [ ] **L3** `sdkconfig` én `sdkconfig.old` ingecheckt
+- [x] **L3** `sdkconfig` én `sdkconfig.old` ingecheckt — opgelost, `sdkconfig.defaults`
 - [ ] **L4** Geen LICENSE-bestand
 - [ ] **L5** HTML/CSS/JS als C-stringliteral
 - [ ] **L6** Zeven keer hetzelfde JSON-parseerblok
@@ -480,9 +481,16 @@ Geen van deze breekt iets, samen bepalen ze wel hoe het project over een jaar aa
   moeten worden zodra het project er een kiest.
 - **L2 — Compilerwaarschuwingen staan op de standaard.** Geen `CONFIG_COMPILER_WARN_*` in
   `sdkconfig`. `-Wall -Wextra` had M2 en waarschijnlijk C4 gevonden.
-- **L3 — `sdkconfig` én `sdkconfig.old` zijn ingecheckt.** De conventie is `sdkconfig.defaults`
-  committen en `sdkconfig` negeren; `sdkconfig.old` (3.000 regels ruis, enige verschil:
-  flashsize 2MB↔8MB) hoort er sowieso niet in.
+- **L3 — `sdkconfig` én `sdkconfig.old` zijn ingecheckt.** **Opgelost.** Van 4032 regels bleven
+  er vier instellingen over die dit project echt kiest: de ESP32-S3, 8 MB flash, de
+  twee-OTA-partitietabel en `CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384`. `sdkconfig` en
+  `sdkconfig.old` staan nu in `.gitignore`.
+  Twee dingen die dit boven water haalde: `idf.py save-defconfig` **miste de main-task stack**
+  (16384 tegen een default van 3584 — `app_main` doet zelf een TLS-request met een 4 KB
+  buffer op die stack, dus dat was direct fataal geweest), en de oude config droeg
+  `CONFIG_MBEDTLS_THREADING_C` mee, wat op IDF 5.5 niet eens compileert. Beide gevonden door
+  de tool niet te vertrouwen en een volledige diff tegen een verse defaultconfig te draaien,
+  en daarna vanaf nul te bouwen.
 - **L4 — Geen LICENSE-bestand.** `main/src/dns_server.c` is keurig overgenomen mét Espressif's
   CC0-header, maar het project zelf heeft geen licentie — juridisch "alle rechten voorbehouden".
 - **L5 — HTML, CSS en JavaScript als C-stringliteral.** Onhandig te bewerken, geen syntax
@@ -507,6 +515,23 @@ Geen van deze breekt iets, samen bepalen ze wel hoe het project over een jaar aa
 - **L11 — Client secret in een `type=text`-veld** (`main/src/wifi_web.c:143`), terwijl het
   wifi-wachtwoord wél op `password` staat. En `energyboxx_data_t data` in `main/main.c:19` is niet
   `static`.
+
+### M9 — De ESP-IDF-versie ligt nergens vast
+`sdkconfig` (t/m commit 08908ec), `.github/workflows/ci.yml`
+
+De `sdkconfig` die tot nu toe was ingecheckt is gegenereerd door **ESP-IDF 6.1.0**. De CI bouwt
+tegen `espressif/idf:release-v5.5`, en de lokale ontwikkelomgeving heeft 5.5.5. Niemand legt
+ergens vast welke versie de juiste is.
+
+Dat is niet academisch. Bij het opruimen van L3 bleek de 6.1.0-configuratie instellingen mee te
+dragen die op 5.5 **niet compileren** (`CONFIG_MBEDTLS_THREADING_C` → "MBEDTLS_THREADING_ALT
+defined, but not all prerequisites"), en 6.1 kiest picolibc waar 5.5 newlib kiest — een andere
+C-bibliotheek onder dezelfde broncode. Het binaire bestand veranderde ~40 KB van formaat alleen
+door deze opruiming.
+
+**Fix:** kies een versie, zet hem in de README én in de CI-containertag (een exacte patchrelease,
+niet `release-v5.5`, want die tag beweegt). Zolang dat niet gebeurt, bouwt iedereen net iets
+anders en is "het werkt bij mij" geen uitspraak over iets.
 
 ---
 

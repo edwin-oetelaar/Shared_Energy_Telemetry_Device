@@ -1,0 +1,29 @@
+#  Project configuration. Only the settings this project deliberately chooses
+#  live here; everything else comes from the ESP-IDF defaults for whatever
+#  version you build with. Regenerate the full sdkconfig by building - it is
+#  not checked in, because a generated 4000-line file rewrites itself on every
+#  configure and hides the handful of decisions that actually matter.
+#
+#  Derived from the sdkconfig that was checked in up to commit 08908ec, by
+#  diffing it against a pristine default configuration for the ESP32-S3.
+
+#  Hardware
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_HEADER_FLASHSIZE_UPDATE=y
+
+#  Two OTA slots. There is no OTA code yet (see H4 in docs/REVIEW.md), but the
+#  layout has to be right before the first devices ship - a partition table
+#  cannot be changed over the air afterwards.
+CONFIG_PARTITION_TABLE_TWO_OTA_LARGE=y
+
+#  app_main does TLS work itself: it validates the stored API credentials,
+#  which means an HTTPS request with a 4 KB response buffer on this stack. The
+#  ESP-IDF default of 3584 bytes overflows immediately.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
+
+#  Note: the old checked-in sdkconfig also carried CONFIG_MBEDTLS_THREADING_C.
+#  That is an ESP-IDF 6.1 artefact, not a choice of this project - on 5.5 it
+#  selects MBEDTLS_THREADING_ALT without its prerequisites and the build stops
+#  with "MBEDTLS_THREADING_ALT defined, but not all prerequisites". Left out on
+#  purpose; nothing here needs mbedTLS threading.
