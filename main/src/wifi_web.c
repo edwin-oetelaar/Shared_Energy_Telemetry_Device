@@ -433,8 +433,10 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
 }
 
 // HTTP Error (404) Handler - Redirects all requests to the root page
-esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err)
+static esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err)
 {
+    (void) err;
+
     // Set status
     httpd_resp_set_status(req, "303 See Other");
     // Redirect to the "/" root directory

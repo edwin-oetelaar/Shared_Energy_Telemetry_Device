@@ -76,7 +76,7 @@ punt van de hele lijst.
 
 ### Klein
 - [x] **L1** Geen tests, geen CI, geen static analysis — opgezet
-- [ ] **L2** Compilerwaarschuwingen staan op de standaard
+- [x] **L2** Compilerwaarschuwingen staan op de standaard — opgelost, twaalf meldingen opgeruimd
 - [x] **L3** `sdkconfig` én `sdkconfig.old` ingecheckt — opgelost, `sdkconfig.defaults`
 - [ ] **L4** Geen LICENSE-bestand
 - [ ] **L5** HTML/CSS/JS als C-stringliteral
@@ -543,8 +543,23 @@ Geen van deze breekt iets, samen bepalen ze wel hoe het project over een jaar aa
   schoon, dus de lat kan blijven staan waar hij nu staat.
   Nog open: de containertag `release-v5.5` beweegt; die zou op een exacte patchrelease gepind
   moeten worden zodra het project er een kiest.
-- **L2 — Compilerwaarschuwingen staan op de standaard.** Geen `CONFIG_COMPILER_WARN_*` in
-  `sdkconfig`. `-Wall -Wextra` had M2 en waarschijnlijk C4 gevonden.
+- **L2 — Compilerwaarschuwingen staan op de standaard.** **Opgelost.** `main/CMakeLists.txt`
+  zet nu een strengere set vlaggen op **alleen dit component**: `-Wall -Wextra -Wshadow`
+  `-Wformat=2 -Wpointer-arith -Wvla -Wstrict-prototypes -Wmissing-prototypes`
+  `-Wunused-parameter`. Projectbreed zou onze eigen uitvoer verdrinken in meldingen uit code
+  die we niet onderhouden. ESP-IDF heeft zelf al `-Werror` aan, dus deze meldingen zijn meteen
+  fataal.
+  Dat leverde direct **twaalf** punten op in bestaande code: vier keer een variabele
+  `nvs_handle` die de gelijknamige verouderde typedef uit `nvs.h` overschaduwt, vijf ongebruikte
+  parameters, en drie functies zonder prototype — `task_reset_boot_count` en
+  `http_404_error_handler` hadden `static` moeten zijn, en `app_main` had een declaratie nodig.
+  Allemaal opgeruimd; de build is nu volledig schoon.
+  Twee vlaggen zijn bewust **niet** aangezet: `-Wundef` en `-Wredundant-decls` gaan alleen af
+  binnen ESP-IDF's eigen headers (`assert.h` test een niet-gedefinieerde configmacro, `stdio.h`
+  declareert `flockfile` dubbel). Een waarschuwing die je alleen kunt stilzetten door andermans
+  header te patchen is ruis, en ruis is waarom mensen waarschuwingen gaan negeren.
+  `main/src/dns_server.c` houdt de mildere set: dat is Espressif's voorbeeldbestand, letterlijk
+  overgenomen, en het patchen ervan maakt de volgende update lastiger.
 - **L3 — `sdkconfig` én `sdkconfig.old` zijn ingecheckt.** **Opgelost.** Van 4032 regels bleven
   er vier instellingen over die dit project echt kiest: de ESP32-S3, 8 MB flash, de
   twee-OTA-partitietabel en `CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384`. `sdkconfig` en

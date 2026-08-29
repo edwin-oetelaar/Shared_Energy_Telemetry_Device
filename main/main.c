@@ -120,6 +120,8 @@ static bool
 
 static void status_led_task(void *pvParameters)
 {
+    (void) pvParameters;
+
     bool blink_on = false;
 
     while (true) {
@@ -248,6 +250,7 @@ static bool start_provisioning_portal(void)
 
 static void energyboxx_task(void *pvParameters)
 {
+    (void) pvParameters;
    
     while(true)
     {
@@ -330,8 +333,10 @@ static void
     nvs_close (handle);
 }
 
-void task_reset_boot_count(void *pvParameters)
+static void task_reset_boot_count(void *pvParameters)
 {
+    (void) pvParameters;
+
     vTaskDelay(pdMS_TO_TICKS(10000));
 
     s_store_boot_count (0);
@@ -339,6 +344,10 @@ void task_reset_boot_count(void *pvParameters)
 
     vTaskDelete(NULL);
 }
+
+//  Called by the ESP-IDF startup code; declared here so the compiler sees a
+//  prototype before the definition.
+void app_main(void);
 
 void app_main(void)
 {
@@ -348,18 +357,18 @@ void app_main(void)
 
     //  Read the boot counter. Only a deliberate power cycle adds to it; see
     //  the reset reason table above for why a panic must not.
-    nvs_handle_t nvs_handle;
+    nvs_handle_t handle;
     uint32_t boot_count = 0;
 
-    esp_err_t err = nvs_open("boot_count", NVS_READWRITE, &nvs_handle);
+    esp_err_t err = nvs_open("boot_count", NVS_READWRITE, &handle);
     if (err == ESP_OK) {
-        err = nvs_get_u32(nvs_handle, "boot_count", &boot_count);
+        err = nvs_get_u32(handle, "boot_count", &boot_count);
         if (err == ESP_ERR_NVS_NOT_FOUND) {
             boot_count = 0;
         } else {
             s_log_if_failed("reading the boot counter", err);
         }
-        nvs_close(nvs_handle);
+        nvs_close(handle);
     } else {
         s_log_if_failed("opening the boot counter", err);
     }
