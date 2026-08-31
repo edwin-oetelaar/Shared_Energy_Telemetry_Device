@@ -821,7 +821,7 @@ telemetrierondes.
 | **M3** Verplicht telemetrieveld | **Bevestigd** | Twee geldige antwoorden doorgelaten en verwerkt |
 | **M4** Jitter op het interval | **Bevestigd** | 73,16 s tussen twee rondes; zonder jitter zou dat steeds 60 s plus verzoektijd zijn |
 | **M7** Twee betekenissen | **Bevestigd** | Zie hieronder |
-| **C1** URL-decoding | **Deels** | Het decodeerpad liep. Of het wachtwoord tekens bevatte die decodering nodig hadden is niet vastgesteld |
+| **C1** URL-decoding | **Bevestigd** | Zie hieronder |
 | **C2** Reconnect-backoff | **Niet getest** | Er is geen verbinding weggevallen |
 
 **M7 liet zich in het wild zien.** Tussen het krijgen van een IP-adres en het invoeren van de
@@ -829,6 +829,13 @@ API-sleutels zat 216 seconden. Al die tijd stond er **"Geen gegevens"** op het s
 apparaat was verbonden, maar wist niets over de gemeenschap. Op de oude hardware was de ring in
 diezelfde situatie gedoofd geweest — niet te onderscheiden van "in balans". Dit is precies het
 geval waar de bevinding over ging, en het duurde ruim drie minuten.
+
+**C1 is afgerond.** De grondslag is drieledig, en het is eerlijker die te noemen dan te doen
+alsof één test alles bewees. Op de XIAO is op 2026-08-28 met spaties én procenttekens
+aangetoond dat de decoder werkt. De code van `uri_decode` is sindsdien niet gewijzigd. Op de
+BOX-3 heeft Edwin de afhandeling van wachtwoorden met spaties op 2026-08-31 in de code
+nagelopen en akkoord bevonden, en het decodeerpad heeft hier gedraaid. Wat hier níét is
+gebeurd, is een provisioning op dit bord met een wachtwoord dat decodering nodig had.
 
 De toestanden liepen in de juiste volgorde over het scherm: `provisioning` → `connecting` →
 `no-data` → `deficit`. Vier van de zeven toestanden zijn daarmee op hardware gezien.
