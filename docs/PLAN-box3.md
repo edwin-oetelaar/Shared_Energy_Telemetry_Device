@@ -76,18 +76,30 @@ opslaglagen, en die raakt deze overstap niet.
 
 ## 5. De fasen
 
-### Fase 0 — Bewijs dat de BSP bouwt op ESP-IDF v6.1
+### Fase 0 — Bewijs dat de BSP bouwt op ESP-IDF v6.1 — **geslaagd**
 
 De BSP eist ESP-IDF 5.3 of nieuwer. Dat is een ondergrens, geen garantie voor 6.x. ESP-IDF
-v6 heeft componenten hernoemd en gesplitst. **Deze fase is de poort naar alle andere.**
+v6 heeft componenten hernoemd en gesplitst. Deze fase was de poort naar alle andere.
 
-1. Bouw een leeg proefproject dat alleen `bsp_display_start()` aanroept.
-2. Slaagt de build: ga door naar fase 1.
-3. Faalt de build: kies tussen twee wegen, en leg de keuze vast in `docs/REVIEW.md` bij M9.
-   - De BSP-versie verhogen of een patch afwachten.
-   - Terug naar ESP-IDF v5.5, wat het besluit bij M9 terugdraait.
+**Uitgevoerd op 2026-08-29.** Een leeg proefproject dat alleen `bsp_i2c_init()`,
+`bsp_display_start()` en `bsp_display_backlight_on()` aanroept, bouwt op ESP-IDF 6.1.0.
+Zonder patches, zonder vastgepinde uitzonderingen, en zonder één compilerwaarschuwing in de
+hele keten.
 
-**Klaar als:** het proefproject bouwt, of de keuze uit stap 3 is gemaakt.
+Wat de component manager oploste:
+
+| Component | Versie |
+| --- | --- |
+| `espressif/esp-box-3` | 3.2.0 |
+| `lvgl/lvgl` | 9.5.0 |
+| `espressif/esp_lvgl_port`, `esp_codec_dev`, `button` | meegekomen als afhankelijkheid |
+| `esp_lcd_ili9341`, `esp_lcd_touch_gt911`, `esp_lcd_touch_tt21100` | meegekomen als afhankelijkheid |
+| `icm42670`, `aht30`, `sensor_hub`, `i2c_bus` | meegekomen als afhankelijkheid |
+
+Het skelet met scherm en LVGL erin is 586 KB. Dat getal is de ondergrens voor wat de
+OTA-slots straks moeten kunnen bevatten; de huidige firmware zonder scherm is 1,04 MB.
+
+**Gevolg:** het besluit bij M9 om op v6.1 te bouwen blijft staan, en fase 1 kan beginnen.
 
 ### Fase 1 — Bord omzetten, nog zonder beeld
 
@@ -160,7 +172,7 @@ apparaat in een woonkamer geluid màg maken.
 
 | Risico | Gevolg | Wat we eraan doen |
 | --- | --- | --- |
-| BSP bouwt niet op ESP-IDF v6.1 | Alle fasen blokkeren | Fase 0 doet niets anders dan dit uitzoeken |
+| ~~BSP bouwt niet op ESP-IDF v6.1~~ | — | **Vervallen.** Fase 0 heeft dit uitgesloten |
 | Partitietabel achteraf verkeerd | Niet te herstellen op uitgeleverde apparaten | Vaststellen in fase 1, samen met H4 en H5 |
 | LVGL en PSRAM verbruiken geheugen | Minder ruimte voor TLS en de rest | Meten na fase 2, vóór fase 3 |
 | Firmware wordt veel groter | OTA-slots moeten groot genoeg zijn | Meten in fase 2; de partitietabel volgt daaruit |
@@ -168,6 +180,7 @@ apparaat in een woonkamer geluid màg maken.
 
 ## 7. Volgorde van beslissen
 
-1. **Fase 0**, want die bepaalt of de ESP-IDF-versie houdbaar is.
-2. **De partitietabel**, samen met OTA en flash encryption.
-3. Daarna de fasen 2 tot en met 7, in volgorde.
+1. ~~Fase 0~~ — afgerond, de ESP-IDF-versie is houdbaar.
+2. **De partitietabel**, samen met OTA en flash encryption. Dit is nu het eerste
+   openstaande besluit, en het enige dat achteraf niet te herstellen is.
+3. Daarna de fasen 1 tot en met 7, in volgorde.
