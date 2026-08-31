@@ -101,12 +101,83 @@ OTA-slots straks moeten kunnen bevatten; de huidige firmware zonder scherm is 1,
 
 **Gevolg:** het besluit bij M9 om op v6.1 te bouwen blijft staan, en fase 1 kan beginnen.
 
+### Voorstel voor de partitietabel
+
+Het bestand `partitions-box3.csv` staat in de repository. Fase 1 koppelt het aan
+`sdkconfig.defaults`. De tabel is nagerekend met `gen_esp32part.py` van ESP-IDF en vult de
+16 MB flash precies, zonder een byte over.
+
+| Partitie | Type | Offset | Grootte | Waarom |
+| --- | --- | --- | --- | --- |
+| *bootloader* | — | 0x000000 | tot 68 KB | Ruimte voor een bootloader mét secure boot |
+| *partitietabel* | — | 0x011000 | 4 KB | Zie besluit 1 |
+| `nvs` | data | 0x012000 | 24 KB | Wifi- en API-gegevens, ongewijzigd |
+| `nvs_keys` | data | 0x018000 | 4 KB | Sleutels voor NVS-encryptie (H5) |
+| `otadata` | data | 0x019000 | 8 KB | Welk app-slot mag starten |
+| `phy_init` | data | 0x01B000 | 4 KB | Radiokalibratie |
+| `coredump` | data | 0x01C000 | 80 KB | Zie besluit 2 |
+| `ota_0` | app | 0x030000 | 3 MB | Eerste app-slot |
+| `ota_1` | app | 0x330000 | 3 MB | Tweede app-slot voor OTA (H4) |
+| `storage` | data | 0x630000 | 5,81 MB | Beelden, lettertypen |
+| `model` | data | 0xC00000 | 4 MB | Zie besluit 3 |
+
+#### Waarom 3 MB per app-slot
+
+| Meting | Grootte |
+| --- | --- |
+| Huidige firmware, zonder scherm | 1,04 MB |
+| Skelet met alleen BSP en LVGL | 0,59 MB |
+| Verwacht met scherm, schatting | 1,5 tot 1,8 MB |
+
+Drie megabyte geeft daarmee ruwweg het dubbele aan ruimte. Beelden en lettertypen horen in
+`storage`, niet in de app: dan groeit de firmware er niet van, en kun je beelden vervangen
+zonder een volledige OTA.
+
+#### Besluit 1 — De partitietabel op 0x11000
+
+ESP-IDF staat op de ESP32-S3 een bootloader van maximaal 64 KB toe, plus 4 KB handtekening.
+Dat is precies 0x11000. De standaard van 0x8000 laat maar 32 KB over.
+
+Onze bootloader is nu 21 KB. Secure boot en flash-encryptie maken hem groter. Past hij
+straks niet, dan moet de tabel opschuiven — en dat kan niet meer op apparaten die al bij
+mensen thuis staan.
+
+**Voorstel:** nu op 0x11000 zetten. Het kost 68 KB flash en houdt H5 open.
+
+#### Besluit 2 — Een coredump-partitie
+
+Bij een crash schrijft ESP-IDF de toestand naar deze partitie. Bij de volgende start is die
+uit te lezen, met een leesbare backtrace.
+
+Zonder deze partitie is een crash bij een klant thuis alleen te onderzoeken als iemand er
+met een USB-kabel bij kan en de fout zich herhaalt.
+
+**Voorstel:** 80 KB reserveren. Dat is een half promille van de flash.
+
+#### Besluit 3 — Vier megabyte reserveren voor spraakmodellen
+
+De BOX-3 is gebouwd voor spraakbediening. De modellen van `esp-sr` staan in een eigen
+partitie en zijn enkele megabytes groot.
+
+Dit is de enige keuze in de tabel die volledig afhangt van wat de klant later wil:
+
+| Variant | `storage` | `model` | Gevolg |
+| --- | --- | --- | --- |
+| **A — reserveren** | 5,81 MB | 4 MB | Spraakbediening blijft mogelijk |
+| **B — niet reserveren** | 9,81 MB | — | Meer ruimte voor beelden; spraak vervalt definitief |
+
+Reserveren kost weinig: `model` is een gewone spiffs-partitie. Gebruikt de klant nooit
+spraak, dan kun je er alsnog beelden in zetten. Het is alleen een tweede
+bestandssysteem in plaats van één groot.
+
+**Voorstel:** variant A, tenzij je zeker weet dat spraak nooit komt.
+
 ### Fase 1 — Bord omzetten, nog zonder beeld
 
 Doel: de huidige firmware draait op de BOX-3, met alles wat er nu al werkt.
 
-1. Zet `sdkconfig.defaults` om: 16 MB flash, octal PSRAM aan.
-2. Maak een eigen partitietabel: twee OTA-slots plus een partitie voor beelden.
+1. Zet `sdkconfig.defaults` om: 16 MB flash, octal PSRAM aan, partitietabel op 0x11000.
+2. Koppel `partitions-box3.csv` aan de build.
 3. Vervang de ledlaag door een presentatie-interface met vier toestanden: overschot,
    tekort, in balans, geen gegevens. De eerste uitvoering schrijft alleen naar de log.
 4. Werk de controlelijst in de CI bij op de nieuwe instellingen.
