@@ -240,6 +240,11 @@ Vanaf drie of vier beelden verhuist het naar de beeldpartitie uit fase 1.
 > blijft en de kadrering met één getal te veranderen is.
 >
 > Sinds 2026-08-31 staat de echte tekening erin.
+>
+> Het opstartbeeld blijft minstens een seconde staan, ook als het apparaat sneller klaar is met
+> verbinden. Zonder die ondergrens flitst het logo voorbij en ziet niemand waar hij naar kijkt.
+> Gemeten op hardware: 1,74 seconde van de eerste pixels tot de overgang naar "Verbinden". De
+> ondergrens is `BRINGUP_MIN_VISIBLE_MS` in `main/src/status_view.c`.
 > Het bronbeeld mag elke maat hebben; `tools/png_to_lvgl.py` schaalt naar 320 × 240, houdt de
 > verhouding aan en vult de rest met de kleur van de linkerbovenhoek. Een letterbox valt zo niet
 > op als een zwarte balk maar als marge.

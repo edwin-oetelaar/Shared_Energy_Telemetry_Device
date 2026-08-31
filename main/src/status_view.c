@@ -11,6 +11,7 @@
 #include <stdint.h>
 
 #include "esp_log.h"
+#include "esp_timer.h"
 
 #include <stdio.h>
 
@@ -58,8 +59,15 @@ static const struct {
                                    "Geen gegevens",     PAINT_COLOUR, 0x5A5A5A }
 };
 
+//  The bring-up image is how somebody learns what this product is. A device
+//  that connects quickly would otherwise show it for well under a second,
+//  which reads as a flicker rather than as a logo. Hold it at least this long
+//  after it first appears.
+#define BRINGUP_MIN_VISIBLE_MS  1000
+
 static status_view_state_t s_current = STATUS_VIEW_STARTING;
 static bool s_shown = false;
+static int64_t s_bringup_since_us = 0;
 
 //  Built when a state is drawn, so the screen never holds a pointer into
 //  something that has since changed.
@@ -135,6 +143,7 @@ esp_err_t status_view_init(void)
 
     s_current = STATUS_VIEW_STARTING;
     s_shown = false;
+    s_bringup_since_us = 0;
 
     return ESP_OK;
 }
@@ -152,10 +161,24 @@ esp_err_t status_view_show(status_view_state_t state)
         return ESP_OK;
     }
 
+    //  Refuse to leave the bring-up image too soon. The caller polls, so the
+    //  state it wants is simply shown on one of its next passes; nothing is
+    //  lost by saying "not yet".
+    if (s_shown
+    &&  s_current == STATUS_VIEW_STARTING
+    &&  s_bringup_since_us != 0
+    &&  esp_timer_get_time() - s_bringup_since_us < BRINGUP_MIN_VISIBLE_MS * 1000) {
+        return ESP_OK;
+    }
+
     ESP_LOGI(TAG, "%s - %s", s_view [state].name, s_view [state].meaning);
 
     s_current = state;
     s_shown = true;
+
+    if (state == STATUS_VIEW_STARTING && s_bringup_since_us == 0) {
+        s_bringup_since_us = esp_timer_get_time();
+    }
 
     //  No screen is not an error worth reporting on every state change. The
     //  device keeps working; display_init () already said so once.
