@@ -42,11 +42,20 @@ static lv_obj_t *s_forward = NULL;
 
 static display_tap_cb_t s_on_tap = NULL;
 static display_browse_cb_t s_on_browse = NULL;
+static display_action_cb_t s_on_action = NULL;
+
+static lv_obj_t *s_body = NULL;
+static lv_obj_t *s_action = NULL;
+static lv_obj_t *s_action_label = NULL;
+static lv_obj_t *s_preview = NULL;
 static lv_obj_t *s_title = NULL;
 static lv_obj_t *s_detail = NULL;
 static lv_obj_t *s_qr = NULL;
 
 static bool s_ready = false;
+
+//  Defined further down, next to the screen it belongs to.
+static lv_color_t s_readable_text_colour(uint32_t background_rgb);
 
 
 //  --------------------------------------------------------------------------
@@ -73,6 +82,16 @@ static void s_screen_clicked(lv_event_t *event)
 //  --------------------------------------------------------------------------
 //  The arrows carry their direction as their user data, so one handler serves
 //  both and there is no second place to keep them in step.
+
+static void s_action_clicked(lv_event_t *event)
+{
+    (void) event;
+
+    if (s_on_action != NULL) {
+        s_on_action();
+    }
+}
+
 
 static void s_arrow_clicked(lv_event_t *event)
 {
@@ -110,6 +129,89 @@ void display_set_input_callbacks(display_tap_cb_t on_tap, display_browse_cb_t on
 {
     s_on_tap = on_tap;
     s_on_browse = on_browse;
+}
+
+
+void display_set_action_callback(display_action_cb_t on_action)
+{
+    s_on_action = on_action;
+}
+
+
+//  --------------------------------------------------------------------------
+
+esp_err_t display_show_preview_marker(bool visible)
+{
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!bsp_display_lock(1000)) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    if (visible) {
+        lv_obj_remove_flag(s_preview, LV_OBJ_FLAG_HIDDEN);
+    }
+    else {
+        lv_obj_add_flag(s_preview, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    bsp_display_unlock();
+
+    return ESP_OK;
+}
+
+
+//  --------------------------------------------------------------------------
+
+esp_err_t display_show_report(const char *title,
+                              const char *body,
+                              const char *action_label,
+                              uint32_t background_rgb)
+{
+    assert (title);             //  Caller's contract
+    assert (body);
+
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!bsp_display_lock(1000)) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    lv_color_t ink = s_readable_text_colour(background_rgb);
+
+    lv_obj_add_flag(s_image, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_version, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_detail, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_qr, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(background_rgb), LV_PART_MAIN);
+
+    lv_obj_set_style_text_color(s_title, ink, LV_PART_MAIN);
+    lv_label_set_text(s_title, title);
+    lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, 6);
+    lv_obj_remove_flag(s_title, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_set_style_text_color(s_body, ink, LV_PART_MAIN);
+    lv_label_set_text(s_body, body);
+    lv_obj_align(s_body, LV_ALIGN_TOP_LEFT, 14, 48);
+    lv_obj_remove_flag(s_body, LV_OBJ_FLAG_HIDDEN);
+
+    if (action_label != NULL && action_label [0] != '\0') {
+        lv_label_set_text(s_action_label, action_label);
+        lv_obj_align(s_action, LV_ALIGN_BOTTOM_MID, 0, -8);
+        lv_obj_remove_flag(s_action, LV_OBJ_FLAG_HIDDEN);
+    }
+    else {
+        lv_obj_add_flag(s_action, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    bsp_display_unlock();
+
+    return ESP_OK;
 }
 
 
@@ -221,6 +323,36 @@ static esp_err_t s_build_screen(void)
     lv_obj_add_flag(screen, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(screen, s_screen_clicked, LV_EVENT_CLICKED, NULL);
 
+    s_body = lv_label_create(screen);
+    lv_label_set_long_mode(s_body, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(s_body, BRINGUP_WIDTH - 28);
+    lv_label_set_text(s_body, "");
+    lv_obj_add_flag(s_body, LV_OBJ_FLAG_HIDDEN);
+
+    s_action = lv_button_create(screen);
+    lv_obj_set_size(s_action, 200, 40);
+    lv_obj_set_style_bg_color(s_action, lv_color_hex(0x1E5A8A), LV_PART_MAIN);
+    lv_obj_set_style_radius(s_action, 6, LV_PART_MAIN);
+    lv_obj_add_event_cb(s_action, s_action_clicked, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_flag(s_action, LV_OBJ_FLAG_HIDDEN);
+
+    s_action_label = lv_label_create(s_action);
+    lv_label_set_text(s_action_label, "");
+    lv_obj_set_style_text_color(s_action_label, lv_color_hex(0xF2F5F0), LV_PART_MAIN);
+    lv_obj_center(s_action_label);
+
+    //  Sits in the corner so it never covers what it is warning about.
+    s_preview = lv_label_create(screen);
+    lv_label_set_text(s_preview, "voorbeeld");
+    lv_obj_set_style_text_color(s_preview, lv_color_hex(0xF2F5F0), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_preview, lv_color_hex(0x8A3A2A), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_preview, LV_OPA_80, LV_PART_MAIN);
+    lv_obj_set_style_pad_hor(s_preview, 6, LV_PART_MAIN);
+    lv_obj_set_style_pad_ver(s_preview, 2, LV_PART_MAIN);
+    lv_obj_set_style_radius(s_preview, 4, LV_PART_MAIN);
+    lv_obj_align(s_preview, LV_ALIGN_TOP_LEFT, 6, 6);
+    lv_obj_add_flag(s_preview, LV_OBJ_FLAG_HIDDEN);
+
     s_back = s_make_arrow(screen, LV_SYMBOL_LEFT, LV_ALIGN_BOTTOM_LEFT, 8, -8, -1);
     s_forward = s_make_arrow(screen, LV_SYMBOL_RIGHT, LV_ALIGN_BOTTOM_RIGHT, -8, -8, +1);
 
@@ -245,6 +377,8 @@ esp_err_t display_show_bringup(void)
     lv_obj_set_style_bg_color(lv_screen_active(), lv_color_black(), LV_PART_MAIN);
     lv_obj_remove_flag(s_image, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(s_version, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_body, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_action, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_title, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_detail, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_qr, LV_OBJ_FLAG_HIDDEN);
@@ -291,6 +425,8 @@ esp_err_t display_show_status(const char *title,
 
     lv_obj_add_flag(s_image, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_version, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_body, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_action, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(background_rgb), LV_PART_MAIN);
 
     lv_obj_set_style_text_color(s_title, ink, LV_PART_MAIN);

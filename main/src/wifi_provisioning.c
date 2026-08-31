@@ -85,6 +85,8 @@ static esp_timer_handle_t s_retry_timer = NULL;
 static size_t s_retry_row = 0;
 
 static TickType_t s_last_portal_activity = 0;
+static bool s_portal_open = false;
+static esp_timer_handle_t s_portal_timer = NULL;
 
 static char current_ssid[33] = {0};
 static char current_password[65] = {0};
@@ -267,6 +269,112 @@ esp_err_t wifi_prov_init(void)
     return ESP_OK;
 }
 
+//  --------------------------------------------------------------------------
+//  Watches an on-demand portal. It closes on its own for two reasons: the
+//  credentials were accepted, or nobody has touched it for a while. Without
+//  this an open access point would stay up until the next power cut.
+
+static void s_portal_watchdog(void *argument)
+{
+    (void) argument;
+
+    if (!s_portal_open) {
+        return;
+    }
+
+    if (energyboxx_api_is_valid_credentials()) {
+        ESP_LOGI(TAG, "Credentials accepted, closing the portal");
+        wifi_prov_close_portal();
+        return;
+    }
+
+    if (xTaskGetTickCount() - s_last_portal_activity
+    >   pdMS_TO_TICKS(PROVISIONING_SILENCE_TIMEOUT_MS)) {
+        ESP_LOGW(TAG, "Nobody used the portal for %d minutes, closing it",
+                 PROVISIONING_SILENCE_TIMEOUT_MS / 60000);
+        wifi_prov_close_portal();
+    }
+}
+
+
+bool wifi_prov_portal_is_open(void)
+{
+    return s_portal_open;
+}
+
+
+esp_err_t wifi_prov_close_portal(void)
+{
+    if (!s_portal_open) {
+        return ESP_OK;
+    }
+
+    s_portal_open = false;
+
+    if (s_portal_timer != NULL) {
+        esp_timer_stop(s_portal_timer);
+    }
+
+    wifi_web_stop();
+
+    if (s_dns_handle != NULL) {
+        stop_dns_server(s_dns_handle);
+        s_dns_handle = NULL;
+    }
+
+    //  Back to station only. The device keeps the network it was already on.
+    esp_err_t err = esp_wifi_set_mode(WIFI_MODE_STA);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Could not return to station mode: %s", esp_err_to_name(err));
+    }
+
+    ESP_LOGI(TAG, "Portal closed");
+
+    return err;
+}
+
+
+esp_err_t wifi_prov_open_portal(void)
+{
+    if (s_portal_open) {
+        wifi_prov_note_portal_activity();
+        return ESP_OK;
+    }
+
+    esp_err_t err = wifi_prov_start_ap();
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    err = wifi_web_start();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Portal did not start: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    if (s_portal_timer == NULL) {
+        const esp_timer_create_args_t args = {
+            .callback = s_portal_watchdog,
+            .name = "portal_watchdog"
+        };
+
+        err = esp_timer_create(&args, &s_portal_timer);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Portal watchdog missing: %s", esp_err_to_name(err));
+            return err;
+        }
+    }
+
+    s_portal_open = true;
+    wifi_prov_note_portal_activity();
+    esp_timer_start_periodic(s_portal_timer, 5 * 1000 * 1000);
+
+    ESP_LOGI(TAG, "Portal open on request");
+
+    return ESP_OK;
+}
+
+
 esp_err_t wifi_prov_start_ap(void)
 {
     wifi_config_t ap_config = {
@@ -372,6 +480,24 @@ const char *wifi_prov_ap_ssid(void)
 const char *wifi_prov_current_ssid(void)
 {
     return current_ssid;
+}
+
+void wifi_prov_ip_string(char *text, size_t length)
+{
+    assert (text);              //  Caller's contract
+    assert (length > 0);
+
+    text [0] = '\0';
+
+    esp_netif_ip_info_t info;
+
+    if (s_sta_netif == NULL
+    ||  esp_netif_get_ip_info(s_sta_netif, &info) != ESP_OK
+    ||  info.ip.addr == 0) {
+        return;
+    }
+
+    snprintf(text, length, IPSTR, IP2STR(&info.ip));
 }
 
 void wifi_prov_note_portal_activity(void)

@@ -48,6 +48,23 @@ void display_set_input_callbacks(display_tap_cb_t on_tap, display_browse_cb_t on
 //  browsing.
 esp_err_t display_show_browse_controls(bool visible);
 
+//  Called when somebody presses the button on the report screen.
+typedef void (*display_action_cb_t)(void);
+void display_set_action_callback(display_action_cb_t on_action);
+
+//  A screen with a heading and several lines under it, for telling somebody
+//  what the device knows about itself. Pass NULL for action_label to leave the
+//  button off.
+esp_err_t display_show_report(const char *title,
+                              const char *body,
+                              const char *action_label,
+                              uint32_t background_rgb);
+
+//  Mark the screen as a preview rather than a live reading. Without this a
+//  view somebody browsed to looks exactly like a measurement, which is a way
+//  to leave a number on the wall that was never measured.
+esp_err_t display_show_preview_marker(bool visible);
+
 //  Whether display_init () succeeded. Callers that draw should check this
 //  first; drawing without a screen is not an error worth reporting every time.
 bool display_is_ready(void);

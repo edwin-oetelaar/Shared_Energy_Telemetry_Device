@@ -28,6 +28,14 @@ esp_err_t energyboxx_api_fetch_token(void);
 esp_err_t energyboxx_api_get_data(energyboxx_data_t* data);
 const char *energyboxx_api_get_token(void);
 bool energyboxx_api_has_credentials(void);
+
+//  How long the current token is still good for, in seconds. Zero when there
+//  is no token, or when it has expired.
+int energyboxx_api_token_seconds_left(void);
+
+//  How long ago the last successful telemetry arrived, in seconds. Negative
+//  when none has ever arrived, so callers can tell "never" from "just now".
+int energyboxx_api_seconds_since_data(void);
 bool energyboxx_api_is_valid_credentials(void);
 void energyboxx_data_print(const energyboxx_data_t *data);
 void energyboxx_api_set_renew_token(bool renew);

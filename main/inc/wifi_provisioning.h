@@ -35,6 +35,22 @@ const char *wifi_prov_ap_ssid(void);
 //  The network the device is trying to join, or an empty string when there is
 //  none. Never NULL.
 const char *wifi_prov_current_ssid(void);
+
+//  The address the device has on the network it joined, as text. Writes an
+//  empty string when there is no address yet. Never fails.
+void wifi_prov_ip_string(char *text, size_t length);
+
+//  Open the provisioning portal while the device stays on its own network, so
+//  somebody can enter new API credentials without filling in the Wi-Fi details
+//  again. Closes itself once the credentials are accepted, or after the same
+//  silence timeout that guards provisioning at start-up.
+esp_err_t wifi_prov_open_portal(void);
+
+//  Whether the portal is open right now.
+bool wifi_prov_portal_is_open(void);
+
+//  Shut the portal down and go back to station only.
+esp_err_t wifi_prov_close_portal(void);
 bool wifi_prov_wait_for_connection_timeout(TickType_t timeout);
 
 #endif // WIFI_PROVISIONING_H

@@ -383,6 +383,45 @@ Vandaag ziet de gebruiker tijdens de provisioning niets op het apparaat zelf.
 > knopdruk komen op dezelfde functie uit en zijn in de log niet te onderscheiden. Het pad van de
 > paneelknop, `status_view_resume_auto()`, is in deze sessie niet in de log verschenen.
 
+### Fase 6a — Zien wat het apparaat weet, en sleutels opnieuw invoeren
+
+Tussengevoegd op 2026-08-31, nadat bleek dat een gebruiker niet kon vaststellen of de
+API-sleutels bekend waren. Dat was alleen uit een seriële log af te lezen, en die heeft een
+bewoner niet.
+
+1. Een statusscherm in de bladerlijst, met wat het apparaat over zichzelf weet.
+2. Een knop op dat scherm die het portaal opent, zonder de wifi-instellingen aan te raken.
+3. Bij het opstarten zonder sleutels: "Sleutels nodig" tonen en doordraaien, niet blijven hangen.
+4. Een merkteken op elk beeld dat een voorbeeld is en geen meting.
+
+**Klaar als:** iemand voor het apparaat kan zien of de sleutels goed zijn, en ze zo nodig
+opnieuw kan invoeren zonder het wifi-wachtwoord.
+
+> **Uitgevoerd op 2026-08-31.** Het statusscherm toont vier regels:
+>
+> | Regel | Voorbeeld |
+> | --- | --- |
+> | Wifi | `OETELX` met het IP-adres eronder, of "geen verbinding" |
+> | Sleutels | "niet ingevoerd", "afgekeurd", of "goed, nog 119 min" |
+> | Meting | "42 s geleden" of "nog geen" |
+> | Portaal | "open" of "dicht" |
+>
+> Het scherm ververst zichzelf zolang je ernaar kijkt, anders zou er een bevroren "42 s geleden"
+> blijven staan.
+>
+> De knop "Sleutels invoeren" zet het accesspoint en het portaal aan terwijl het apparaat op zijn
+> eigen netwerk blijft. Omdat wifi dan al verbonden is, stuurt `root_get_handler` de bezoeker
+> meteen door naar de sleutelpagina; de wifi-stap wordt overgeslagen. Het portaal sluit zichzelf
+> zodra de sleutels zijn goedgekeurd, of na dezelfde stilte-timeout die ook bij het opstarten
+> geldt. Zonder dat zou een vergeten open accesspoint blijven staan tot de volgende
+> stroomonderbreking — en dat maakt **C5** erger in plaats van beter.
+>
+> Bij het opstarten blijft het apparaat niet meer in het portaal hangen als alleen de sleutels
+> ontbreken. Het verbindt, meldt "Sleutels nodig" op het scherm, en draait door. Wie langsloopt
+> kan het portaal vanaf daar openen.
+>
+> Zie ook **M11** in `docs/REVIEW.md` voor het merkteken op voorbeelden.
+
 ### Fase 6 — Tekst op het scherm
 
 1. Kies een lettertype met de tekens die het Nederlands nodig heeft.

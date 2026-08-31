@@ -28,7 +28,9 @@ typedef enum {
     STATUS_VIEW_SURPLUS,        //  The community has energy to share
     STATUS_VIEW_DEFICIT,        //  The community has to buy energy
     STATUS_VIEW_BALANCED,       //  Supply and demand match
+    STATUS_VIEW_KEYS_NEEDED,    //  Online, but nobody has given us API keys yet
     STATUS_VIEW_NO_DATA,        //  Connected or not, but no fresh telemetry
+    STATUS_VIEW_REPORT,         //  What the device knows about itself
     STATUS_VIEW_STATE_COUNT     //  Not a state; the size of the table
 } status_view_state_t;
 
@@ -48,6 +50,10 @@ void status_view_browse(int direction);
 //  Stop browsing at once and follow the telemetry again, without waiting for
 //  the timeout.
 void status_view_resume_auto(void);
+
+//  Somebody pressed the button on the report screen: open the portal so they
+//  can enter API credentials, without touching the stored Wi-Fi settings.
+void status_view_open_portal(void);
 
 //  Somebody touched the screen without choosing a direction. Starts browsing
 //  at the view already on screen, and puts the arrows up.

@@ -32,6 +32,7 @@ static char client_id[128] = {0};
 static char client_secret[256] = {0};
 
 static bool renew_token = true;
+static int64_t last_data_us = 0;
 
 static const char *TAG = "[energyboxx_api]";
 
@@ -418,6 +419,8 @@ static esp_err_t s_get_data_locked(energyboxx_data_t* data)
         cJSON_Delete(root);
         esp_http_client_cleanup(client);
 
+        last_data_us = esp_timer_get_time();
+
         return ESP_OK;
     }
     else
@@ -502,4 +505,32 @@ esp_err_t energyboxx_api_setup(const char *c_id, const char *c_secret){
 bool energyboxx_api_has_credentials(void)
 {
     return credentials_configured;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Both of these are read for the status screen, which only wants a rough
+//  number to show a person. They deliberately do not take the module lock: a
+//  screen refresh must never wait behind a ten-second HTTP request.
+
+int energyboxx_api_token_seconds_left(void)
+{
+    if (expires_in_seconds <= 0 || token_acquired_us == 0) {
+        return 0;
+    }
+
+    int64_t elapsed = (esp_timer_get_time() - token_acquired_us) / 1000000;
+    int64_t left = expires_in_seconds - elapsed;
+
+    return left > 0 ? (int) left : 0;
+}
+
+
+int energyboxx_api_seconds_since_data(void)
+{
+    if (last_data_us == 0) {
+        return -1;
+    }
+
+    return (int) ((esp_timer_get_time() - last_data_us) / 1000000);
 }

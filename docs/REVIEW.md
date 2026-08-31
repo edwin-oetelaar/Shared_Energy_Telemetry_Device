@@ -71,6 +71,7 @@ punt van de hele lijst.
 - [x] **M6** `app_main` kan oneindig blijven wachten — opgelost, stilte-timeout
 - [x] **M7** "Ring uit" betekent twee verschillende dingen — opgelost op het scherm van de BOX-3
 - [ ] **M10** Tijdens provisioning blijft het schema afgewezen credentials proberen
+- [x] **M11** Een gebladerd voorbeeld is niet te onderscheiden van een echte meting — opgelost
 - [x] **M8** Twee responses op één request in het API-check pad — opgelost
 - [x] **M9** De ESP-IDF-versie ligt nergens vast — opgelost, vastgelegd op v6.1
 
@@ -640,6 +641,24 @@ Twee gevolgen:
 reden die op verkeerde credentials wijst (`WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT`,
 `WIFI_REASON_AUTH_FAIL`). Doorproberen slaat pas aan als er credentials zijn die ooit hebben
 gewerkt.
+
+### M11 — Een gebladerd voorbeeld is niet te onderscheiden van een echte meting
+`main/src/status_view.c` (bladermodus, ingevoerd bij fase 5 van `docs/PLAN-box3.md`)
+
+Gevonden op 2026-08-31, doordat Edwin het zelf niet kon zien. Fase 5 gaf het apparaat een
+bladerfunctie waarmee je door de energietoestanden kunt lopen. Zo'n voorbeeld zag er precies zo
+uit als een echte meting: "Energie inkopen" op geel, zonder enig verschil.
+
+Twee gevolgen. Wie bladert weet niet meer of wat er staat gemeten of gekozen is. En wie
+wegloopt terwijl er een voorbeeld staat, laat tot de terugval een verzonnen waarde aan de muur
+hangen.
+
+Dit was geen fout in de oorspronkelijke firmware maar een die bij het bouwen van fase 5 is
+ingevoerd. Dat maakt hem niet minder echt: het apparaat toonde iets dat niet gemeten was.
+
+> **Opgelost.** Elk beeld dat niet de actuele toestand is, krijgt linksboven een merkteken
+> "voorbeeld". Het statusscherm is uitgezonderd, want dat gaat over het apparaat zelf en is
+> nooit een meting.
 
 ### M9 — De ESP-IDF-versie ligt nergens vast
 `sdkconfig` (t/m commit 08908ec), `.github/workflows/ci.yml`

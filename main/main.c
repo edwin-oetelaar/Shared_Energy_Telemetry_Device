@@ -148,6 +148,12 @@ static status_view_state_t s_state_to_show(void)
         return STATUS_VIEW_CONNECTING;
     }
 
+    //  No keys at all is a different problem from no data, and it needs a
+    //  different answer from the person looking at the screen.
+    if (!energyboxx_api_has_credentials()) {
+        return STATUS_VIEW_KEYS_NEEDED;
+    }
+
     if (!energyboxx_api_is_valid_credentials() || !data_connection_ok) {
         return STATUS_VIEW_NO_DATA;
     }
@@ -382,6 +388,7 @@ void app_main(void)
     //  has started. A finger and a button do the same thing, so both are wired
     //  to the same two functions in status_view.
     display_set_input_callbacks(status_view_touched, status_view_browse);
+    display_set_action_callback(status_view_open_portal);
     s_log_if_failed("starting the buttons", input_init());
 
     //  Read the boot counter. Only a deliberate power cycle adds to it; see
@@ -459,8 +466,11 @@ void app_main(void)
             ESP_LOGW(TAG, "Saved WiFi failed, starting provisioning");
             wifi_provisioning_started = start_provisioning_portal();
         } else if (!validate_stored_api_credentials()) {
-            ESP_LOGW(TAG, "Stored API credentials are missing or invalid, starting AP provisioning");
-            wifi_provisioning_started = start_provisioning_portal();
+            //  Wi-Fi works; only the API credentials are missing or refused.
+            //  Do not sit in the portal waiting for somebody who may not be
+            //  home: say so on the screen and carry on. Whoever walks past can
+            //  open the portal from there, without filling in Wi-Fi again.
+            ESP_LOGW(TAG, "API credentials missing or invalid; the screen will ask for them");
         }
     } else {
         wifi_provisioning_started = start_provisioning_portal();
