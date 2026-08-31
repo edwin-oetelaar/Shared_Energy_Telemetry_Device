@@ -5,7 +5,13 @@ The firmware embeds the output with EMBED_FILES and wraps it in an
 lv_image_dsc_t, so no decoding happens on the device and no PNG decoder has to
 be linked in.
 
-    python tools/png_to_lvgl.py assets/energy-owl-bringup.png assets/energy-owl-bringup.bin
+    python tools/png_to_lvgl.py assets/energy-owl.png assets/energy-owl-bringup.bin
+    python tools/png_to_lvgl.py --crop 219,10,637,478 assets/energy-owl.png OUT.bin
+
+The optional crop takes x,y,width,height in the source image and is applied
+before scaling. Keeping the crop here rather than in a cut-down PNG means the
+original illustration stays in the repository and the framing can be changed
+by editing one number.
 
 The source PNG may be any size. It is scaled to the screen of the
 ESP32-S3-BOX-3, which is 320 x 240. The aspect ratio is kept, and whatever
@@ -21,7 +27,7 @@ import sys
 
 from PIL import Image
 
-USAGE = "usage: png_to_lvgl.py INPUT.png OUTPUT.bin"
+USAGE = "usage: png_to_lvgl.py [--crop X,Y,W,H] INPUT.png OUTPUT.bin"
 
 
 SCREEN_WIDTH = 320
@@ -59,13 +65,43 @@ def to_rgb565(image):
     return bytes(packed)
 
 
+def parse_crop(text):
+    parts = text.split(",")
+    if len(parts) != 4:
+        sys.exit(USAGE)
+    try:
+        x, y, width, height = (int(part) for part in parts)
+    except ValueError:
+        sys.exit(USAGE)
+    if width < 1 or height < 1:
+        sys.exit("crop width and height must be positive")
+    return x, y, x + width, y + height
+
+
 def main():
-    if len(sys.argv) != 3:
+    argv = sys.argv[1:]
+    box = None
+
+    if argv and argv[0] == "--crop":
+        if len(argv) < 2:
+            sys.exit(USAGE)
+        box = parse_crop(argv[1])
+        argv = argv[2:]
+
+    if len(argv) != 2:
         sys.exit(USAGE)
 
-    source, target = sys.argv[1], sys.argv[2]
+    source, target = argv[0], argv[1]
 
     original = Image.open(source).convert("RGB")
+
+    if box is not None:
+        if box[2] > original.width or box[3] > original.height:
+            sys.exit(f"crop reaches outside the image, which is "
+                     f"{original.width} x {original.height}")
+        print(f"crop: {box[0]},{box[1]} {box[2]-box[0]} x {box[3]-box[1]}")
+        original = original.crop(box)
+
     image = fit_to_screen(original)
     data = to_rgb565(image)
 

@@ -224,12 +224,22 @@ Vanaf drie of vier beelden verhuist het naar de beeldpartitie uit fase 1.
 >
 > | Stap | Bestand |
 > | --- | --- |
-> | Bronbeeld | `assets/energy-owl-bringup.png` |
+> | Bronbeeld, onbewerkt | `assets/energy-owl.png` |
 > | Omzetten | `tools/png_to_lvgl.py` |
 > | Ruwe RGB565 | `assets/energy-owl-bringup.bin` |
 > | Inbouwen | `EMBED_FILES` in `main/CMakeLists.txt` |
 >
-> Het echte uilenbeeld vervangen is daarmee: de PNG overschrijven, het script draaien, bouwen.
+> Het commando dat het beeld maakt:
+>
+> ```bash
+> python3 tools/png_to_lvgl.py --crop 219,10,637,478 assets/energy-owl.png assets/energy-owl-bringup.bin
+> ```
+>
+> De uitsnede laat de tablet uit de illustratie weg en houdt titel en uil over. Die staat in het
+> commando en niet in een bijgesneden PNG, zodat de oorspronkelijke tekening in de repository
+> blijft en de kadrering met één getal te veranderen is.
+>
+> Sinds 2026-08-31 staat de echte tekening erin.
 > Het bronbeeld mag elke maat hebben; `tools/png_to_lvgl.py` schaalt naar 320 × 240, houdt de
 > verhouding aan en vult de rest met de kleur van de linkerbovenhoek. Een letterbox valt zo niet
 > op als een zwarte balk maar als marge.
