@@ -840,6 +840,12 @@ gebeurd, is een provisioning op dit bord met een wachtwoord dat decodering nodig
 De toestanden liepen in de juiste volgorde over het scherm: `provisioning` → `connecting` →
 `no-data` → `deficit`. Vier van de zeven toestanden zijn daarmee op hardware gezien.
 
+In een tweede ronde later die dag, na fase 4 van het plan, is het provisioningscherm met de
+QR-code beproefd: een telefoon die de code scant krijgt het netwerk aangeboden en verbindt
+meteen. Daarmee is ook de zichtbare kant van het provisioningprobleem uit **C5** aangepakt —
+al blijft C5 zelf open, want die gaat over de beveiliging van dat accesspoint, niet over de
+vindbaarheid.
+
 Verder in de log, en allebei ongevaarlijk:
 
 - `httpd_uri: URI '/generate_204' not found` — Android controleert zo of er internet achter het

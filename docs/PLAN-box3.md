@@ -306,8 +306,18 @@ Vandaag ziet de gebruiker tijdens de provisioning niets op het apparaat zelf.
 > De namen van de netwerken komen uit `wifi_prov_ap_ssid()` en `wifi_prov_current_ssid()`, niet
 > uit een tweede kopie in de schermcode. Eén bron van waarheid.
 >
-> **Bevestigd op hardware:** opstarten tot "Energie inkopen" in 5,8 seconde, met `connecting`
-> onderweg. Het provisioningscherm met de QR-code is nog niet gezien — daarvoor moet NVS leeg.
+> **Bevestigd op hardware op 2026-08-31.** Met lege NVS komt het provisioningscherm op met de
+> QR-code. Een telefoon die de code scant krijgt het netwerk aangeboden en verbindt meteen; het
+> scherm is leesbaar zoals bedoeld.
+>
+> Uit de log: de telefoon meldde zich 7,8 seconde na het opstarten op het accesspoint, en 44
+> seconden later waren de wifigegevens ingevuld. Ter vergelijking zat er in de ronde daarvoor,
+> zonder QR, ruim anderhalve minuut tussen aanmelden en invullen. Dat is één waarneming per
+> geval en geen meting, maar het wijst de goede kant op: de stap "welk netwerk moet ik hebben"
+> is eruit.
+>
+> Ook bevestigd: opstarten tot "Energie inkopen" in 5,8 seconde, met `connecting` onderweg en de
+> netwerknaam eronder.
 
 ### Fase 5 — Knoppen en aanraakbediening
 
