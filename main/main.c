@@ -16,6 +16,7 @@
 #include "inc/energyboxx_api.h"
 
 
+#include "inc/display.h"
 #include "inc/status_view.h"
 #include "soc/gpio_num.h"
 
@@ -366,6 +367,11 @@ void app_main(void)
     ESP_ERROR_CHECK(wifi_storage_init());
     ESP_ERROR_CHECK(energyboxx_api_init());
     ESP_ERROR_CHECK(status_view_init());
+
+    //  Early on purpose: the sooner the screen lights up, the sooner somebody
+    //  can see that the device is alive. A screen that will not start is
+    //  reported and does not stop the rest.
+    s_log_if_failed("starting the display", display_init());
 
     //  Read the boot counter. Only a deliberate power cycle adds to it; see
     //  the reset reason table above for why a panic must not.

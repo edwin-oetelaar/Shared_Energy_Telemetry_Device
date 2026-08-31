@@ -8,10 +8,13 @@ idf_component_register(
         "src/wifi_storage.c"
         "src/api_storage.c"
         "src/status_view.c"
+        "src/display.c"
         "src/uri_decode.c"
     INCLUDE_DIRS
         "."
         "inc"
+    EMBED_FILES
+        "../assets/energy-owl-bringup.bin"
     REQUIRES
         esp_wifi
         esp_event

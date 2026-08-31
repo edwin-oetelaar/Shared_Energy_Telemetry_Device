@@ -215,6 +215,31 @@ Vanaf drie of vier beelden verhuist het naar de beeldpartitie uit fase 1.
 
 **Klaar als:** het logo staat op het scherm binnen een seconde na inschakelen.
 
+> **Uitgevoerd op 2026-08-31.** Het scherm komt op in 1,7 seconde: LVGL-taak gestart,
+> ILI9341-paneel aangemaakt, beeld getekend, en daarna pas de achtergrondverlichting aan — in
+> die volgorde, zodat niemand een verlicht leeg paneel ziet.
+>
+> Het beeld staat er nu nog als tijdelijke plaatsvervanger. De keten eromheen is wel de
+> definitieve:
+>
+> | Stap | Bestand |
+> | --- | --- |
+> | Bronbeeld | `assets/energy-owl-bringup.png` |
+> | Omzetten | `tools/png_to_lvgl.py` |
+> | Ruwe RGB565 | `assets/energy-owl-bringup.bin` |
+> | Inbouwen | `EMBED_FILES` in `main/CMakeLists.txt` |
+>
+> Het echte uilenbeeld vervangen is daarmee: de PNG overschrijven, het script draaien, bouwen.
+> Er zit geen PNG-decoder in de firmware; het beeld staat er in het formaat waarin het scherm
+> het tekent.
+>
+> De firmware groeide van 1,07 MB naar 1,61 MB. Daarvan is 150 KB het beeld zelf en de rest
+> LVGL met de BSP. In het slot van 3 MB is nog 49 procent vrij, wat de keuze voor 3 MB
+> bevestigt.
+>
+> **Nog te bevestigen:** of het beeld er ook goed uitziet. De log zegt dat het getekend is;
+> alleen iemand die naar het scherm kijkt kan zeggen of dat klopt.
+
 ### Fase 3 — Toestand op het scherm
 
 1. Vervang de loguitvoer uit fase 1 door beeld.
