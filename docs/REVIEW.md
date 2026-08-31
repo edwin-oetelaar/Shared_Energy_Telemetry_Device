@@ -58,7 +58,7 @@ punt van de hele lijst.
 - [x] **H1** POST-body wordt in één keer gelezen in een te kleine buffer — opgelost
 - [x] **H2** Panic-op-alles plus wis-na-3-boots is een gevaarlijke combinatie — opgelost
 - [x] **H3** Een webrequest kan het apparaat laten crashen — opgelost, foutcode i.p.v. abort
-- [ ] **H6** De wifi-status-led zit op GPIO 44, dat is U0RXD
+- [~] **H6** De wifi-status-led zit op GPIO 44, dat is U0RXD — vervallen met de bordwissel
 - [ ] **H4** Geen OTA, terwijl de partitietabel er twee slots voor heeft
 - [ ] **H5** Credentials liggen leesbaar in flash
 
@@ -686,6 +686,15 @@ anders en is "het werkt bij mij" geen uitspraak over iets.
 ---
 
 ## Bevestigd op hardware
+
+> **Let op: het bord is gewisseld.** Sinds 2026-08-29 gaat het project naar de
+> ESP32-S3-BOX-3; zie `docs/PLAN-box3.md`. De twee testrondes hieronder zijn gedaan op de
+> Seeed XIAO ESP32-S3 en gelden dus niet meer als bewijs voor het product. Zij blijven staan
+> als bewijs dat de fixes zelf werken. Wat opnieuw moet: alles wat hardware raakt.
+>
+> Bevinding **H6** vervalt met de wissel — de wifi-led op GPIO 44 bestaat niet meer.
+> Bevinding **M7** wordt oplosbaar in plaats van een afweging, want een scherm kan
+> "geen gegevens" wél tonen; dat is fase 3 van het plan.
 
 **Board:** Seeed Studio XIAO ESP32-S3 Sense · ESP32-S3 rev v0.2 · 8 MB flash · 8 MB PSRAM
 **Datum:** 2026-08-28 · **Firmware:** deze branch, gebouwd met **ESP-IDF 5.5.5**

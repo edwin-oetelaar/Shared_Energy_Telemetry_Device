@@ -7,15 +7,28 @@
 #  Derived from the sdkconfig that was checked in up to commit 08908ec, by
 #  diffing it against a pristine default configuration for the ESP32-S3.
 
-#  Hardware
+#  Hardware: ESP32-S3-BOX-3, 16 MB flash and 16 MB octal PSRAM.
 CONFIG_IDF_TARGET="esp32s3"
-CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_ESPTOOLPY_HEADER_FLASHSIZE_UPDATE=y
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
 
-#  Two OTA slots. There is no OTA code yet (see H4 in docs/REVIEW.md), but the
-#  layout has to be right before the first devices ship - a partition table
-#  cannot be changed over the air afterwards.
-CONFIG_PARTITION_TABLE_TWO_OTA_LARGE=y
+#  Partition layout: see partitions-box3.csv and docs/PLAN-box3.md. The table
+#  sits at 0x11000 rather than the default 0x8000, which is the largest offset
+#  the ESP32-S3 allows. That leaves the bootloader its full 64 KB plus a 4 KB
+#  signature, so secure boot can still be switched on later (H5). Moving the
+#  table is impossible once devices have shipped.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-box3.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0x11000
+
+#  Write a core dump to flash on a crash. Without it, a crash in someone's home
+#  can only be investigated if a person can reach the device with a cable and
+#  the fault repeats.
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
+CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y
 
 #  app_main does TLS work itself: it validates the stored API credentials,
 #  which means an HTTPS request with a 4 KB response buffer on this stack. The

@@ -185,6 +185,21 @@ Doel: de huidige firmware draait op de BOX-3, met alles wat er nu al werkt.
 **Klaar als:** de BOX-3 opstart, provisioning doorloopt, telemetrie ophaalt, en de toestand
 in de log meldt.
 
+> **Uitgevoerd op 2026-08-31.** De firmware draait op de BOX-3. De 16 MB octal PSRAM wordt
+> herkend en getest, de app start uit `ota_0` op 0x30000, en `status_view` meldt de toestand:
+> `starting` bij het opstarten, `provisioning` zodra het portaal openstaat. De bootteller en de
+> resetreden werken ongewijzigd.
+>
+> | Meting | Waarde |
+> | --- | --- |
+> | Bootloader | 21 KB van de 68 KB beschikbaar — ruimte genoeg voor secure boot |
+> | Firmware | 1,07 MB van de 3 MB per slot — 66 procent vrij |
+> | Vrije heap bij opstarten | 273 KB intern, plus 16 MB PSRAM |
+>
+> `status_led.c` en de `led_strip`-afhankelijkheid zijn verwijderd. De vier toestanden uit dit
+> plan zijn er zes geworden: `starting` en `provisioning` zijn erbij gekomen, omdat fase 2 het
+> opstartbeeld daaraan hangt en fase 4 het provisioningscherm.
+
 > De partitietabel is een beslissing die je later niet meer kunt terugdraaien op
 > uitgeleverde apparaten. Neem hem samen met bevinding **H4** (OTA) en **H5** (flash
 > encryption). Dit is het moment.
