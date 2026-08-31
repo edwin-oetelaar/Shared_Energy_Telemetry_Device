@@ -372,8 +372,16 @@ Vandaag ziet de gebruiker tijdens de provisioning niets op het apparaat zelf.
 > De pijlen zijn verborgen zolang het apparaat gewoon rapporteert, zodat het scherm rustig
 > blijft.
 >
-> **Op hardware bevestigd:** `3 buttons ready` bij het opstarten. Het indrukken en aanraken zelf
-> moet iemand met een vinger doen.
+> **Op hardware bevestigd op 2026-08-31.** Bladeren werkt in beide richtingen en loopt rond:
+> `surplus` → `deficit` → `balanced` → `no-data` → `starting` → `surplus`, en dezelfde reeks
+> achteruit. De pijlen zijn goed te raken.
+>
+> De terugval sloeg twee keer aan, gemeten op 15,04 seconde na de laatste aanraking. Daarna
+> stond het apparaat weer op zijn eigen toestand.
+>
+> Wat de log **niet** kan zeggen: welke bediening elke wissel veroorzaakte. Een aanraking en een
+> knopdruk komen op dezelfde functie uit en zijn in de log niet te onderscheiden. Het pad van de
+> paneelknop, `status_view_resume_auto()`, is in deze sessie niet in de log verschenen.
 
 ### Fase 6 — Tekst op het scherm
 
