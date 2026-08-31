@@ -65,9 +65,34 @@ static const struct {
 //  after it first appears.
 #define BRINGUP_MIN_VISIBLE_MS  1000
 
+//  How long the device keeps showing what somebody browsed to. Short enough
+//  that a stray touch does not leave a wrong reading on the wall for long, and
+//  long enough to look at something on purpose.
+#define BROWSE_TIMEOUT_MS  15000
+
+//  The views worth paging through by hand. Provisioning and connecting are not
+//  in the list: they say what the device is doing right now, and browsing to
+//  them would be a lie.
+static const status_view_state_t s_browsable [] = {
+    STATUS_VIEW_STARTING,
+    STATUS_VIEW_SURPLUS,
+    STATUS_VIEW_DEFICIT,
+    STATUS_VIEW_BALANCED,
+    STATUS_VIEW_NO_DATA
+};
+
+#define BROWSABLE_COUNT  (sizeof (s_browsable) / sizeof (s_browsable [0]))
+
 static status_view_state_t s_current = STATUS_VIEW_STARTING;
 static bool s_shown = false;
 static int64_t s_bringup_since_us = 0;
+
+//  What the telemetry last said, kept while somebody is browsing so the device
+//  can go straight back to it.
+static status_view_state_t s_auto_state = STATUS_VIEW_STARTING;
+static bool s_browsing = false;
+static size_t s_browse_row = 0;
+static int64_t s_browse_until_us = 0;
 
 //  Built when a state is drawn, so the screen never holds a pointer into
 //  something that has since changed.
@@ -153,21 +178,9 @@ esp_err_t status_view_init(void)
 //  Only a change is worth saying out loud. Callers can therefore report their
 //  state on every pass of their loop without filling the log.
 
-esp_err_t status_view_show(status_view_state_t state)
+static esp_err_t s_draw(status_view_state_t state)
 {
-    assert (state < STATUS_VIEW_STATE_COUNT);   //  Caller's contract
-
     if (s_shown && state == s_current) {
-        return ESP_OK;
-    }
-
-    //  Refuse to leave the bring-up image too soon. The caller polls, so the
-    //  state it wants is simply shown on one of its next passes; nothing is
-    //  lost by saying "not yet".
-    if (s_shown
-    &&  s_current == STATUS_VIEW_STARTING
-    &&  s_bringup_since_us != 0
-    &&  esp_timer_get_time() - s_bringup_since_us < BRINGUP_MIN_VISIBLE_MS * 1000) {
         return ESP_OK;
     }
 
@@ -198,4 +211,101 @@ esp_err_t status_view_show(status_view_state_t state)
     }
 
     return err;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Where in the browsable list a state sits. Falls back to the first row for
+//  states nobody browses to, so browsing from one of those starts at the top.
+
+static size_t s_row_of(status_view_state_t state)
+{
+    for (size_t row = 0; row < BROWSABLE_COUNT; row++) {
+        if (s_browsable [row] == state) {
+            return row;
+        }
+    }
+
+    return 0;
+}
+
+
+static void s_start_browsing(void)
+{
+    if (!s_browsing) {
+        s_browsing = true;
+        s_browse_row = s_row_of(s_current);
+        display_show_browse_controls(true);
+    }
+
+    s_browse_until_us = esp_timer_get_time() + (int64_t) BROWSE_TIMEOUT_MS * 1000;
+}
+
+
+void status_view_touched(void)
+{
+    s_start_browsing();
+}
+
+
+void status_view_resume_auto(void)
+{
+    if (!s_browsing) {
+        return;
+    }
+
+    ESP_LOGI(TAG, "Back to following the telemetry");
+
+    s_browsing = false;
+    display_show_browse_controls(false);
+
+    s_draw(s_auto_state);
+}
+
+
+void status_view_browse(int direction)
+{
+    assert (direction == -1 || direction == 1);     //  Caller's contract
+
+    s_start_browsing();
+
+    //  Wrap around in both directions without going negative on a size_t.
+    s_browse_row = (s_browse_row + BROWSABLE_COUNT + (size_t) (direction > 0 ? 1 : -1))
+                 % BROWSABLE_COUNT;
+
+    s_draw(s_browsable [s_browse_row]);
+}
+
+
+//  --------------------------------------------------------------------------
+//  What the logic wants shown. While somebody is browsing this is remembered
+//  but not drawn; the moment they stop, the device catches up by itself.
+
+esp_err_t status_view_show(status_view_state_t state)
+{
+    assert (state < STATUS_VIEW_STATE_COUNT);   //  Caller's contract
+
+    s_auto_state = state;
+
+    if (s_browsing) {
+        if (esp_timer_get_time() < s_browse_until_us) {
+            return ESP_OK;
+        }
+
+        ESP_LOGI(TAG, "Browsing timed out, following the telemetry again");
+        s_browsing = false;
+        display_show_browse_controls(false);
+    }
+
+    //  Hold the bring-up image its minimum time, but only on the automatic
+    //  path: somebody who browsed to it may leave whenever they like.
+    if (s_shown
+    &&  s_current == STATUS_VIEW_STARTING
+    &&  state != STATUS_VIEW_STARTING
+    &&  s_bringup_since_us != 0
+    &&  esp_timer_get_time() - s_bringup_since_us < BRINGUP_MIN_VISIBLE_MS * 1000) {
+        return ESP_OK;
+    }
+
+    return s_draw(state);
 }

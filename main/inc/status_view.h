@@ -40,6 +40,19 @@ esp_err_t status_view_init(void);
 //  real one, because passing something else is a programming error.
 esp_err_t status_view_show(status_view_state_t state);
 
+//  Step through the views by hand. Direction is -1 for back and +1 for
+//  forward. Browsing never lasts: after a while without input the device goes
+//  back to showing what the telemetry says, because that is its job.
+void status_view_browse(int direction);
+
+//  Stop browsing at once and follow the telemetry again, without waiting for
+//  the timeout.
+void status_view_resume_auto(void);
+
+//  Somebody touched the screen without choosing a direction. Starts browsing
+//  at the view already on screen, and puts the arrows up.
+void status_view_touched(void);
+
 //  The name of a state, for logging and for the screen later.
 const char *status_view_name(status_view_state_t state);
 

@@ -9,6 +9,7 @@ idf_component_register(
         "src/api_storage.c"
         "src/status_view.c"
         "src/display.c"
+        "src/input.c"
         "src/uri_decode.c"
     INCLUDE_DIRS
         "."

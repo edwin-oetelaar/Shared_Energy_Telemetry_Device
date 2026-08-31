@@ -35,6 +35,19 @@ esp_err_t display_show_status(const char *title,
                               const char *qr_text,
                               uint32_t background_rgb);
 
+//  Called when somebody touches the screen anywhere, and when they press one
+//  of the two arrows. The direction is -1 for back and +1 for forward.
+typedef void (*display_tap_cb_t)(void);
+typedef void (*display_browse_cb_t)(int direction);
+
+//  Register who hears about touches. Both may be NULL.
+void display_set_input_callbacks(display_tap_cb_t on_tap, display_browse_cb_t on_browse);
+
+//  Show or hide the two arrows. They are hidden while the device is simply
+//  reporting, so the screen stays uncluttered, and appear once somebody starts
+//  browsing.
+esp_err_t display_show_browse_controls(bool visible);
+
 //  Whether display_init () succeeded. Callers that draw should check this
 //  first; drawing without a screen is not an error worth reporting every time.
 bool display_is_ready(void);
