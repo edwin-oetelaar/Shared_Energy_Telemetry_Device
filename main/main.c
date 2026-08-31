@@ -17,6 +17,7 @@
 
 
 #include "inc/display.h"
+#include "inc/input.h"
 #include "inc/status_view.h"
 #include "soc/gpio_num.h"
 
@@ -376,6 +377,12 @@ void app_main(void)
     //  can see that the device is alive. A screen that will not start is
     //  reported and does not stop the rest.
     s_log_if_failed("starting the display", display_init());
+
+    //  After the display: the button on the panel only exists once the screen
+    //  has started. A finger and a button do the same thing, so both are wired
+    //  to the same two functions in status_view.
+    display_set_input_callbacks(status_view_touched, status_view_browse);
+    s_log_if_failed("starting the buttons", input_init());
 
     //  Read the boot counter. Only a deliberate power cycle adds to it; see
     //  the reset reason table above for why a panic must not.

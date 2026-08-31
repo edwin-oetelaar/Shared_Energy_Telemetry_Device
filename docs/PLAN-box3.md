@@ -349,6 +349,32 @@ Vandaag ziet de gebruiker tijdens de provisioning niets op het apparaat zelf.
 
 **Klaar als:** een aanraking en een knopdruk allebei een beeldwissel geven.
 
+> **Uitgevoerd op 2026-08-31.** Aanraking en knoppen komen op dezelfde twee functies uit, dus
+> een vinger en een knop doen hetzelfde.
+>
+> | Bediening | Werking |
+> | --- | --- |
+> | Aanraking op het scherm | begint met bladeren en zet de pijlen erbij |
+> | Pijl links en rechts | een beeld terug of verder |
+> | Knop `config` | een beeld terug |
+> | Knop `mute` | een beeld verder |
+> | Knop `main` (op het paneel) | meteen terug naar de telemetrie |
+>
+> Bladeren gaat door vijf beelden: het opstartbeeld en de vier energietoestanden. Instellen en
+> verbinden staan er niet bij; die zeggen wat het apparaat op dit moment doet, en daarheen
+> bladeren zou een leugen zijn.
+>
+> **De belangrijkste regel: bladeren houdt nooit stand.** Na vijftien seconden zonder aanraking
+> volgt het apparaat de telemetrie weer. Anders laat één vingerafdruk een verkeerde meting aan
+> de muur staan, en het apparaat is er om de gemeenschap te tonen, niet om te bewaren wat
+> iemand aanwees.
+>
+> De pijlen zijn verborgen zolang het apparaat gewoon rapporteert, zodat het scherm rustig
+> blijft.
+>
+> **Op hardware bevestigd:** `3 buttons ready` bij het opstarten. Het indrukken en aanraken zelf
+> moet iemand met een vinger doen.
+
 ### Fase 6 — Tekst op het scherm
 
 1. Kies een lettertype met de tekens die het Nederlands nodig heeft.

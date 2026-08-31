@@ -5,6 +5,7 @@
 
 #include <assert.h>
 #include <inttypes.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdbool.h>
 
@@ -36,6 +37,11 @@ static lv_image_dsc_t s_bringup;
 //  state change would churn the heap for no gain.
 static lv_obj_t *s_image = NULL;
 static lv_obj_t *s_version = NULL;
+static lv_obj_t *s_back = NULL;
+static lv_obj_t *s_forward = NULL;
+
+static display_tap_cb_t s_on_tap = NULL;
+static display_browse_cb_t s_on_browse = NULL;
 static lv_obj_t *s_title = NULL;
 static lv_obj_t *s_detail = NULL;
 static lv_obj_t *s_qr = NULL;
@@ -48,6 +54,89 @@ static bool s_ready = false;
 bool display_is_ready(void)
 {
     return s_ready;
+}
+
+
+//  --------------------------------------------------------------------------
+//  A touch on the background, rather than on one of the arrows.
+
+static void s_screen_clicked(lv_event_t *event)
+{
+    (void) event;
+
+    if (s_on_tap != NULL) {
+        s_on_tap();
+    }
+}
+
+
+//  --------------------------------------------------------------------------
+//  The arrows carry their direction as their user data, so one handler serves
+//  both and there is no second place to keep them in step.
+
+static void s_arrow_clicked(lv_event_t *event)
+{
+    if (s_on_browse != NULL) {
+        s_on_browse((int) (intptr_t) lv_event_get_user_data(event));
+    }
+}
+
+
+static lv_obj_t *s_make_arrow(lv_obj_t *parent, const char *symbol,
+                              lv_align_t align, int32_t x, int32_t y, int direction)
+{
+    lv_obj_t *button = lv_button_create(parent);
+
+    lv_obj_set_size(button, 56, 44);
+    lv_obj_align(button, align, x, y);
+    lv_obj_set_style_bg_color(button, lv_color_hex(0x101410), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(button, LV_OPA_60, LV_PART_MAIN);
+    lv_obj_set_style_radius(button, 6, LV_PART_MAIN);
+    lv_obj_add_event_cb(button, s_arrow_clicked, LV_EVENT_CLICKED, (void *) (intptr_t) direction);
+    lv_obj_add_flag(button, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_t *label = lv_label_create(button);
+    lv_label_set_text(label, symbol);
+    lv_obj_set_style_text_color(label, lv_color_hex(0xF2F5F0), LV_PART_MAIN);
+    lv_obj_center(label);
+
+    return button;
+}
+
+
+//  --------------------------------------------------------------------------
+
+void display_set_input_callbacks(display_tap_cb_t on_tap, display_browse_cb_t on_browse)
+{
+    s_on_tap = on_tap;
+    s_on_browse = on_browse;
+}
+
+
+//  --------------------------------------------------------------------------
+
+esp_err_t display_show_browse_controls(bool visible)
+{
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!bsp_display_lock(1000)) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    if (visible) {
+        lv_obj_remove_flag(s_back, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(s_forward, LV_OBJ_FLAG_HIDDEN);
+    }
+    else {
+        lv_obj_add_flag(s_back, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s_forward, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    bsp_display_unlock();
+
+    return ESP_OK;
 }
 
 
@@ -126,6 +215,14 @@ static esp_err_t s_build_screen(void)
     lv_obj_add_flag(s_version, LV_OBJ_FLAG_HIDDEN);
 
     ESP_LOGI(TAG, "Firmware version on screen: %s", app->version);
+
+    //  A touch anywhere counts. The arrows sit on top of that and stop the
+    //  event from also reading as a tap on the background.
+    lv_obj_add_flag(screen, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(screen, s_screen_clicked, LV_EVENT_CLICKED, NULL);
+
+    s_back = s_make_arrow(screen, LV_SYMBOL_LEFT, LV_ALIGN_BOTTOM_LEFT, 8, -8, -1);
+    s_forward = s_make_arrow(screen, LV_SYMBOL_RIGHT, LV_ALIGN_BOTTOM_RIGHT, -8, -8, +1);
 
     bsp_display_unlock();
 
