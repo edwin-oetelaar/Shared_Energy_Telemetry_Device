@@ -40,3 +40,7 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
 #  selects MBEDTLS_THREADING_ALT without its prerequisites and the build stops
 #  with "MBEDTLS_THREADING_ALT defined, but not all prerequisites". Left out on
 #  purpose; nothing here needs mbedTLS threading.
+
+#  The status label has to be readable from across the room, so LVGL needs a
+#  bigger font than the 14 pixel default it ships with.
+CONFIG_LV_FONT_MONTSERRAT_28=y

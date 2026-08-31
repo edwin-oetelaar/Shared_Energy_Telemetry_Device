@@ -248,6 +248,29 @@ Vanaf drie of vier beelden verhuist het naar de beeldpartitie uit fase 1.
 **Klaar als:** het scherm volgt de telemetrie, en "geen gegevens" is te onderscheiden van
 "in balans". Daarmee is bevinding **M7** opgelost.
 
+> **Uitgevoerd op 2026-08-31.** De tabel in `status_view.c` heeft er drie kolommen bij: een
+> Nederlandse schermtekst, hoe de toestand geschilderd wordt, en de kleur. De logregels blijven
+> Engels, net als de rest van de code; het scherm spreekt de taal van de bewoners.
+>
+> | Toestand | Scherm | Kleur |
+> | --- | --- | --- |
+> | `starting` | het opstartbeeld | — |
+> | `provisioning` | "Instellen" | blauw |
+> | `connecting` | "Verbinden" | grijsblauw |
+> | `surplus` | "Energie over" | groen |
+> | `deficit` | "Energie inkopen" | geel |
+> | `balanced` | "In balans" | donkergroen |
+> | `no-data` | "Geen gegevens" | grijs |
+>
+> De tekstkleur wordt niet in de tabel gekozen maar berekend uit de helderheid van de
+> achtergrond. Zo kan niemand per ongeluk een combinatie kiezen die onleesbaar is.
+>
+> Twee paden zijn op hardware gezien: het beeld bij `starting` en het kleurscherm met tekst bij
+> `provisioning`. De vier energietoestanden zijn pas te zien met een apparaat dat telemetrie
+> ophaalt.
+>
+> Firmware 1,64 MB, nog 47 procent vrij in het slot.
+
 ### Fase 4 — Provisioning op het scherm
 
 Vandaag ziet de gebruiker tijdens de provisioning niets op het apparaat zelf.

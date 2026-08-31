@@ -3,6 +3,7 @@
     =========================================================================
 */
 
+#include <assert.h>
 #include <inttypes.h>
 #include <stdbool.h>
 
@@ -29,6 +30,11 @@ extern const uint8_t bringup_end[]   asm("_binary_energy_owl_bringup_bin_end");
 //  comes from the linker symbols above.
 static lv_image_dsc_t s_bringup;
 
+//  Built once in display_init () and reused. Rebuilding the objects on every
+//  state change would churn the heap for no gain.
+static lv_obj_t *s_image = NULL;
+static lv_obj_t *s_label = NULL;
+
 static bool s_ready = false;
 
 
@@ -41,10 +47,11 @@ bool display_is_ready(void)
 
 
 //  --------------------------------------------------------------------------
-//  Put the bring-up image on the active screen. LVGL is not thread safe, so
-//  every call into it sits between bsp_display_lock () and unlock ().
+//  Build the two things the screen can show: the image and one line of text.
+//  Only one of them is visible at a time. LVGL is not thread safe, so every
+//  call into it sits between bsp_display_lock () and unlock ().
 
-static esp_err_t s_show_bringup(void)
+static esp_err_t s_build_screen(void)
 {
     s_bringup.header.magic  = LV_IMAGE_HEADER_MAGIC;
     s_bringup.header.cf     = LV_COLOR_FORMAT_RGB565;
@@ -67,10 +74,85 @@ static esp_err_t s_show_bringup(void)
 
     lv_obj_t *screen = lv_screen_active();
     lv_obj_set_style_bg_color(screen, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, LV_PART_MAIN);
 
-    lv_obj_t *image = lv_image_create(screen);
-    lv_image_set_src(image, &s_bringup);
-    lv_obj_center(image);
+    s_image = lv_image_create(screen);
+    lv_image_set_src(s_image, &s_bringup);
+    lv_obj_center(s_image);
+
+    s_label = lv_label_create(screen);
+    lv_obj_set_style_text_font(s_label, &lv_font_montserrat_28, LV_PART_MAIN);
+    lv_label_set_long_mode(s_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(s_label, BRINGUP_WIDTH - 32);
+    lv_obj_set_style_text_align(s_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_label_set_text(s_label, "");
+    lv_obj_center(s_label);
+    lv_obj_add_flag(s_label, LV_OBJ_FLAG_HIDDEN);
+
+    bsp_display_unlock();
+
+    return ESP_OK;
+}
+
+
+//  --------------------------------------------------------------------------
+
+esp_err_t display_show_bringup(void)
+{
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!bsp_display_lock(1000)) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    lv_obj_set_style_bg_color(lv_screen_active(), lv_color_black(), LV_PART_MAIN);
+    lv_obj_remove_flag(s_image, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_label, LV_OBJ_FLAG_HIDDEN);
+
+    bsp_display_unlock();
+
+    return ESP_OK;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Dark text on a light background and light text on a dark one. Deciding this
+//  here means a caller cannot pick a combination that nobody can read.
+
+static lv_color_t s_readable_text_colour(uint32_t background_rgb)
+{
+    uint32_t red   = (background_rgb >> 16) & 0xFF;
+    uint32_t green = (background_rgb >> 8) & 0xFF;
+    uint32_t blue  = background_rgb & 0xFF;
+
+    //  Rough perceived brightness: green counts most, blue least.
+    uint32_t brightness = (red * 2 + green * 5 + blue) / 8;
+
+    return brightness > 128 ? lv_color_hex(0x101410) : lv_color_hex(0xF2F5F0);
+}
+
+
+esp_err_t display_show_status(const char *label, uint32_t background_rgb)
+{
+    assert (label);             //  Caller's contract
+
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!bsp_display_lock(1000)) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    lv_obj_add_flag(s_image, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(background_rgb), LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label, s_readable_text_colour(background_rgb), LV_PART_MAIN);
+    lv_label_set_text(s_label, label);
+    lv_obj_center(s_label);
+    lv_obj_remove_flag(s_label, LV_OBJ_FLAG_HIDDEN);
 
     bsp_display_unlock();
 
@@ -94,7 +176,7 @@ esp_err_t display_init(void)
         return ESP_FAIL;
     }
 
-    err = s_show_bringup();
+    err = s_build_screen();
     if (err != ESP_OK) {
         return err;
     }
