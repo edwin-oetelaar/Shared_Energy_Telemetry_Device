@@ -4,9 +4,11 @@ dependencies:
   idf:
     version: ">=4.1.0"
 
-  espressif/led_strip: "^3.0.1"
-    
   espressif/cjson: "^1.7.19"
+
+  ## Board support for the ESP32-S3-BOX-3: display, touch, buttons, audio.
+  ## Brings LVGL and the esp_lvgl_port with it.
+  espressif/esp-box-3: "^3.2"
   # # Put list of dependencies here
   # # For components maintained by Espressif:
   # component: "~1.0.0"

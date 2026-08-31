@@ -27,6 +27,14 @@ void wifi_prov_wait_until_completed(void);
 //  handler that a person triggers calls this; without it the wait eventually
 //  gives up and restarts the device.
 void wifi_prov_note_portal_activity(void);
+
+//  The name of the access point the device offers while provisioning. The
+//  screen shows it, so it must come from the same place the radio uses.
+const char *wifi_prov_ap_ssid(void);
+
+//  The network the device is trying to join, or an empty string when there is
+//  none. Never NULL.
+const char *wifi_prov_current_ssid(void);
 bool wifi_prov_wait_for_connection_timeout(TickType_t timeout);
 
 #endif // WIFI_PROVISIONING_H

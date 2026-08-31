@@ -58,7 +58,7 @@ punt van de hele lijst.
 - [x] **H1** POST-body wordt in één keer gelezen in een te kleine buffer — opgelost
 - [x] **H2** Panic-op-alles plus wis-na-3-boots is een gevaarlijke combinatie — opgelost
 - [x] **H3** Een webrequest kan het apparaat laten crashen — opgelost, foutcode i.p.v. abort
-- [ ] **H6** De wifi-status-led zit op GPIO 44, dat is U0RXD
+- [~] **H6** De wifi-status-led zit op GPIO 44, dat is U0RXD — vervallen met de bordwissel
 - [ ] **H4** Geen OTA, terwijl de partitietabel er twee slots voor heeft
 - [ ] **H5** Credentials liggen leesbaar in flash
 
@@ -69,7 +69,7 @@ punt van de hele lijst.
 - [x] **M4** Vaste retry van 10 seconden, oneindig lang — opgelost, backoff met jitter
 - [ ] **M5** NVS-schrijfactie in de event handler
 - [x] **M6** `app_main` kan oneindig blijven wachten — opgelost, stilte-timeout
-- [ ] **M7** "Ring uit" betekent twee verschillende dingen
+- [x] **M7** "Ring uit" betekent twee verschillende dingen — opgelost op het scherm van de BOX-3
 - [ ] **M10** Tijdens provisioning blijft het schema afgewezen credentials proberen
 - [x] **M8** Twee responses op één request in het API-check pad — opgelost
 - [x] **M9** De ESP-IDF-versie ligt nergens vast — opgelost, vastgelegd op v6.1
@@ -504,6 +504,15 @@ toont "alles in balans" terwijl er in werkelijkheid geen data is.
 **Fix:** geef "geen data" een eigen taal op de ring: een langzame ademende puls, of één gedimde
 pixel. Uit hoort "ik weet het en het is niets" te betekenen, niet "ik weet het niet".
 
+> **Opgelost, maar anders dan hier bedacht.** De ring bestaat niet meer; de ESP32-S3-BOX-3 heeft
+> een scherm. Sinds fase 3 van `docs/PLAN-box3.md` heeft elke toestand een eigen kleur én een
+> eigen tekst: "In balans" op donkergroen tegenover "Geen gegevens" op grijs. Daarmee is de
+> dubbelzinnigheid weg bij de wortel. Een scherm kan zeggen dat het het niet weet; een gedoofde
+> led kan dat niet.
+>
+> **M3** haalde er eerder al een deel van de angel uit, door te voorkomen dat een foutantwoord
+> van de API stilzwijgend als nul kilowatt werd gelezen. Die twee samen zijn de bevinding.
+
 ### M8 — Twee responses op één request in het API-check pad
 `main/src/wifi_web.c:284-307` en `main/src/wifi_web.c:309-318`
 
@@ -687,6 +696,15 @@ anders en is "het werkt bij mij" geen uitspraak over iets.
 
 ## Bevestigd op hardware
 
+> **Let op: het bord is gewisseld.** Sinds 2026-08-29 gaat het project naar de
+> ESP32-S3-BOX-3; zie `docs/PLAN-box3.md`. De twee testrondes hieronder zijn gedaan op de
+> Seeed XIAO ESP32-S3 en gelden dus niet meer als bewijs voor het product. Zij blijven staan
+> als bewijs dat de fixes zelf werken. Wat opnieuw moet: alles wat hardware raakt.
+>
+> Bevinding **H6** vervalt met de wissel — de wifi-led op GPIO 44 bestaat niet meer.
+> Bevinding **M7** wordt oplosbaar in plaats van een afweging, want een scherm kan
+> "geen gegevens" wél tonen; dat is fase 3 van het plan.
+
 **Board:** Seeed Studio XIAO ESP32-S3 Sense · ESP32-S3 rev v0.2 · 8 MB flash · 8 MB PSRAM
 **Datum:** 2026-08-28 · **Firmware:** deze branch, gebouwd met **ESP-IDF 5.5.5**
 
@@ -787,6 +805,53 @@ Twee dingen zijn daar toch uit gekomen. `httpd_query_key_value` is in v6.1 nagel
 broncode en decodeert nog steeds niet, dus de dubbele-decodering waar de verdenking op viel
 bestaat niet. En het gedrag van het reconnect-schema tijdens die mislukte pogingen leverde
 **M10** op.
+
+### Derde ronde: op de ESP32-S3-BOX-3
+
+**Board:** ESP32-S3-BOX-3 · 16 MB flash · 16 MB octal PSRAM
+**Datum:** 2026-08-31 · **Firmware:** branch `box3/plan`, ESP-IDF v6.1, fase 3 van het plan
+**Uitgevoerd:** NVS leeg, provisioning volledig doorlopen via het portaal, daarna twee
+telemetrierondes.
+
+| Bevinding | Status | Grondslag |
+| --- | --- | --- |
+| **C4** API-setup pagina | **Bevestigd** | Pagina rendert, sleutels geaccepteerd, token opgehaald |
+| **M1** Netwerklijst als JSON | **Bevestigd** | Netwerk uit de lijst gekozen, verbinding gelegd |
+| **M8** Eén antwoord per request | **Bevestigd** | Het portaal verwerkt `/api-check` en gaat door |
+| **M3** Verplicht telemetrieveld | **Bevestigd** | Twee geldige antwoorden doorgelaten en verwerkt |
+| **M4** Jitter op het interval | **Bevestigd** | 73,16 s tussen twee rondes; zonder jitter zou dat steeds 60 s plus verzoektijd zijn |
+| **M7** Twee betekenissen | **Bevestigd** | Zie hieronder |
+| **C1** URL-decoding | **Bevestigd** | Zie hieronder |
+| **C2** Reconnect-backoff | **Niet getest** | Er is geen verbinding weggevallen |
+
+**M7 liet zich in het wild zien.** Tussen het krijgen van een IP-adres en het invoeren van de
+API-sleutels zat 216 seconden. Al die tijd stond er **"Geen gegevens"** op het scherm: het
+apparaat was verbonden, maar wist niets over de gemeenschap. Op de oude hardware was de ring in
+diezelfde situatie gedoofd geweest — niet te onderscheiden van "in balans". Dit is precies het
+geval waar de bevinding over ging, en het duurde ruim drie minuten.
+
+**C1 is afgerond.** De grondslag is drieledig, en het is eerlijker die te noemen dan te doen
+alsof één test alles bewees. Op de XIAO is op 2026-08-28 met spaties én procenttekens
+aangetoond dat de decoder werkt. De code van `uri_decode` is sindsdien niet gewijzigd. Op de
+BOX-3 heeft Edwin de afhandeling van wachtwoorden met spaties op 2026-08-31 in de code
+nagelopen en akkoord bevonden, en het decodeerpad heeft hier gedraaid. Wat hier níét is
+gebeurd, is een provisioning op dit bord met een wachtwoord dat decodering nodig had.
+
+De toestanden liepen in de juiste volgorde over het scherm: `provisioning` → `connecting` →
+`no-data` → `deficit`. Vier van de zeven toestanden zijn daarmee op hardware gezien.
+
+In een tweede ronde later die dag, na fase 4 van het plan, is het provisioningscherm met de
+QR-code beproefd: een telefoon die de code scant krijgt het netwerk aangeboden en verbindt
+meteen. Daarmee is ook de zichtbare kant van het provisioningprobleem uit **C5** aangepakt —
+al blijft C5 zelf open, want die gaat over de beveiliging van dat accesspoint, niet over de
+vindbaarheid.
+
+Verder in de log, en allebei ongevaarlijk:
+
+- `httpd_uri: URI '/generate_204' not found` — Android controleert zo of er internet achter het
+  accesspoint zit. De 404-handler stuurt hem door naar het portaal; zo hoort het te werken.
+- `wifi: Password length matches WPA2 standards, authmode threshold changes from OPEN to WPA2` —
+  de wifi-stack scherpt zijn eigen drempel aan op grond van de wachtwoordlengte.
 
 ---
 

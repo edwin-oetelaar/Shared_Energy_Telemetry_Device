@@ -16,7 +16,8 @@
 #include "inc/energyboxx_api.h"
 
 
-#include "inc/status_led.h"
+#include "inc/display.h"
+#include "inc/status_view.h"
 #include "soc/gpio_num.h"
 
 static const char *TAG = "[main]";
@@ -25,7 +26,6 @@ energyboxx_data_t data;
 #define RESET_WIFI_GPIO GPIO_NUM_17
 #define RESET_HOLD_MS   3000
 
-#define BRIGHTNESS_PERCENTAGE 10.0f // Brightness percentage for the LED rings
 #define POWER_BALANCE_DEADBAND_KW 0.05f
 
 //  How long to wait before asking the API again after a failed round. The last
@@ -42,9 +42,11 @@ static const uint32_t s_api_retry_delay_ms [] = {
 #define TELEMETRY_INTERVAL_MS   (60 * 1000)
 #define WIFI_WAIT_POLL_MS       10000
 
-static led_ring_t led_ring_1;
-static led_ring_t led_ring_2;
 static volatile bool data_connection_ok = false;
+
+//  What the telemetry task last worked out about the community. The view task
+//  combines it with the Wi-Fi state to decide what the device shows.
+static volatile status_view_state_t energy_state = STATUS_VIEW_NO_DATA;
 static size_t api_retry_row = 0;
 
 
@@ -118,28 +120,46 @@ static bool
     return s_reset_reason [row].counts;
 }
 
-static void status_led_task(void *pvParameters)
+//  --------------------------------------------------------------------------
+//  Work out what the device should be showing, and tell the view. Wi-Fi comes
+//  first: without a network the energy state says nothing about the community,
+//  only about how stale our last answer is.
+
+static status_view_state_t s_state_to_show(void)
+{
+    wifi_prov_state_t wifi_state = wifi_prov_get_state();
+
+    if (wifi_state == WIFI_PROV_STATE_AP_ACTIVE) {
+        return STATUS_VIEW_PROVISIONING;
+    }
+
+    //  Idle means Wi-Fi has been initialised but nothing has been asked of it
+    //  yet. That is still starting up, not connecting to something.
+    if (wifi_state == WIFI_PROV_STATE_IDLE) {
+        return STATUS_VIEW_STARTING;
+    }
+
+    if (wifi_state == WIFI_PROV_STATE_CONNECT_FAILED) {
+        return STATUS_VIEW_CONNECT_FAILED;
+    }
+
+    if (wifi_state != WIFI_PROV_STATE_CONNECTED) {
+        return STATUS_VIEW_CONNECTING;
+    }
+
+    if (!energyboxx_api_is_valid_credentials() || !data_connection_ok) {
+        return STATUS_VIEW_NO_DATA;
+    }
+
+    return energy_state;
+}
+
+static void status_view_task(void *pvParameters)
 {
     (void) pvParameters;
 
-    bool blink_on = false;
-
     while (true) {
-        wifi_prov_state_t wifi_state = wifi_prov_get_state();
-
-        if (wifi_state == WIFI_PROV_STATE_CONNECTED) {
-            s_log_if_failed("wifi status LED", status_led_set_wifi(true));
-        } else if (wifi_state == WIFI_PROV_STATE_AP_ACTIVE ||
-                   wifi_state == WIFI_PROV_STATE_CONNECT_FAILED) {
-            s_log_if_failed("wifi status LED", status_led_set_wifi(blink_on));
-        } else {
-            s_log_if_failed("wifi status LED", status_led_set_wifi(false));
-        }
-
-        bool data_ready = energyboxx_api_is_valid_credentials() && data_connection_ok;
-        s_log_if_failed("data status LED", status_led_set_data(data_ready ? true : blink_on));
-
-        blink_on = !blink_on;
+        s_log_if_failed("showing the status", status_view_show(s_state_to_show()));
         vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
@@ -258,7 +278,6 @@ static void energyboxx_task(void *pvParameters)
             //  Nothing was asked of the API, so the backoff row stays put; this
             //  is just waiting for the radio to come back.
             data_connection_ok = false;
-            s_log_if_failed("clearing the energy ring", led_ring_clear(&led_ring_2));
             vTaskDelay(pdMS_TO_TICKS(WIFI_WAIT_POLL_MS));
             continue;
         }
@@ -268,7 +287,6 @@ static void energyboxx_task(void *pvParameters)
         {
             ESP_LOGE(TAG, "Failed to fetch token: %s", esp_err_to_name(err));
             data_connection_ok = false;
-            s_log_if_failed("clearing the energy ring", led_ring_clear(&led_ring_2));
             energyboxx_api_set_renew_token(true);
             s_api_backoff_wait();
             continue;
@@ -279,7 +297,6 @@ static void energyboxx_task(void *pvParameters)
         {
             ESP_LOGE(TAG, "Failed to perform API call: %s", esp_err_to_name(err));
             data_connection_ok = false;
-            s_log_if_failed("clearing the energy ring", led_ring_clear(&led_ring_2));
             energyboxx_api_set_renew_token(true);
             s_api_backoff_wait();
             continue;
@@ -291,17 +308,17 @@ static void energyboxx_task(void *pvParameters)
         if(data.community_power_result_kw < -POWER_BALANCE_DEADBAND_KW)
         {
             ESP_LOGW(TAG, "Community is importing power");
-            led_ring_set_all(&led_ring_2, (led_rgb_t){ .r = 255, .g = 255, .b = 0 }); // Yellow
+            energy_state = STATUS_VIEW_DEFICIT;
         }
         else if(data.community_power_result_kw > POWER_BALANCE_DEADBAND_KW)
         {
             ESP_LOGW(TAG, "Community is exporting power");
-            led_ring_set_all(&led_ring_2, (led_rgb_t){ .r = 0, .g = 255, .b = 0 }); // Green
+            energy_state = STATUS_VIEW_SURPLUS;
         }
         else
         {
             ESP_LOGW(TAG, "Community is balanced");
-            led_ring_clear(&led_ring_2);
+            energy_state = STATUS_VIEW_BALANCED;
         }
 
         //  Jittered as well: without it a fleet that booted together keeps
@@ -353,7 +370,12 @@ void app_main(void)
 {
     ESP_ERROR_CHECK(wifi_storage_init());
     ESP_ERROR_CHECK(energyboxx_api_init());
-    ESP_ERROR_CHECK(status_leds_init());
+    ESP_ERROR_CHECK(status_view_init());
+
+    //  Early on purpose: the sooner the screen lights up, the sooner somebody
+    //  can see that the device is alive. A screen that will not start is
+    //  reported and does not stop the rest.
+    s_log_if_failed("starting the display", display_init());
 
     //  Read the boot counter. Only a deliberate power cycle adds to it; see
     //  the reset reason table above for why a panic must not.
@@ -406,21 +428,11 @@ void app_main(void)
         s_log_if_failed("clearing API credentials", api_storage_clear_credentials());
     }
 
-    //  A ring that will not initialise leaves the device without its display,
-    //  but it can still connect, fetch telemetry and be reprovisioned. Rebooting
-    //  over it would only take those away too.
-    s_log_if_failed("initialising LED ring 1", led_ring_init(&led_ring_1, GPIO_NUM_1));
-    s_log_if_failed("initialising LED ring 2", led_ring_init(&led_ring_2, GPIO_NUM_2));
-    s_log_if_failed("setting ring 1 brightness",
-                    led_ring_set_brightness(&led_ring_1, BRIGHTNESS_PERCENTAGE));
-    s_log_if_failed("setting ring 2 brightness",
-                    led_ring_set_brightness(&led_ring_2, BRIGHTNESS_PERCENTAGE));
-
     ESP_ERROR_CHECK(wifi_prov_init());
 
     BaseType_t status_task_created = xTaskCreate(
-        status_led_task,
-        "status_led_task",
+        status_view_task,
+        "status_view_task",
         2048,
         NULL,
         5,

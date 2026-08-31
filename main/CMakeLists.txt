@@ -7,11 +7,14 @@ idf_component_register(
         "src/dns_server.c"
         "src/wifi_storage.c"
         "src/api_storage.c"
-        "src/status_led.c"
+        "src/status_view.c"
+        "src/display.c"
         "src/uri_decode.c"
     INCLUDE_DIRS
         "."
         "inc"
+    EMBED_FILES
+        "../assets/energy-owl-bringup.bin"
     REQUIRES
         esp_wifi
         esp_event
@@ -23,7 +26,7 @@ idf_component_register(
         esp-tls
         mbedtls
         esp_timer
-        led_strip
+        esp_app_format
 )
 
 #  Warnings for this component only. ESP-IDF itself is built with a milder set,
