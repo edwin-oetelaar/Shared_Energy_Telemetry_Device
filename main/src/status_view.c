@@ -14,6 +14,9 @@
 #include "esp_timer.h"
 
 #include <stdio.h>
+#include <string.h>
+
+#include "inc/energyboxx_api.h"
 
 #include "inc/display.h"
 #include "inc/status_view.h"
@@ -32,7 +35,7 @@ static const char *TAG = "[status_view]";
 //  The bring-up image has its own row rather than a colour: while the device is
 //  starting, the owl is what people see.
 
-typedef enum { PAINT_IMAGE = 0, PAINT_COLOUR } paint_t;
+typedef enum { PAINT_IMAGE = 0, PAINT_COLOUR, PAINT_REPORT } paint_t;
 
 static const struct {
     const char *name;
@@ -55,8 +58,14 @@ static const struct {
                                    "Energie inkopen",   PAINT_COLOUR, 0xE0A21B },
     [STATUS_VIEW_BALANCED]     = { "balanced",     "supply and demand match",
                                    "In balans",         PAINT_COLOUR, 0x243028 },
+    [STATUS_VIEW_KEYS_NEEDED]  = { "keys-needed",  "no API credentials stored",
+                                   "Sleutels nodig",    PAINT_COLOUR, 0x8A5A1A },
     [STATUS_VIEW_NO_DATA]      = { "no-data",      "no fresh telemetry",
-                                   "Geen gegevens",     PAINT_COLOUR, 0x5A5A5A }
+                                   "Geen gegevens",     PAINT_COLOUR, 0x5A5A5A },
+    [STATUS_VIEW_REPORT]       = { "report",       "what the device knows about itself",
+                                   "Status",            PAINT_REPORT, 0x243028 },
+    [STATUS_VIEW_SETUP_DONE]   = { "setup-done",   "credentials accepted, setup finished",
+                                   "Klaar, we zijn online", PAINT_COLOUR, 0x1F7A3D }
 };
 
 //  The bring-up image is how somebody learns what this product is. A device
@@ -74,6 +83,7 @@ static const struct {
 //  in the list: they say what the device is doing right now, and browsing to
 //  them would be a lie.
 static const status_view_state_t s_browsable [] = {
+    STATUS_VIEW_REPORT,
     STATUS_VIEW_STARTING,
     STATUS_VIEW_SURPLUS,
     STATUS_VIEW_DEFICIT,
@@ -94,10 +104,64 @@ static bool s_browsing = false;
 static size_t s_browse_row = 0;
 static int64_t s_browse_until_us = 0;
 
+//  An announcement outranks browsing: news about what just happened matters
+//  more than whatever somebody was paging through.
+static bool s_announcing = false;
+static int64_t s_announce_until_us = 0;
+
 //  Built when a state is drawn, so the screen never holds a pointer into
 //  something that has since changed.
 static char s_detail [64];
 static char s_qr [96];
+
+
+//  --------------------------------------------------------------------------
+//  What the device knows about itself, in the words of somebody standing in
+//  front of it. Every line answers a question that until now could only be
+//  answered by reading a serial log.
+
+static char s_report [256];
+
+static void s_build_report(void)
+{
+    char ip [16];
+    wifi_prov_ip_string(ip, sizeof(ip));
+
+    const char *network = wifi_prov_current_ssid();
+    int token_left = energyboxx_api_token_seconds_left();
+    int since_data = energyboxx_api_seconds_since_data();
+
+    char wifi_line [72];
+    if (wifi_prov_get_state() == WIFI_PROV_STATE_CONNECTED && ip [0] != '\0') {
+        snprintf(wifi_line, sizeof(wifi_line), "Wifi      %s\n          %s", network, ip);
+    }
+    else {
+        snprintf(wifi_line, sizeof(wifi_line), "Wifi      geen verbinding");
+    }
+
+    char keys_line [48];
+    if (!energyboxx_api_has_credentials()) {
+        snprintf(keys_line, sizeof(keys_line), "Sleutels  niet ingevoerd");
+    }
+    else if (!energyboxx_api_is_valid_credentials()) {
+        snprintf(keys_line, sizeof(keys_line), "Sleutels  afgekeurd");
+    }
+    else {
+        snprintf(keys_line, sizeof(keys_line), "Sleutels  goed, nog %d min", token_left / 60);
+    }
+
+    char data_line [48];
+    if (since_data < 0) {
+        snprintf(data_line, sizeof(data_line), "Meting    nog geen");
+    }
+    else {
+        snprintf(data_line, sizeof(data_line), "Meting    %d s geleden", since_data);
+    }
+
+    snprintf(s_report, sizeof(s_report), "%s\n%s\n%s\nPortaal   %s",
+             wifi_line, keys_line, data_line,
+             wifi_prov_portal_is_open() ? "open" : "dicht");
+}
 
 
 //  --------------------------------------------------------------------------
@@ -199,12 +263,25 @@ static esp_err_t s_draw(status_view_state_t state)
         return ESP_OK;
     }
 
-    esp_err_t err = s_view [state].paint == PAINT_IMAGE
-                  ? display_show_bringup()
-                  : display_show_status(s_view [state].label,
-                                        s_detail_for(state),
-                                        s_qr_for(state),
-                                        s_view [state].rgb);
+    esp_err_t err;
+
+    if (s_view [state].paint == PAINT_REPORT) {
+        s_build_report();
+        err = display_show_report(s_view [state].label, s_report,
+                                  wifi_prov_portal_is_open()
+                                      ? "Portaal is open"
+                                      : "Sleutels invoeren",
+                                  s_view [state].rgb);
+    }
+    else if (s_view [state].paint == PAINT_IMAGE) {
+        err = display_show_bringup();
+    }
+    else {
+        err = display_show_status(s_view [state].label,
+                                  s_detail_for(state),
+                                  s_qr_for(state),
+                                  s_view [state].rgb);
+    }
 
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Could not draw '%s': %s", s_view [state].name, esp_err_to_name(err));
@@ -248,6 +325,37 @@ void status_view_touched(void)
 }
 
 
+void status_view_announce(status_view_state_t state, int milliseconds)
+{
+    assert (state < STATUS_VIEW_STATE_COUNT);   //  Caller's contract
+    assert (milliseconds > 0);
+
+    s_browsing = false;
+    display_show_browse_controls(false);
+    display_show_preview_marker(false);
+
+    s_announcing = true;
+    s_announce_until_us = esp_timer_get_time() + (int64_t) milliseconds * 1000;
+
+    s_draw(state);
+}
+
+
+void status_view_open_portal(void)
+{
+    esp_err_t err = wifi_prov_open_portal();
+
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Could not open the portal: %s", esp_err_to_name(err));
+        return;
+    }
+
+    //  Keep the report on screen and let it refresh; it now says the portal is
+    //  open, and the QR for joining lives on the provisioning screen next door.
+    s_start_browsing();
+}
+
+
 void status_view_resume_auto(void)
 {
     if (!s_browsing) {
@@ -258,6 +366,7 @@ void status_view_resume_auto(void)
 
     s_browsing = false;
     display_show_browse_controls(false);
+    display_show_preview_marker(false);
 
     s_draw(s_auto_state);
 }
@@ -273,7 +382,13 @@ void status_view_browse(int direction)
     s_browse_row = (s_browse_row + BROWSABLE_COUNT + (size_t) (direction > 0 ? 1 : -1))
                  % BROWSABLE_COUNT;
 
-    s_draw(s_browsable [s_browse_row]);
+    status_view_state_t state = s_browsable [s_browse_row];
+
+    s_draw(state);
+
+    //  Anything that is not the live state is a preview, and has to say so.
+    //  The report is about the device itself, so it is never a preview.
+    display_show_preview_marker(state != s_auto_state && state != STATUS_VIEW_REPORT);
 }
 
 
@@ -287,14 +402,33 @@ esp_err_t status_view_show(status_view_state_t state)
 
     s_auto_state = state;
 
+    if (s_announcing) {
+        if (esp_timer_get_time() < s_announce_until_us) {
+            return ESP_OK;
+        }
+
+        s_announcing = false;
+    }
+
     if (s_browsing) {
         if (esp_timer_get_time() < s_browse_until_us) {
+            //  The report ages while you look at it, so it is redrawn rather
+            //  than left standing with a stale "42 s geleden".
+            if (s_current == STATUS_VIEW_REPORT) {
+                s_build_report();
+                display_show_report(s_view [STATUS_VIEW_REPORT].label, s_report,
+                                    wifi_prov_portal_is_open()
+                                        ? "Portaal is open"
+                                        : "Sleutels invoeren",
+                                    s_view [STATUS_VIEW_REPORT].rgb);
+            }
             return ESP_OK;
         }
 
         ESP_LOGI(TAG, "Browsing timed out, following the telemetry again");
         s_browsing = false;
         display_show_browse_controls(false);
+        display_show_preview_marker(false);
     }
 
     //  Hold the bring-up image its minimum time, but only on the automatic

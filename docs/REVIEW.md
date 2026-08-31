@@ -59,6 +59,10 @@ punt van de hele lijst.
 - [x] **H2** Panic-op-alles plus wis-na-3-boots is een gevaarlijke combinatie — opgelost
 - [x] **H3** Een webrequest kan het apparaat laten crashen — opgelost, foutcode i.p.v. abort
 - [~] **H6** De wifi-status-led zit op GPIO 44, dat is U0RXD — vervallen met de bordwissel
+- [x] **H7** `energyboxx_api_setup()` laat het oude token staan — opgelost
+- [x] **H8** De DNS-server lekt zijn socket bij het stoppen — opgelost
+- [x] **H9** `wifi_prov_start_ap()` aborteert bij een fout, en draait nu tijdens bedrijf — opgelost
+- [x] **H10** Een afgekeurde sleutel laat een werkend apparaat zonder credentials achter — opgelost
 - [ ] **H4** Geen OTA, terwijl de partitietabel er twee slots voor heeft
 - [ ] **H5** Credentials liggen leesbaar in flash
 
@@ -71,6 +75,7 @@ punt van de hele lijst.
 - [x] **M6** `app_main` kan oneindig blijven wachten — opgelost, stilte-timeout
 - [x] **M7** "Ring uit" betekent twee verschillende dingen — opgelost op het scherm van de BOX-3
 - [ ] **M10** Tijdens provisioning blijft het schema afgewezen credentials proberen
+- [x] **M11** Een gebladerd voorbeeld is niet te onderscheiden van een echte meting — opgelost
 - [x] **M8** Twee responses op één request in het API-check pad — opgelost
 - [x] **M9** De ESP-IDF-versie ligt nergens vast — opgelost, vastgelegd op v6.1
 
@@ -354,6 +359,96 @@ de **native USB-poort** van het board, niet via de UART-bridge.
 
 **Nog te bevestigen op hardware.** Of dit conflict optreedt hangt af van het board: heeft het
 een bridge op GPIO 43/44, of alleen de native USB-poort?
+
+### H7 — `energyboxx_api_setup()` laat het oude token staan
+`main/src/energyboxx_api.c`
+
+`energyboxx_api_setup()` neemt nieuwe sleutels aan en zet `valid_credentials` op false, maar
+laat het bestaande token en zijn vervaltijd ongemoeid. `fetch_token()` ziet daarna een token
+dat nog geldig is, slaat de aanvraag over en geeft `ESP_OK` terug.
+
+Het gevolg is dat de webpagina "Validation successful" meldt en de sleutels naar NVS schrijft,
+**zonder dat ze ooit zijn beproefd**. Iemand kan volstrekt verkeerde sleutels invoeren, te horen
+krijgen dat ze goed zijn, en er twee uur later achter komen als het oude token verloopt.
+
+Waargenomen op hardware op 2026-08-31:
+
+```
+[113.22] Energyboxx API setup completed with Client ID and Client Secret
+[113.22] Token still valid for 7090 more seconds, skipping fetch
+[113.22] API credentials saved successfully
+```
+
+Daarna bleef `valid_credentials` op false staan, dus het statusscherm meldde "sleutels
+afgekeurd" en het apparaat toonde "Geen gegevens" terwijl het met het oude token gewoon
+metingen bleef ophalen.
+
+Dit zat al in de oorspronkelijke firmware. Bij een eerste installatie is er geen eerder token,
+dus de overslag treedt daar nooit op; de bevinding werd pas bereikbaar toen het portaal opnieuw
+geopend kon worden om werkende sleutels te vervangen (fase 6a van `docs/PLAN-box3.md`).
+
+**Fix:** nieuwe sleutels maken het oude token betekenisloos, dus `setup()` gooit het weg -
+token leeg, vervaltijd nul, en `renew_token` aan.
+
+> **Opgelost.**
+
+### H8 — De DNS-server lekt zijn socket bij het stoppen
+`main/src/dns_server.c`
+
+`stop_dns_server()` schiet de taak dood met `vTaskDelete()` terwijl die in `recvfrom()` op de
+socket hangt. De socket wordt nooit gesloten, dus poort 53 blijft bezet. Een volgende
+`start_dns_server()` kan niet binden.
+
+De tweede helft maakt het onzichtbaar: de mislukte `bind()` wordt gelogd en genegeerd, waarna
+er onvoorwaardelijk "Socket bound, port 53" onder staat. De server draait door op een
+niet-gebonden socket en ziet er in de log gezond uit.
+
+Waargenomen op 2026-08-31: het tweede portaal gaf `Socket unable to bind: errno 112` en daarna
+geen enkele DNS-vraag meer, bij drie verbindingspogingen. De gebruiker kreeg wel een IP-adres
+maar geen captive portal.
+
+Ook dit zat al in de code. De oorspronkelijke firmware startte de DNS-server één keer en stopte
+hem één keer, dus het lek had geen gevolg.
+
+**Fix:** de socket in de handle bewaren en bij het stoppen sluiten, en een mislukte bind de
+server laten staken in plaats van doorgaan.
+
+> **Opgelost.** Dit is de eerste wijziging in `main/src/dns_server.c`, dat tot nu toe letterlijk
+> van Espressif was overgenomen. De alternatieven waren slechter: de DNS-server permanent laten
+> draaien lost het lek op, maar hij bindt op alle interfaces en zou dan ook DNS-vragen vanaf het
+> thuisnetwerk beantwoorden met het adres van het accesspoint. De drie wijzigingen staan
+> gemerkt als `LOCAL CHANGE`, met een blok bovenaan het bestand dat uitlegt wat er afwijkt van
+> de bron.
+
+### H9 — `wifi_prov_start_ap()` aborteert bij een fout, en draait nu tijdens bedrijf
+`main/src/wifi_provisioning.c`
+
+`esp_wifi_set_mode()` en `esp_wifi_set_config()` stonden onder `ESP_ERROR_CHECK`. Bij **H2** is
+die aanroep blijven staan omdat hij alleen bij het opstarten liep, waar een abort te overleven
+is. Sinds het portaal vanaf het scherm geopend kan worden, loopt dit pad terwijl iemand het
+apparaat staat te gebruiken — en dan herstart een mislukte moduswissel het hele apparaat.
+
+**Fix:** de foutcode teruggeven. Hetzelfde geldt voor `esp_wifi_set_config(WIFI_IF_STA, ...)`
+in `wifi_prov_connect()`.
+
+> **Opgelost.**
+
+### H10 — Een afgekeurde sleutel laat een werkend apparaat zonder credentials achter
+`main/src/wifi_web.c`, `main/src/energyboxx_api.c`
+
+`energyboxx_api_setup()` overschrijft de credentials in het geheugen en gooit sinds **H7** het
+token weg. Wordt de nieuwe sleutel daarna afgekeurd, dan blijft het apparaat achter met
+onbruikbare gegevens in het geheugen, terwijl in NVS nog de werkende sleutels staan. Het scherm
+gaat op "Geen gegevens" en blijft daar tot iemand het apparaat herstart.
+
+Eén verkeerd getypt teken maakt een werkend apparaat dus tijdelijk stuk. Dat is te veel straf
+voor een vergissing die iedereen maakt.
+
+**Fix:** `setup()` bewaart de vorige credentials, en de webhandler zet ze terug zodra de nieuwe
+worden afgekeurd. Er wordt meteen een nieuw token gehaald, zodat het apparaat weer werkt voordat
+de gebruiker de foutmelding op zijn telefoon heeft uitgelezen.
+
+> **Opgelost.**
 
 ### H4 — Geen OTA, terwijl de partitietabel er twee slots voor heeft
 `sdkconfig` (`CONFIG_PARTITION_TABLE_TWO_OTA_LARGE=y`), geen OTA-code in `main/`
@@ -640,6 +735,24 @@ Twee gevolgen:
 reden die op verkeerde credentials wijst (`WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT`,
 `WIFI_REASON_AUTH_FAIL`). Doorproberen slaat pas aan als er credentials zijn die ooit hebben
 gewerkt.
+
+### M11 — Een gebladerd voorbeeld is niet te onderscheiden van een echte meting
+`main/src/status_view.c` (bladermodus, ingevoerd bij fase 5 van `docs/PLAN-box3.md`)
+
+Gevonden op 2026-08-31, doordat Edwin het zelf niet kon zien. Fase 5 gaf het apparaat een
+bladerfunctie waarmee je door de energietoestanden kunt lopen. Zo'n voorbeeld zag er precies zo
+uit als een echte meting: "Energie inkopen" op geel, zonder enig verschil.
+
+Twee gevolgen. Wie bladert weet niet meer of wat er staat gemeten of gekozen is. En wie
+wegloopt terwijl er een voorbeeld staat, laat tot de terugval een verzonnen waarde aan de muur
+hangen.
+
+Dit was geen fout in de oorspronkelijke firmware maar een die bij het bouwen van fase 5 is
+ingevoerd. Dat maakt hem niet minder echt: het apparaat toonde iets dat niet gemeten was.
+
+> **Opgelost.** Elk beeld dat niet de actuele toestand is, krijgt linksboven een merkteken
+> "voorbeeld". Het statusscherm is uitgezonderd, want dat gaat over het apparaat zelf en is
+> nooit een meting.
 
 ### M9 — De ESP-IDF-versie ligt nergens vast
 `sdkconfig` (t/m commit 08908ec), `.github/workflows/ci.yml`

@@ -18,6 +18,19 @@
 #include "lwip/netdb.h"
 #include "dns_server.h"
 
+/*  LOCAL CHANGES to Espressif's example, marked so the next update can find
+    them. Both are needed because this project stops and starts the DNS server
+    more than once: the captive portal can be opened again later to replace API
+    credentials.
+
+    1. stop_dns_server () deleted the task while it was blocked in recvfrom ()
+       and never closed the socket, so port 53 stayed bound for good. The next
+       start could not bind.
+    2. A failed bind was logged and then ignored, and the code announced
+       "Socket bound" regardless. The server then sat on an unbound socket,
+       looking healthy in the log while answering nothing.
+ */
+
 #define DNS_PORT (53)
 #define DNS_MAX_LEN (256)
 
@@ -60,6 +73,8 @@ typedef struct __attribute__((__packed__))
 struct dns_server_handle {
     bool started;
     TaskHandle_t task;
+    int sock;                   //  LOCAL CHANGE: so stop can close it
+
     int num_of_entries;
     dns_entry_pair_t entry[];
 };
@@ -211,10 +226,15 @@ void dns_server_task(void *pvParameters)
             break;
         }
         ESP_LOGI(TAG, "Socket created");
+        handle->sock = sock;    //  LOCAL CHANGE
 
         int err = bind(sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
         if (err < 0) {
+            //  LOCAL CHANGE: give up instead of serving on an unbound socket.
             ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
+            close(sock);
+            handle->sock = -1;
+            break;
         }
         ESP_LOGI(TAG, "Socket bound, port %d", DNS_PORT);
 
@@ -262,6 +282,7 @@ void dns_server_task(void *pvParameters)
             ESP_LOGE(TAG, "Shutting down socket");
             shutdown(sock, 0);
             close(sock);
+            handle->sock = -1;  //  LOCAL CHANGE
         }
     }
     vTaskDelete(NULL);
@@ -271,6 +292,7 @@ dns_server_handle_t start_dns_server(dns_server_config_t *config)
 {
     dns_server_handle_t handle = calloc(1, sizeof(struct dns_server_handle) + config->num_of_entries * sizeof(dns_entry_pair_t));
     ESP_RETURN_ON_FALSE(handle, NULL, TAG, "Failed to allocate dns server handle");
+    handle->sock = -1;          //  LOCAL CHANGE
 
     handle->started = true;
     handle->num_of_entries = config->num_of_entries;
@@ -285,6 +307,16 @@ void stop_dns_server(dns_server_handle_t handle)
     if (handle) {
         handle->started = false;
         vTaskDelete(handle->task);
+
+        //  LOCAL CHANGE: the task is gone and will not touch this again, so
+        //  release the socket here. Without it port 53 stays bound and the
+        //  next start_dns_server () cannot bind.
+        if (handle->sock >= 0) {
+            shutdown(handle->sock, 0);
+            close(handle->sock);
+            handle->sock = -1;
+        }
+
         free(handle);
     }
 }

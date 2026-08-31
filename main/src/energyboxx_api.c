@@ -31,7 +31,15 @@ static int64_t token_acquired_us = 0;
 static char client_id[128] = {0};
 static char client_secret[256] = {0};
 
+//  What was in use before the last setup (). Kept so a refused attempt can be
+//  undone; without it, typing one wrong character leaves a device that was
+//  working with no usable credentials until somebody reboots it.
+static char previous_client_id[128] = {0};
+static char previous_client_secret[256] = {0};
+static bool has_previous = false;
+
 static bool renew_token = true;
+static int64_t last_data_us = 0;
 
 static const char *TAG = "[energyboxx_api]";
 
@@ -418,6 +426,8 @@ static esp_err_t s_get_data_locked(energyboxx_data_t* data)
         cJSON_Delete(root);
         esp_http_client_cleanup(client);
 
+        last_data_us = esp_timer_get_time();
+
         return ESP_OK;
     }
     else
@@ -483,6 +493,12 @@ esp_err_t energyboxx_api_setup(const char *c_id, const char *c_secret){
 
     s_lock_acquire ();
 
+    if (credentials_configured) {
+        memcpy(previous_client_id, client_id, sizeof(previous_client_id));
+        memcpy(previous_client_secret, client_secret, sizeof(previous_client_secret));
+        has_previous = true;
+    }
+
     strncpy(client_id, c_id, sizeof(client_id) - 1);
     client_id[sizeof(client_id) - 1] = '\0';
 
@@ -492,6 +508,17 @@ esp_err_t energyboxx_api_setup(const char *c_id, const char *c_secret){
     credentials_configured = true;
     valid_credentials = false;
 
+    //  New credentials make the old token meaningless, so throw it away. Left
+    //  standing, fetch_token () sees a token that is still valid, skips the
+    //  request, and reports success - which means credentials nobody ever
+    //  tested get saved and called good. That cannot show up on a first
+    //  installation, where there is no earlier token, only when somebody
+    //  replaces credentials that were already working.
+    access_token [0] = '\0';
+    expires_in_seconds = 0;
+    token_acquired_us = 0;
+    renew_token = true;
+
     s_lock_release ();
 
     ESP_LOGI(TAG, "Energyboxx API setup completed with Client ID and Client Secret");
@@ -499,7 +526,66 @@ esp_err_t energyboxx_api_setup(const char *c_id, const char *c_secret){
     return ESP_OK;
 }
 
+esp_err_t energyboxx_api_restore_previous(void)
+{
+    s_lock_acquire ();
+
+    if (!has_previous) {
+        s_lock_release ();
+        ESP_LOGW(TAG, "Nothing to restore; there were no earlier credentials");
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    memcpy(client_id, previous_client_id, sizeof(client_id));
+    memcpy(client_secret, previous_client_secret, sizeof(client_secret));
+    has_previous = false;
+
+    //  The token that belonged to the refused credentials is worthless too.
+    access_token [0] = '\0';
+    expires_in_seconds = 0;
+    token_acquired_us = 0;
+    renew_token = true;
+    valid_credentials = false;
+
+    s_lock_release ();
+
+    ESP_LOGI(TAG, "Earlier credentials restored");
+
+    //  Fetch straight away, so the device is working again before the person
+    //  who mistyped has finished reading the error on their phone.
+    return energyboxx_api_fetch_token();
+}
+
+
 bool energyboxx_api_has_credentials(void)
 {
     return credentials_configured;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Both of these are read for the status screen, which only wants a rough
+//  number to show a person. They deliberately do not take the module lock: a
+//  screen refresh must never wait behind a ten-second HTTP request.
+
+int energyboxx_api_token_seconds_left(void)
+{
+    if (expires_in_seconds <= 0 || token_acquired_us == 0) {
+        return 0;
+    }
+
+    int64_t elapsed = (esp_timer_get_time() - token_acquired_us) / 1000000;
+    int64_t left = expires_in_seconds - elapsed;
+
+    return left > 0 ? (int) left : 0;
+}
+
+
+int energyboxx_api_seconds_since_data(void)
+{
+    if (last_data_us == 0) {
+        return -1;
+    }
+
+    return (int) ((esp_timer_get_time() - last_data_us) / 1000000);
 }

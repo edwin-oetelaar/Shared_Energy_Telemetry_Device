@@ -219,20 +219,21 @@ static esp_err_t api_setup_get_handler(httpd_req_t *req)
         "<label for='clientSecret'>Client Secret</label>"
         "<input id='clientSecret' placeholder='Client Secret'>"
 
-        "<button id='checkBtn' onclick='checkKeys()' ";
+        "<button id='checkBtn' onclick='checkKeys()'>Check and save</button>"
 
+        "<div id='status'>";
+
+    //  The one variable part of this page. It used to disable the button when
+    //  credentials were already stored, on the assumption that valid
+    //  credentials meant there was nothing left to do here. That assumption
+    //  broke as soon as the portal could be opened again to replace working
+    //  keys: the page then refused the very thing it was opened for. It now
+    //  says what it knows and leaves the button alone.
     const char *html_body =
-        ">Check and save</button>"
-
-        "<div id='status'>Status: Ready</div>"
+        "</div>"
         "</div>"
 
         "<script>"
-        "const apiReady=";
-
-    const char *html_tail =
-        ";"
-        "if(apiReady){document.getElementById('checkBtn').disabled=true;}"
         "async function checkKeys(){"
         " const status=document.getElementById('status');"
         " const btn=document.getElementById('checkBtn');"
@@ -254,12 +255,13 @@ static esp_err_t api_setup_get_handler(httpd_req_t *req)
         "}"
         "</script></body></html>";
 
+
     const char *piece [] = {
         html_head,
-        api_ready ? "disabled" : "",
-        html_body,
-        api_ready ? "true" : "false",
-        html_tail
+        api_ready
+            ? "Er zijn al werkende sleutels opgeslagen. Nieuwe invoeren vervangt ze."
+            : "Status: Ready",
+        html_body
     };
 
     httpd_resp_set_type(req, "text/html");
@@ -350,6 +352,9 @@ static esp_err_t connect_post_handler(httpd_req_t *req)
         return err;
     }
 
+    //  Deliberately no wifi_prov_note_credentials_accepted () here: this only
+    //  starts a connection attempt, and the person still has to enter the API
+    //  keys. Closing the portal now would strand them halfway.
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, "{\"ok\":true}");
 }
@@ -517,6 +522,11 @@ static esp_err_t api_check_post_handler(httpd_req_t *req)
 
     err = energyboxx_api_fetch_token();
     if (err != ESP_OK) {
+        //  Refused. Put back whatever was working before, so one mistyped
+        //  character does not leave the device without credentials until
+        //  somebody power-cycles it.
+        energyboxx_api_restore_previous();
+
         httpd_resp_set_type(req, "application/json");
         return httpd_resp_sendstr(req,
             "{\"ok\":false,\"message\":\"Invalid Client ID or Client Secret\"}");
@@ -529,6 +539,8 @@ static esp_err_t api_check_post_handler(httpd_req_t *req)
         return httpd_resp_sendstr(req,
             "{\"ok\":false,\"message\":\"Failed to save credentials\"}");
     }
+
+    wifi_prov_note_credentials_accepted();
 
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, "{\"ok\":true}");
