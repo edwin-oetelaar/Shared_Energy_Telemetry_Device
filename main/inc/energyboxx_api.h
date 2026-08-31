@@ -24,6 +24,11 @@ typedef struct
 esp_err_t energyboxx_api_init(void);
 
 esp_err_t energyboxx_api_setup(const char *client_id, const char *client_secret);
+
+//  Put back the credentials that were in use before the last setup () call, and
+//  forget the ones that replaced them. For when somebody types the wrong keys:
+//  a refused attempt should not leave a working device without a token.
+esp_err_t energyboxx_api_restore_previous(void);
 esp_err_t energyboxx_api_fetch_token(void);
 esp_err_t energyboxx_api_get_data(energyboxx_data_t* data);
 const char *energyboxx_api_get_token(void);

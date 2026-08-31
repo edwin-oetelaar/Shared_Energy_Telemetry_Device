@@ -51,6 +51,16 @@ bool wifi_prov_portal_is_open(void);
 
 //  Shut the portal down and go back to station only.
 esp_err_t wifi_prov_close_portal(void);
+
+//  The portal accepted new credentials. Called by the web handler at the
+//  moment it happens, because that moment is far too short to notice by
+//  looking every few seconds - the credentials are invalid for well under a
+//  second while they are replaced.
+void wifi_prov_note_credentials_accepted(void);
+
+//  Who to tell when that happens, so the screen can say so. May be NULL.
+typedef void (*wifi_prov_accepted_cb_t)(void);
+void wifi_prov_set_credentials_accepted_cb(wifi_prov_accepted_cb_t callback);
 bool wifi_prov_wait_for_connection_timeout(TickType_t timeout);
 
 #endif // WIFI_PROVISIONING_H

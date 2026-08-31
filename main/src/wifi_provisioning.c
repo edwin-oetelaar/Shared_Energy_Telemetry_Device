@@ -88,6 +88,12 @@ static TickType_t s_last_portal_activity = 0;
 static bool s_portal_open = false;
 static esp_timer_handle_t s_portal_timer = NULL;
 
+//  Set once the credentials are accepted, so the browser gets its answer
+//  before the access point disappears from under it.
+static int64_t s_portal_close_at_us = 0;
+
+static wifi_prov_accepted_cb_t s_accepted_cb = NULL;
+
 static char current_ssid[33] = {0};
 static char current_password[65] = {0};
 
@@ -282,9 +288,11 @@ static void s_portal_watchdog(void *argument)
         return;
     }
 
-    if (energyboxx_api_is_valid_credentials()) {
-        ESP_LOGI(TAG, "Credentials accepted, closing the portal");
-        wifi_prov_close_portal();
+    if (s_portal_close_at_us != 0) {
+        if (esp_timer_get_time() >= s_portal_close_at_us) {
+            ESP_LOGI(TAG, "Credentials accepted, closing the portal");
+            wifi_prov_close_portal();
+        }
         return;
     }
 
@@ -294,6 +302,30 @@ static void s_portal_watchdog(void *argument)
                  PROVISIONING_SILENCE_TIMEOUT_MS / 60000);
         wifi_prov_close_portal();
     }
+}
+
+
+void wifi_prov_set_credentials_accepted_cb(wifi_prov_accepted_cb_t callback)
+{
+    s_accepted_cb = callback;
+}
+
+
+void wifi_prov_note_credentials_accepted(void)
+{
+    ESP_LOGI(TAG, "Credentials accepted");
+
+    if (s_accepted_cb != NULL) {
+        s_accepted_cb();
+    }
+
+    if (!s_portal_open) {
+        return;
+    }
+
+    //  Three seconds so the browser can show the person that it worked before
+    //  the access point they are on disappears.
+    s_portal_close_at_us = esp_timer_get_time() + 3 * 1000 * 1000;
 }
 
 
@@ -310,6 +342,7 @@ esp_err_t wifi_prov_close_portal(void)
     }
 
     s_portal_open = false;
+    s_portal_close_at_us = 0;
 
     if (s_portal_timer != NULL) {
         esp_timer_stop(s_portal_timer);
@@ -327,6 +360,13 @@ esp_err_t wifi_prov_close_portal(void)
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Could not return to station mode: %s", esp_err_to_name(err));
     }
+
+    //  wifi_prov_start_ap () reported the device as being in provisioning.
+    //  Put that back, or the screen keeps saying "Instellen" while the device
+    //  is online and fetching telemetry.
+    wifi_set_state(wifi_prov_is_connected()
+                       ? WIFI_PROV_STATE_CONNECTED
+                       : WIFI_PROV_STATE_IDLE);
 
     ESP_LOGI(TAG, "Portal closed");
 
@@ -366,6 +406,7 @@ esp_err_t wifi_prov_open_portal(void)
     }
 
     s_portal_open = true;
+    s_portal_close_at_us = 0;
     wifi_prov_note_portal_activity();
     esp_timer_start_periodic(s_portal_timer, 5 * 1000 * 1000);
 
@@ -389,9 +430,22 @@ esp_err_t wifi_prov_start_ap(void)
     };
 
     ESP_LOGI(TAG, "Starting provisioning AP: %s", PROV_AP_SSID);
-    
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
+
+    //  No ESP_ERROR_CHECK here. This used to run once at start-up, where an
+    //  abort was survivable; since the portal can be opened again from the
+    //  screen it runs while somebody is using the device, and a failure has to
+    //  be reported rather than take the whole thing down.
+    esp_err_t err = esp_wifi_set_mode(WIFI_MODE_APSTA);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Could not switch to AP+station mode: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    err = esp_wifi_set_config(WIFI_IF_AP, &ap_config);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Could not configure the access point: %s", esp_err_to_name(err));
+        return err;
+    }
 
     wifi_set_state(WIFI_PROV_STATE_AP_ACTIVE);
     wifi_prov_note_portal_activity();
@@ -399,6 +453,12 @@ esp_err_t wifi_prov_start_ap(void)
     // Start the DNS server that will redirect all queries to the softAP IP
     dns_server_config_t dns_config = DNS_SERVER_CONFIG_SINGLE("*" /* all A queries */, "WIFI_AP_DEF" /* softAP netif ID */);
     s_dns_handle = start_dns_server(&dns_config);
+    if (s_dns_handle == NULL) {
+        //  The portal still works on its own address; only the redirect that
+        //  opens it by itself is missing. Worth saying out loud rather than
+        //  leaving somebody to wonder why nothing pops up.
+        ESP_LOGE(TAG, "DNS redirect did not start; the portal is only at 192.168.4.1");
+    }
 
     return ESP_OK;
 }
@@ -424,7 +484,11 @@ esp_err_t wifi_prov_connect(const char *ssid, const char *password)
 
     ESP_LOGI(TAG, "Connecting to SSID: %s", ssid);
 
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_config));
+    esp_err_t config_err = esp_wifi_set_config(WIFI_IF_STA, &sta_config);
+    if (config_err != ESP_OK) {
+        ESP_LOGE(TAG, "Could not set the station config: %s", esp_err_to_name(config_err));
+        return config_err;
+    }
 
     current_ssid[0] = '\0';
     current_password[0] = '\0';

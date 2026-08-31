@@ -63,7 +63,9 @@ static const struct {
     [STATUS_VIEW_NO_DATA]      = { "no-data",      "no fresh telemetry",
                                    "Geen gegevens",     PAINT_COLOUR, 0x5A5A5A },
     [STATUS_VIEW_REPORT]       = { "report",       "what the device knows about itself",
-                                   "Status",            PAINT_REPORT, 0x243028 }
+                                   "Status",            PAINT_REPORT, 0x243028 },
+    [STATUS_VIEW_SETUP_DONE]   = { "setup-done",   "credentials accepted, setup finished",
+                                   "Klaar, we zijn online", PAINT_COLOUR, 0x1F7A3D }
 };
 
 //  The bring-up image is how somebody learns what this product is. A device
@@ -101,6 +103,11 @@ static status_view_state_t s_auto_state = STATUS_VIEW_STARTING;
 static bool s_browsing = false;
 static size_t s_browse_row = 0;
 static int64_t s_browse_until_us = 0;
+
+//  An announcement outranks browsing: news about what just happened matters
+//  more than whatever somebody was paging through.
+static bool s_announcing = false;
+static int64_t s_announce_until_us = 0;
 
 //  Built when a state is drawn, so the screen never holds a pointer into
 //  something that has since changed.
@@ -318,6 +325,22 @@ void status_view_touched(void)
 }
 
 
+void status_view_announce(status_view_state_t state, int milliseconds)
+{
+    assert (state < STATUS_VIEW_STATE_COUNT);   //  Caller's contract
+    assert (milliseconds > 0);
+
+    s_browsing = false;
+    display_show_browse_controls(false);
+    display_show_preview_marker(false);
+
+    s_announcing = true;
+    s_announce_until_us = esp_timer_get_time() + (int64_t) milliseconds * 1000;
+
+    s_draw(state);
+}
+
+
 void status_view_open_portal(void)
 {
     esp_err_t err = wifi_prov_open_portal();
@@ -378,6 +401,14 @@ esp_err_t status_view_show(status_view_state_t state)
     assert (state < STATUS_VIEW_STATE_COUNT);   //  Caller's contract
 
     s_auto_state = state;
+
+    if (s_announcing) {
+        if (esp_timer_get_time() < s_announce_until_us) {
+            return ESP_OK;
+        }
+
+        s_announcing = false;
+    }
 
     if (s_browsing) {
         if (esp_timer_get_time() < s_browse_until_us) {

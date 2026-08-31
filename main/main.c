@@ -161,6 +161,17 @@ static status_view_state_t s_state_to_show(void)
     return energy_state;
 }
 
+//  --------------------------------------------------------------------------
+//  The portal accepted new credentials. Say so on the screen: somebody who
+//  just typed them in is standing right there, and the browser message alone
+//  leaves them wondering whether the device noticed.
+
+static void s_credentials_accepted(void)
+{
+    status_view_announce(STATUS_VIEW_SETUP_DONE, 6000);
+}
+
+
 static void status_view_task(void *pvParameters)
 {
     (void) pvParameters;
@@ -389,6 +400,7 @@ void app_main(void)
     //  to the same two functions in status_view.
     display_set_input_callbacks(status_view_touched, status_view_browse);
     display_set_action_callback(status_view_open_portal);
+    wifi_prov_set_credentials_accepted_cb(s_credentials_accepted);
     s_log_if_failed("starting the buttons", input_init());
 
     //  Read the boot counter. Only a deliberate power cycle adds to it; see
