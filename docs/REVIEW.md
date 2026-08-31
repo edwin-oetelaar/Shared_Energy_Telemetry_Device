@@ -69,7 +69,7 @@ punt van de hele lijst.
 - [x] **M4** Vaste retry van 10 seconden, oneindig lang — opgelost, backoff met jitter
 - [ ] **M5** NVS-schrijfactie in de event handler
 - [x] **M6** `app_main` kan oneindig blijven wachten — opgelost, stilte-timeout
-- [ ] **M7** "Ring uit" betekent twee verschillende dingen
+- [x] **M7** "Ring uit" betekent twee verschillende dingen — opgelost op het scherm van de BOX-3
 - [ ] **M10** Tijdens provisioning blijft het schema afgewezen credentials proberen
 - [x] **M8** Twee responses op één request in het API-check pad — opgelost
 - [x] **M9** De ESP-IDF-versie ligt nergens vast — opgelost, vastgelegd op v6.1
@@ -503,6 +503,15 @@ toont "alles in balans" terwijl er in werkelijkheid geen data is.
 
 **Fix:** geef "geen data" een eigen taal op de ring: een langzame ademende puls, of één gedimde
 pixel. Uit hoort "ik weet het en het is niets" te betekenen, niet "ik weet het niet".
+
+> **Opgelost, maar anders dan hier bedacht.** De ring bestaat niet meer; de ESP32-S3-BOX-3 heeft
+> een scherm. Sinds fase 3 van `docs/PLAN-box3.md` heeft elke toestand een eigen kleur én een
+> eigen tekst: "In balans" op donkergroen tegenover "Geen gegevens" op grijs. Daarmee is de
+> dubbelzinnigheid weg bij de wortel. Een scherm kan zeggen dat het het niet weet; een gedoofde
+> led kan dat niet.
+>
+> **M3** haalde er eerder al een deel van de angel uit, door te voorkomen dat een foutantwoord
+> van de API stilzwijgend als nul kilowatt werd gelezen. Die twee samen zijn de bevinding.
 
 ### M8 — Twee responses op één request in het API-check pad
 `main/src/wifi_web.c:284-307` en `main/src/wifi_web.c:309-318`
