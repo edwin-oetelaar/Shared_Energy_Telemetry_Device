@@ -230,6 +230,13 @@ Vanaf drie of vier beelden verhuist het naar de beeldpartitie uit fase 1.
 > | Inbouwen | `EMBED_FILES` in `main/CMakeLists.txt` |
 >
 > Het echte uilenbeeld vervangen is daarmee: de PNG overschrijven, het script draaien, bouwen.
+> Het bronbeeld mag elke maat hebben; `tools/png_to_lvgl.py` schaalt naar 320 × 240, houdt de
+> verhouding aan en vult de rest met de kleur van de linkerbovenhoek. Een letterbox valt zo niet
+> op als een zwarte balk maar als marge.
+>
+> Over het beeld staat het versienummer van de firmware, rechtsonder op een donker vlakje. Dat
+> wordt bij het opstarten getekend uit `esp_app_get_description()`, niet in het beeld gebakken:
+> de versie verandert bij elke build, het beeld niet.
 > Er zit geen PNG-decoder in de firmware; het beeld staat er in het formaat waarin het scherm
 > het tekent.
 >

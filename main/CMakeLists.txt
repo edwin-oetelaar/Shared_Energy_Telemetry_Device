@@ -26,6 +26,7 @@ idf_component_register(
         esp-tls
         mbedtls
         esp_timer
+        esp_app_format
 )
 
 #  Warnings for this component only. ESP-IDF itself is built with a milder set,

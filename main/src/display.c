@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdbool.h>
 
+#include "esp_app_desc.h"
 #include "esp_log.h"
 
 #include "bsp/esp-box-3.h"
@@ -34,6 +35,7 @@ static lv_image_dsc_t s_bringup;
 //  Built once in display_init () and reused. Rebuilding the objects on every
 //  state change would churn the heap for no gain.
 static lv_obj_t *s_image = NULL;
+static lv_obj_t *s_version = NULL;
 static lv_obj_t *s_title = NULL;
 static lv_obj_t *s_detail = NULL;
 static lv_obj_t *s_qr = NULL;
@@ -106,6 +108,25 @@ static esp_err_t s_build_screen(void)
     lv_qrcode_set_size(s_qr, 116);
     lv_obj_add_flag(s_qr, LV_OBJ_FLAG_HIDDEN);
 
+    //  The firmware version, over the bring-up image. Drawn at run time rather
+    //  than baked into the picture, because the version changes with every
+    //  build and the picture does not. It sits on a dark chip so that it stays
+    //  readable whatever the artwork does underneath it.
+    const esp_app_desc_t *app = esp_app_get_description();
+
+    s_version = lv_label_create(screen);
+    lv_label_set_text(s_version, app->version);
+    lv_obj_set_style_text_color(s_version, lv_color_hex(0xF2F5F0), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_version, lv_color_hex(0x101410), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_version, LV_OPA_70, LV_PART_MAIN);
+    lv_obj_set_style_pad_hor(s_version, 6, LV_PART_MAIN);
+    lv_obj_set_style_pad_ver(s_version, 3, LV_PART_MAIN);
+    lv_obj_set_style_radius(s_version, 4, LV_PART_MAIN);
+    lv_obj_align(s_version, LV_ALIGN_BOTTOM_RIGHT, -6, -6);
+    lv_obj_add_flag(s_version, LV_OBJ_FLAG_HIDDEN);
+
+    ESP_LOGI(TAG, "Firmware version on screen: %s", app->version);
+
     bsp_display_unlock();
 
     return ESP_OK;
@@ -126,6 +147,7 @@ esp_err_t display_show_bringup(void)
 
     lv_obj_set_style_bg_color(lv_screen_active(), lv_color_black(), LV_PART_MAIN);
     lv_obj_remove_flag(s_image, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(s_version, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_title, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_detail, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_qr, LV_OBJ_FLAG_HIDDEN);
@@ -171,6 +193,7 @@ esp_err_t display_show_status(const char *title,
     lv_color_t ink = s_readable_text_colour(background_rgb);
 
     lv_obj_add_flag(s_image, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_version, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(background_rgb), LV_PART_MAIN);
 
     lv_obj_set_style_text_color(s_title, ink, LV_PART_MAIN);
