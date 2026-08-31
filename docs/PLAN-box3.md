@@ -379,9 +379,12 @@ Vandaag ziet de gebruiker tijdens de provisioning niets op het apparaat zelf.
 > De terugval sloeg twee keer aan, gemeten op 15,04 seconde na de laatste aanraking. Daarna
 > stond het apparaat weer op zijn eigen toestand.
 >
-> Wat de log **niet** kan zeggen: welke bediening elke wissel veroorzaakte. Een aanraking en een
-> knopdruk komen op dezelfde functie uit en zijn in de log niet te onderscheiden. Het pad van de
-> paneelknop, `status_view_resume_auto()`, is in deze sessie niet in de log verschenen.
+> De paneelknop is bevestigd: `Back to following the telemetry` staat zeven keer in de opnames
+> van 2026-08-31, telkens enkele seconden na een toestandswissel en dus ruim vóór de
+> bladertimeout van vijftien seconden. Dat kan alleen een knopdruk zijn.
+>
+> Wat de log **niet** kan zeggen: welke bediening een wissel tússen beelden veroorzaakte. Een
+> aanraking en een knopdruk komen daar op dezelfde functie uit.
 
 ### Fase 6a — Zien wat het apparaat weet, en sleutels opnieuw invoeren
 
