@@ -1,5 +1,9 @@
+#include <assert.h>
 #include <stdio.h>
 #include <inttypes.h>
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 #include "esp_err.h"
 
@@ -31,8 +35,56 @@ static bool renew_token = true;
 
 static const char *TAG = "[energyboxx_api]";
 
-static bool credentials_configured = false;
-static bool valid_credentials = false;
+//  These two are read without the lock by the status LED task, which runs at
+//  2 Hz and must not stall behind a ten-second HTTP request. A bool read is
+//  atomic on this target; volatile keeps the compiler from caching it.
+
+static volatile bool credentials_configured = false;
+static volatile bool valid_credentials = false;
+
+//  One lock over the credentials, the access token, and the flags that
+//  describe them. Two tasks legitimately reach this module: the httpd task
+//  while someone fills in the provisioning form, and the task that waits for
+//  provisioning to complete. Without the lock both can be inside the same
+//  strncpy and the same token buffer at once, which surfaces as "Invalid
+//  Client ID or Client Secret" for credentials that are perfectly good.
+
+static StaticSemaphore_t s_lock_storage;
+static SemaphoreHandle_t s_lock = NULL;
+
+
+//  --------------------------------------------------------------------------
+//  Take and release the module lock. Waiting forever is intended: the holder
+//  is doing an HTTP request with a ten-second timeout, so it always comes back.
+
+static void
+    s_lock_acquire (void)
+{
+    assert (s_lock);            //  energyboxx_api_init () was never called
+    xSemaphoreTake (s_lock, portMAX_DELAY);
+}
+
+static void
+    s_lock_release (void)
+{
+    assert (s_lock);
+    xSemaphoreGive (s_lock);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Create the lock. Idempotent, so a second call is not an error.
+
+esp_err_t energyboxx_api_init(void)
+{
+    if (s_lock)
+        return ESP_OK;
+
+    s_lock = xSemaphoreCreateMutexStatic (&s_lock_storage);
+    assert (s_lock);            //  Static creation only fails on a null buffer
+
+    return ESP_OK;
+}
 
 static esp_err_t http_event_handler(esp_http_client_event_t *evt)
 {
@@ -72,7 +124,7 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt)
     return ESP_OK;
 }
 
-esp_err_t energyboxx_api_fetch_token(void)
+static esp_err_t s_fetch_token_locked(void)
 {
     int64_t elapsed_seconds = (esp_timer_get_time() - token_acquired_us) / 1000000;
 
@@ -161,7 +213,7 @@ esp_err_t energyboxx_api_fetch_token(void)
         token_acquired_us = esp_timer_get_time();
         expires_in_seconds = expires_json->valueint;
 
-        ESP_LOGI(TAG, "Stored token (%d chars)", strlen(access_token));
+        ESP_LOGI(TAG, "Stored token (%zu chars)", strlen(access_token));
 
         ESP_LOGI(TAG, "Token expires in %d seconds", expires_in_seconds);
 
@@ -177,12 +229,21 @@ esp_err_t energyboxx_api_fetch_token(void)
     return err;
 }
 
+esp_err_t energyboxx_api_fetch_token(void)
+{
+    s_lock_acquire ();
+    esp_err_t err = s_fetch_token_locked ();
+    s_lock_release ();
+
+    return err;
+}
+
 const char *energyboxx_api_get_token(void)
 {
     return access_token;
 }
 
-esp_err_t energyboxx_api_get_data(energyboxx_data_t* data)
+static esp_err_t s_get_data_locked(energyboxx_data_t* data)
 {
     esp_err_t err = ESP_OK;
 
@@ -248,7 +309,7 @@ esp_err_t energyboxx_api_get_data(energyboxx_data_t* data)
         return err;
     }
 
-    if (status == 401 || status == 403 || strstr(response_buffer, "\"AUTH-1000\"")) {
+    if (status == 401 || status == 403) {
         ESP_LOGW(TAG, "Auth failed, token should be refreshed");
         valid_credentials = false;
         esp_http_client_cleanup(client);
@@ -297,15 +358,22 @@ esp_err_t energyboxx_api_get_data(energyboxx_data_t* data)
         {
             data->community_power_export_kw = 0.0f;
         }
+        //  The one field the device actually acts on, so it is required rather
+        //  than defaulted. An error body is valid JSON too, and quietly reading
+        //  it as zero would light the ring as "community balanced" - a
+        //  confident answer assembled out of nothing. Missing it means this is
+        //  not telemetry, whatever the status code said, and the caller renews
+        //  the token and tries again.
         cJSON *result_kw = cJSON_GetObjectItemCaseSensitive(root, "community_power_result_kw");
-        if (cJSON_IsNumber(result_kw))
+        if (!cJSON_IsNumber(result_kw))
         {
-            data->community_power_result_kw = (float)result_kw->valuedouble;
+            ESP_LOGE(TAG, "Response carries no community_power_result_kw, not treating it as telemetry");
+            cJSON_Delete(root);
+            esp_http_client_cleanup(client);
+            return ESP_ERR_INVALID_RESPONSE;
         }
-        else
-        {
-            data->community_power_result_kw = 0.0f;
-        }
+
+        data->community_power_result_kw = (float)result_kw->valuedouble;
 
         cJSON *import_price = cJSON_GetObjectItemCaseSensitive(root, "community_import_price_eur");
         if (cJSON_IsNumber(import_price))
@@ -362,6 +430,15 @@ esp_err_t energyboxx_api_get_data(energyboxx_data_t* data)
     return err;
 }
 
+esp_err_t energyboxx_api_get_data(energyboxx_data_t* data)
+{
+    s_lock_acquire ();
+    esp_err_t err = s_get_data_locked (data);
+    s_lock_release ();
+
+    return err;
+}
+
 void energyboxx_data_print(const energyboxx_data_t *data)
 {
     if (data == NULL)
@@ -392,7 +469,7 @@ void energyboxx_api_set_renew_token(bool renew){
     renew_token = renew;
 }
 
-bool energyboxx_api_is_valid_credentials(){
+bool energyboxx_api_is_valid_credentials(void){
     return valid_credentials;
 }
 
@@ -404,6 +481,8 @@ esp_err_t energyboxx_api_setup(const char *c_id, const char *c_secret){
         return ESP_ERR_INVALID_ARG;
     }
 
+    s_lock_acquire ();
+
     strncpy(client_id, c_id, sizeof(client_id) - 1);
     client_id[sizeof(client_id) - 1] = '\0';
 
@@ -412,6 +491,8 @@ esp_err_t energyboxx_api_setup(const char *c_id, const char *c_secret){
 
     credentials_configured = true;
     valid_credentials = false;
+
+    s_lock_release ();
 
     ESP_LOGI(TAG, "Energyboxx API setup completed with Client ID and Client Secret");
 

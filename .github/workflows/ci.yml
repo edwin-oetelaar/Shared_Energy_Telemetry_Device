@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'hardening/**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  host-tests:
+    name: Host tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Modules without ESP-IDF dependencies are compiled and run here, which
+      # takes a second and needs no toolchain. See test/README.md.
+      - name: Run host tests
+        run: make -C test check
+
+  static-analysis:
+    name: cppcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cppcheck
+        run: sudo apt-get update && sudo apt-get install -y cppcheck
+
+      # dns_server.c is Espressif's captive-portal example, taken verbatim with
+      # its original licence header. Its style findings are not ours to fix, so
+      # it is excluded rather than silently tolerated across the whole project.
+      - name: Analyse
+        run: |
+          cppcheck --error-exitcode=1 \
+                   --enable=warning,performance,style \
+                   --inline-suppr --std=c11 --quiet \
+                   --suppress=missingInclude \
+                   --suppress=missingIncludeSystem \
+                   --suppress=unusedFunction \
+                   -i main/src/dns_server.c \
+                   -I main -I main/inc \
+                   main/main.c main/src
+
+  firmware-build:
+    name: Build for ESP32-S3
+    runs-on: ubuntu-latest
+    # Pinned on purpose. release-v6.1 moves with the branch and would change
+    # the toolchain under us; v6.1 is a fixed tag. Raise it deliberately, and
+    # rebuild and reflash a board when you do - see M9 in docs/REVIEW.md.
+    container: espressif/idf:v6.1
+    steps:
+      - uses: actions/checkout@v4
+
+      # No set-target here on purpose: sdkconfig.defaults selects the
+      # ESP32-S3, and set-target would discard the rest of those settings.
+      - name: Build
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          idf.py build
+
+      # sdkconfig.defaults is silently ignored for any symbol the current
+      # ESP-IDF does not know. That is how CONFIG_ESP_MAIN_TASK_STACK_SIZE went
+      # missing once already: the default of 3584 bytes is far too small for an
+      # app_main that does a TLS request, and nothing warns you. So assert on
+      # the generated configuration rather than trusting that it was applied.
+      - name: Verify the generated configuration
+        shell: bash
+        run: |
+          set -e
+          expected=(
+            'CONFIG_IDF_TARGET="esp32s3"'
+            'CONFIG_ESPTOOLPY_FLASHSIZE="8MB"'
+            'CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384'
+            'CONFIG_PARTITION_TABLE_TWO_OTA_LARGE=y'
+          )
+          status=0
+          for setting in "${expected[@]}"; do
+            if grep -qxF "$setting" sdkconfig; then
+              echo "ok      $setting"
+            else
+              echo "MISSING $setting"
+              echo "        actual: $(grep -F "${setting%%=*}=" sdkconfig || echo 'not present at all')"
+              status=1
+            fi
+          done
+          exit $status
+
+      - name: Report binary size
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          idf.py size

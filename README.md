@@ -1,162 +1,319 @@
 # Shared Energy Telemetry Device
 
-ESP32-S3 firmware that retrieves shared-community energy data from the
-Energyboxx API and presents the current power state using an addressable LED
-ring. Wi-Fi and API credentials can be configured from a captive web portal,
-so credentials do not need to be compiled into the firmware.
+Firmware voor een ESP32-S3 die toont hoeveel energie de energiegemeenschap op dit moment
+over heeft. Het apparaat haalt de meetwaarden op bij de Energyboxx-API en toont de
+uitkomst op een ledring.
 
-## Current behavior
+Dit apparaat hoort bij de Energiegemeenschap Wilhelminaweg in Wageningen. Dat is een
+groep huishoudens die overtollige zonne-energie deelt. Wat dat project wil bereiken en
+hoe, staat in [docs/energiegemeenschap-wilhelminaweg.md](docs/energiegemeenschap-wilhelminaweg.md).
 
-The device requests Energyboxx telemetry once per minute and uses
-`community_power_result_kw` to control the active LED ring:
+De gebruiker stelt de wifi- en API-gegevens in via een webportaal op het apparaat zelf.
+De gegevens staan dus niet in de firmware.
 
-| Resulting power | Meaning | LED ring |
+## Wat het apparaat doet
+
+Het apparaat vraagt elke minuut de telemetrie op. Het stuurt de ledring aan op het veld
+`community_power_result_kw`.
+
+| Uitkomst | Betekenis | Ledring |
 | --- | --- | --- |
-| Greater than `+0.05 kW` | Energy available to share | Solid green |
-| Less than `-0.05 kW` | Energy must be bought | Solid yellow |
-| Between `-0.05 kW` and `+0.05 kW` | Community balanced | Off |
-| Wi-Fi or API request unavailable | Data is stale or unavailable | Off |
+| Meer dan `+0,05 kW` | De gemeenschap heeft energie over om te delen | Groen |
+| Minder dan `-0,05 kW` | De gemeenschap moet energie inkopen | Geel |
+| Tussen `-0,05` en `+0,05 kW` | Vraag en aanbod zijn gelijk | Uit |
+| Geen wifi of geen antwoord van de API | De gegevens zijn niet actueel | Uit |
 
-All eight LEDs are illuminated together.
+Alle acht leds branden tegelijk in dezelfde kleur.
 
-The second LED ring is initialized but intentionally left unused for future
-functionality.
+Het apparaat start een tweede ledring op, maar gebruikt die nog niet. Die ring is bedoeld
+voor latere uitbreiding.
+
+## Vaste termen
+
+| Term | Betekenis |
+| --- | --- |
+| Provisioning | Het instellen van de wifi- en API-gegevens via het webportaal |
+| Portaal | De webpagina's die het apparaat zelf aanbiedt tijdens provisioning |
+| Ledring | Een ring van acht WS2812-leds |
+| Status-led | Een losse led die één toestand toont: wifi, voeding of data |
+| Telemetrie | De meetwaarden die het apparaat bij de Energyboxx-API ophaalt |
+| Credentials | De opgeslagen wifi- en API-gegevens |
 
 ## Hardware
 
-The current configuration targets an ESP32-S3 and two 8-pixel WS2812 LED
-rings.
+De huidige opzet gebruikt een ESP32-S3 en twee ledringen van acht pixels.
 
-### Pin mapping
+### Aansluitingen
 
-| Function | Board pin | ESP32-S3 GPIO |
+| Functie | Pin op het board | GPIO |
 | --- | --- | --- |
-| Unused LED ring | D0 | GPIO 1 |
-| Energy-status LED ring | D1 | GPIO 2 |
-| Wi-Fi status LED (blue) | D7 / RX | GPIO 44 |
-| Power status LED (red) | D8 | GPIO 7 |
-| Data status LED (blue) | D9 | GPIO 8 |
-| Credential-reset button | — | GPIO 17 |
+| Ongebruikte ledring | D0 | GPIO 1 |
+| Ledring voor de energiestatus | D1 | GPIO 2 |
+| Status-led wifi (blauw) | D7 / RX | GPIO 44 |
+| Status-led voeding (rood) | D8 | GPIO 7 |
+| Status-led data (blauw) | D9 | GPIO 8 |
+| Knop om credentials te wissen | — | GPIO 17 |
 
-The three discrete status LEDs are configured as active-high outputs. External
-LEDs must have suitable current-limiting resistors. The LED rings are limited
-to 10% brightness in `main/main.c`.
+De drie status-leds zijn actief-hoog. Plaats een geschikte voorschakelweerstand bij elke
+externe led. De firmware begrenst de helderheid van de ledringen op 10 procent. Die
+grens staat in `main/main.c`.
 
-### Status LEDs
+### Betekenis van de status-leds
 
-| LED | Off | Blinking | Solid |
+| Led | Uit | Knippert | Brandt |
 | --- | --- | --- | --- |
-| Wi-Fi | Initial connection in progress | Provisioning active or connection failed | Connected |
-| Power | Firmware has not initialized | — | Firmware is running |
-| Data | — | No valid token or no successful telemetry response | API token and telemetry are working |
+| Wifi | De eerste verbinding loopt nog | Provisioning is actief, of de verbinding is mislukt | Het apparaat heeft verbinding |
+| Voeding | De firmware is nog niet gestart | — | De firmware draait |
+| Data | — | Geen geldig token, of geen geslaagd antwoord | Token en telemetrie werken |
 
-Blinking uses a 500 ms on/off interval.
+Een knipperende led is 500 ms aan en 500 ms uit.
 
 ## Provisioning
 
-On startup, the device first tries credentials stored in NVS. If Wi-Fi
-credentials are absent, the saved network cannot be reached within 30 seconds,
-or the stored API credentials are invalid, it starts a provisioning access
-point:
+Het apparaat probeert bij het opstarten eerst de opgeslagen credentials. Het start een
+eigen accesspoint zodra één van deze drie situaties zich voordoet:
+
+- Er zijn geen wifigegevens opgeslagen.
+- Het opgeslagen netwerk antwoordt niet binnen 30 seconden.
+- De opgeslagen API-gegevens zijn ongeldig.
+
+Het accesspoint heeft deze gegevens:
 
 ```text
 SSID: SETD_Provisioning
-Password: none
+Wachtwoord: geen
 ```
 
-Connect a phone or computer to this network. The captive portal should open
-automatically; otherwise, open the access point's gateway address in a browser.
-The portal performs two steps:
+Verbind een telefoon of computer met dit netwerk. Het portaal opent daarna meestal
+vanzelf. Open anders het gateway-adres van het accesspoint in een browser.
 
-1. Select a Wi-Fi network and enter its password.
-2. Enter and validate the Energyboxx client ID and client secret.
+Het portaal vraagt twee dingen, in deze volgorde:
 
-Credentials are saved to ESP-IDF NVS only after their respective connection or
-validation succeeds. After provisioning, the captive portal stops and the
-device switches to station-only Wi-Fi mode.
+1. Kies een wifinetwerk en vul het wachtwoord in.
+2. Vul de Energyboxx client ID en client secret in.
 
-## Credential reset and recovery
+Het apparaat slaat gegevens pas op als het ze heeft beproefd. De wifigegevens gaan naar
+NVS zodra de verbinding lukt. De API-gegevens gaan naar NVS zodra de tokenaanvraag lukt.
 
-There are two ways to erase the saved Wi-Fi and Energyboxx credentials:
+Na de provisioning stopt het portaal. Het apparaat schakelt daarna over naar wifi in
+alleen station-modus.
 
-- Hold the GPIO 17 reset button low for at least three seconds during startup.
-- Power-cycle or reset the device three times within ten seconds.
+## Credentials wissen
 
-After a successful ten-second boot, the rapid-boot counter is reset.
+Er zijn twee manieren om de opgeslagen wifi- en Energyboxx-gegevens te wissen:
 
-At runtime, Wi-Fi performs up to five reconnection attempts after a disconnect.
-Failed token or telemetry requests do not stop the firmware: the energy ring is
-cleared and the API is retried after ten seconds.
+- Houd de knop op GPIO 17 tijdens het opstarten minstens drie seconden laag.
+- Schakel de voeding drie keer binnen tien seconden uit en weer in.
 
-## Building
+De teller voor die tweede manier gaat na tien seconden draaien terug naar nul. Alleen een
+echte in- en uitschakeling telt mee. Een herstart door een firmwarefout, een watchdog of
+een onderspanning telt niet mee. Een softwarefout kan de credentials dus niet zelf wissen.
 
-Install and activate an Espressif ESP-IDF environment, then run:
+## Gedrag bij storingen
+
+Het apparaat geeft nooit op. Het probeert het opnieuw volgens vaste schema's.
+
+**Wifi weg.** Het apparaat blijft opnieuw verbinden, met een oplopende wachttijd:
+0,5 s, 1 s, 2 s, 5 s, 10 s, 30 s, 60 s en daarna elke 5 minuten. De wifi-led knippert
+zodra het schema bij de stap van tien seconden komt. Het schema is de tabel
+`s_retry_schedule` in `main/src/wifi_provisioning.c`.
+
+**API onbereikbaar.** Een mislukte token- of telemetrieaanvraag stopt de firmware niet.
+Het apparaat wist de energiering en probeert het opnieuw. De wachttijd loopt op:
+10 s, 20 s, 40 s, 80 s, 160 s en daarna elke 5 minuten. Het schema is de tabel
+`s_api_retry_delay_ms` in `main/main.c`.
+
+**Spreiding.** Elke wachttijd krijgt tot een vijfde extra. Dat geldt ook voor de gewone
+tussentijd van één minuut. Zo vragen apparaten die tegelijk zijn opgestart niet tegelijk
+opnieuw.
+
+**Portaal blijft ongebruikt.** Het apparaat herstart na vijftien minuten stilte en
+probeert de opgeslagen credentials opnieuw. Elke pagina en elke handeling in het portaal
+zet die klok terug. De teller meet dus stilte, geen verstreken tijd.
+
+## Bouwen
+
+Dit project bouwt tegen **ESP-IDF v6.1**. Die versie staat vast: de CI bouwt tegen de
+vaste containertag `espressif/idf:v6.1`.
+
+Installeer ESP-IDF v6.1 volgens de handleiding van Espressif. Activeer de omgeving en
+bouw:
 
 ```bash
-idf.py set-target esp32s3
+. $IDF_PATH/export.sh
+```
+
+```bash
 idf.py build
 ```
 
-The project uses the ESP-IDF Component Manager for these dependencies:
+Het doelchip, de flashgrootte, de partitie-indeling en de stackgrootte van de hoofdtaak
+komen uit `sdkconfig.defaults`. Dat bestand bevat alleen de instellingen die dit project
+bewust kiest.
+
+De gegenereerde `sdkconfig` staat niet in Git. Dat bestand herschrijft zichzelf bij elke
+configure en zou die paar beslissingen verbergen tussen vierduizend regels.
+
+Draai geen `idf.py set-target`. Dat commando gooit `sdkconfig.defaults` weg.
+
+Het project haalt twee afhankelijkheden op met de ESP-IDF Component Manager:
 
 - `espressif/led_strip`
 - `espressif/cjson`
 
-The checked-in configuration currently selects an ESP32-S3 with 8 MB flash.
+`sdkconfig.defaults` kiest een ESP32-S3 met 8 MB flash en een partitie-indeling met twee
+OTA-slots.
 
-## Flashing and monitoring
+Kies bewust wanneer je naar een nieuwere ESP-IDF gaat. Bouw en flash daarna een board, en
+loop de tests uit [docs/REVIEW.md](docs/REVIEW.md) opnieuw na. Een nieuwe hoofdversie kan
+onderliggende onderdelen vervangen: v6 gebruikt bijvoorbeeld picolibc waar v5 newlib
+gebruikte.
 
-With the board connected, replace `PORT` with its serial port:
+## Tests en controles
+
+De modules die geen ESP-IDF nodig hebben, draaien op de ontwikkelmachine:
 
 ```bash
-idf.py -p PORT flash monitor
+make -C test check
 ```
 
-Exit the serial monitor with `Ctrl+]`.
+Elke push start drie taken in GitHub Actions:
 
-## Configuration
+1. De host-tests hierboven.
+2. Een `cppcheck`-controle over `main/`.
+3. Een volledige firmwarebuild voor de ESP32-S3.
 
-The principal prototype settings are defined near the top of `main/main.c`:
+De opzet staat in `.github/workflows/ci.yml`.
 
-| Setting | Default | Purpose |
+## Flashen en meekijken
+
+Sluit het board aan met de **native USB-poort** van de ESP32-S3. Op een XIAO
+ESP32-S3 is dat de enige poort. Het board meldt zich dan als `/dev/ttyACM0`.
+
+Met een gewone ESP-IDF-installatie gaat flashen zo:
+
+```bash
+idf.py -p /dev/ttyACM0 flash monitor
+```
+
+Sluit de seriële monitor af met `Ctrl+]`.
+
+### Terugvaloptie: de ESP-IDF van PlatformIO
+
+Gebruik deze weg alleen als je geen eigen ESP-IDF hebt staan en snel iets wilt bouwen.
+
+**Let op: PlatformIO levert ESP-IDF 5.5.x, niet de v6.1 waar dit project op mikt.** Een
+build langs deze weg bewijst dus niet dat de firmware op de doelversie werkt.
+
+Het script zet variabelen in je shell die een gewone `export.sh` in dezelfde shell laten
+falen, met een foutmelding over `espidf.constraints`. Draai `idfenv_unset` voordat je een
+echte ESP-IDF activeert, of open een nieuwe shell.
+
+PlatformIO gebruikt `idf.py` zelf niet. De Python-omgeving die PlatformIO meelevert, mist
+daarom drie modules die `idf.py` nodig heeft: `esp_idf_monitor`, `pyyaml` en `esptool`. Er
+is geen omgeving die je kunt activeren waarmee `idf.py` het toch doet.
+
+`tools/idfenv.sh` stuurt in dat geval CMake en ninja rechtstreeks aan:
+
+```bash
+. tools/idfenv.sh
+```
+
+Configureer de build één keer:
+
+```bash
+cmake -S . -B build -G Ninja -DPYTHON="$IDF_PYTHON_ENV_PATH/bin/python" -DPYTHON_DEPS_CHECKED=1
+```
+
+Bouwen en flashen:
+
+```bash
+ninja -C build
+```
+
+```bash
+ESPPORT=/dev/ttyACM0 ninja -C build flash
+```
+
+Meekijken met de logs:
+
+```bash
+python tools/monitor.py /dev/ttyACM0
+```
+
+`tools/monitor.py` toont dezelfde regels als `idf.py monitor`, met een
+tijdstempel per regel. Het script vertaalt geen backtrace-adressen naar
+functienamen. Installeer daarvoor ESP-IDF op de gewone manier.
+
+Geef een aantal seconden mee om vanzelf te stoppen. Voeg `reset` toe om het
+board eerst te herstarten:
+
+```bash
+python tools/monitor.py /dev/ttyACM0 30 reset
+```
+
+## Configuratie
+
+De belangrijkste instellingen staan bovenin `main/main.c`:
+
+| Instelling | Waarde | Doel |
 | --- | --- | --- |
-| `BRIGHTNESS_PERCENTAGE` | `10.0` | LED-ring brightness |
-| `POWER_BALANCE_DEADBAND_KW` | `0.05` | Balanced-power threshold |
-| `API_RETRY_DELAY_MS` | `10000` | Delay after an API failure |
-| `RESET_HOLD_MS` | `3000` | Reset-button hold duration |
+| `BRIGHTNESS_PERCENTAGE` | `10.0` | Helderheid van de ledringen |
+| `POWER_BALANCE_DEADBAND_KW` | `0.05` | Grens waarbinnen de gemeenschap in balans is |
+| `TELEMETRY_INTERVAL_MS` | `60000` | Tijd tussen twee telemetrieaanvragen |
+| `WIFI_WAIT_POLL_MS` | `10000` | Hoe vaak het apparaat kijkt of wifi terug is |
+| `RESET_HOLD_MS` | `3000` | Hoe lang de knop laag moet blijven |
 
-The Energyboxx token and telemetry URLs, token refresh margin, and response
-buffer size are defined in `main/src/energyboxx_api.c`.
+Drie schema's staan in een tabel in plaats van in losse waarden. Zo is het hele beleid in
+één oogopslag te zien:
 
-`main/inc/secrets.h` is ignored by Git and is not used by the current runtime
-provisioning flow. Do not commit real credentials.
+| Tabel | Bestand | Bepaalt |
+| --- | --- | --- |
+| `s_api_retry_delay_ms` | `main/main.c` | De wachttijd na een mislukte API-ronde |
+| `s_retry_schedule` | `main/src/wifi_provisioning.c` | De pogingen om wifi te herstellen |
+| `s_reset_reason` | `main/main.c` | Welke herstarts meetellen voor het wissen |
 
-## Project structure
+`main/src/energyboxx_api.c` bevat drie andere instellingen: de URL's van de endpoints,
+de marge voor het vernieuwen van het token en de grootte van de antwoordbuffer. De
+stilte-timeout van het portaal staat als `PROVISIONING_SILENCE_TIMEOUT_MS` in
+`main/src/wifi_provisioning.c`.
+
+Git negeert `main/inc/secrets.h`. De huidige firmware gebruikt dat bestand niet. Zet
+nooit echte credentials in de repository.
+
+## Opbouw van het project
 
 ```text
 main/
-├── main.c                    Startup, recovery and telemetry task
-├── inc/                      Public component headers
+├── main.c                    Opstarten, herstel en de telemetrietaak
+├── inc/                      Publieke headers
 └── src/
-    ├── api_storage.c         Energyboxx credentials in NVS
-    ├── dns_server.c          Captive-portal DNS redirection
-    ├── energyboxx_api.c      OAuth token and telemetry requests
-    ├── status_led.c          LED rings and discrete status LEDs
-    ├── wifi_provisioning.c   Wi-Fi state and provisioning AP
-    ├── wifi_storage.c        Wi-Fi credentials in NVS
-    └── wifi_web.c            Provisioning web interface
+    ├── api_storage.c         Energyboxx-gegevens in NVS
+    ├── dns_server.c          DNS-omleiding voor het portaal
+    ├── energyboxx_api.c      Tokenaanvraag en telemetrie
+    ├── status_led.c          Ledringen en losse status-leds
+    ├── uri_decode.c          Decoderen van formulierwaarden
+    ├── wifi_provisioning.c   Wifitoestand en het accesspoint
+    ├── wifi_storage.c        Wifigegevens in NVS
+    └── wifi_web.c            Het webportaal
+
+docs/REVIEW.md                Review vóór productie, met werklijst
+docs/energiegemeenschap-wilhelminaweg.md   Het project waar dit apparaat bij hoort
+test/                         Host-tests voor de modules zonder ESP-IDF
+tools/idfenv.sh               Terugvaloptie: bouwen met de ESP-IDF van PlatformIO (5.5.x)
+tools/monitor.py              Seriële monitor met tijdstempels
 ```
 
-## Runtime overview
+## Verloop na het opstarten
 
 ```text
-Boot
-  -> initialize NVS and LEDs
-  -> load and connect saved Wi-Fi
-     -> provision Wi-Fi when unavailable
-  -> load and validate API credentials
-     -> provision API credentials when unavailable
-  -> request telemetry
-  -> update the energy LED ring
-  -> wait 60 seconds and repeat
+Opstarten
+  -> NVS en leds klaarzetten
+  -> opgeslagen wifigegevens laden en verbinden
+     -> provisioning starten als dat niet lukt
+  -> API-gegevens laden en beproeven
+     -> provisioning starten als dat niet lukt
+  -> telemetrie opvragen
+  -> de energiering bijwerken
+  -> 60 seconden wachten en opnieuw beginnen
 ```

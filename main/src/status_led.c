@@ -36,8 +36,17 @@ esp_err_t status_leds_init(void)
     }
 
     status_leds_initialized = true;
-    ESP_ERROR_CHECK(status_led_set_wifi(false));
-    ESP_ERROR_CHECK(status_led_set_data(false));
+
+    err = status_led_set_wifi(false);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    err = status_led_set_data(false);
+    if (err != ESP_OK) {
+        return err;
+    }
+
     return status_led_set_power(true);
 }
 
@@ -146,14 +155,22 @@ esp_err_t led_ring_show(led_ring_t *ring)
 {
     if (ring == NULL || ring->strip == NULL) return ESP_ERR_INVALID_STATE;
 
+    //  A pixel that will not take a colour is reported to the caller, not
+    //  aborted on: this runs from the telemetry task, and a display fault must
+    //  not take the whole device down with it.
     for (uint8_t i = 0; i < LED_RING_NUM_LEDS; i++) {
-        ESP_ERROR_CHECK(led_strip_set_pixel(
+        esp_err_t err = led_strip_set_pixel(
             ring->strip,
             i,
             apply_brightness(ring->pixels[i].r, ring->brightness),
             apply_brightness(ring->pixels[i].g, ring->brightness),
             apply_brightness(ring->pixels[i].b, ring->brightness)
-        ));
+        );
+
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to set pixel %u: %s", (unsigned) i, esp_err_to_name(err));
+            return err;
+        }
     }
 
     return led_strip_refresh(ring->strip);
