@@ -44,3 +44,7 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
 #  The status label has to be readable from across the room, so LVGL needs a
 #  bigger font than the 14 pixel default it ships with.
 CONFIG_LV_FONT_MONTSERRAT_28=y
+
+#  A QR code on the provisioning screen: a phone camera joins the access point
+#  from it, so nobody has to work out which network to look for.
+CONFIG_LV_USE_QRCODE=y

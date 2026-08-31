@@ -364,6 +364,16 @@ bool wifi_prov_is_connected(void)
     return (bits & WIFI_CONNECTED_BIT) != 0;
 }
 
+const char *wifi_prov_ap_ssid(void)
+{
+    return PROV_AP_SSID;
+}
+
+const char *wifi_prov_current_ssid(void)
+{
+    return current_ssid;
+}
+
 void wifi_prov_note_portal_activity(void)
 {
     s_last_portal_activity = xTaskGetTickCount ();

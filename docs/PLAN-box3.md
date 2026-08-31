@@ -285,6 +285,30 @@ Vandaag ziet de gebruiker tijdens de provisioning niets op het apparaat zelf.
 
 **Klaar als:** iemand het apparaat kan instellen zonder de handleiding.
 
+> **Uitgevoerd op 2026-08-31.** Het statusscherm heeft nu drie delen: een titel, een regel
+> eronder, en een QR-code. Elk deel mag weg blijven, en de indeling schuift mee zodat een
+> scherm zonder QR er niet scheef uitziet.
+>
+> | Toestand | Titel | Regel eronder | QR |
+> | --- | --- | --- | --- |
+> | `provisioning` | Instellen | Wifi: SETD_Provisioning | ja |
+> | `connecting` | Verbinden | de naam van het netwerk | nee |
+> | `connect-failed` | Geen verbinding | de naam van het netwerk | nee |
+>
+> De QR bevat `WIFI:S:SETD_Provisioning;T:nopass;;`. Dat is de vorm die telefooncamera's
+> herkennen; wie hem scant krijgt de vraag of hij het netwerk wil joinen. Daarmee vervalt de
+> stap waarin iemand moet uitzoeken welk netwerk hij zoekt.
+>
+> `connect-failed` is een nieuwe toestand. Die was er niet, terwijl de wifi-laag hem al kende:
+> na de vierde rij van het backoff-schema meldt `wifi_prov` `CONNECT_FAILED`, en dat bleef tot
+> nu toe onzichtbaar voor wie naar het apparaat keek.
+>
+> De namen van de netwerken komen uit `wifi_prov_ap_ssid()` en `wifi_prov_current_ssid()`, niet
+> uit een tweede kopie in de schermcode. Eén bron van waarheid.
+>
+> **Bevestigd op hardware:** opstarten tot "Energie inkopen" in 5,8 seconde, met `connecting`
+> onderweg. Het provisioningscherm met de QR-code is nog niet gezien — daarvoor moet NVS leeg.
+
 ### Fase 5 — Knoppen en aanraakbediening
 
 1. Neem de `button`-component in gebruik voor de drie fysieke knoppen.

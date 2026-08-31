@@ -5,6 +5,7 @@
 
 #include <assert.h>
 #include <inttypes.h>
+#include <string.h>
 #include <stdbool.h>
 
 #include "esp_log.h"
@@ -33,7 +34,9 @@ static lv_image_dsc_t s_bringup;
 //  Built once in display_init () and reused. Rebuilding the objects on every
 //  state change would churn the heap for no gain.
 static lv_obj_t *s_image = NULL;
-static lv_obj_t *s_label = NULL;
+static lv_obj_t *s_title = NULL;
+static lv_obj_t *s_detail = NULL;
+static lv_obj_t *s_qr = NULL;
 
 static bool s_ready = false;
 
@@ -80,14 +83,24 @@ static esp_err_t s_build_screen(void)
     lv_image_set_src(s_image, &s_bringup);
     lv_obj_center(s_image);
 
-    s_label = lv_label_create(screen);
-    lv_obj_set_style_text_font(s_label, &lv_font_montserrat_28, LV_PART_MAIN);
-    lv_label_set_long_mode(s_label, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(s_label, BRINGUP_WIDTH - 32);
-    lv_obj_set_style_text_align(s_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_label_set_text(s_label, "");
-    lv_obj_center(s_label);
-    lv_obj_add_flag(s_label, LV_OBJ_FLAG_HIDDEN);
+    s_title = lv_label_create(screen);
+    lv_obj_set_style_text_font(s_title, &lv_font_montserrat_28, LV_PART_MAIN);
+    lv_label_set_long_mode(s_title, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(s_title, BRINGUP_WIDTH - 32);
+    lv_obj_set_style_text_align(s_title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_label_set_text(s_title, "");
+    lv_obj_add_flag(s_title, LV_OBJ_FLAG_HIDDEN);
+
+    s_detail = lv_label_create(screen);
+    lv_label_set_long_mode(s_detail, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(s_detail, BRINGUP_WIDTH - 32);
+    lv_obj_set_style_text_align(s_detail, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_label_set_text(s_detail, "");
+    lv_obj_add_flag(s_detail, LV_OBJ_FLAG_HIDDEN);
+
+    s_qr = lv_qrcode_create(screen);
+    lv_qrcode_set_size(s_qr, 116);
+    lv_obj_add_flag(s_qr, LV_OBJ_FLAG_HIDDEN);
 
     bsp_display_unlock();
 
@@ -109,7 +122,9 @@ esp_err_t display_show_bringup(void)
 
     lv_obj_set_style_bg_color(lv_screen_active(), lv_color_black(), LV_PART_MAIN);
     lv_obj_remove_flag(s_image, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_label, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_title, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_detail, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_qr, LV_OBJ_FLAG_HIDDEN);
 
     bsp_display_unlock();
 
@@ -134,9 +149,12 @@ static lv_color_t s_readable_text_colour(uint32_t background_rgb)
 }
 
 
-esp_err_t display_show_status(const char *label, uint32_t background_rgb)
+esp_err_t display_show_status(const char *title,
+                              const char *detail,
+                              const char *qr_text,
+                              uint32_t background_rgb)
 {
-    assert (label);             //  Caller's contract
+    assert (title);             //  Caller's contract; detail and qr_text may be NULL
 
     if (!s_ready) {
         return ESP_ERR_INVALID_STATE;
@@ -146,13 +164,55 @@ esp_err_t display_show_status(const char *label, uint32_t background_rgb)
         return ESP_ERR_TIMEOUT;
     }
 
-    lv_obj_add_flag(s_image, LV_OBJ_FLAG_HIDDEN);
+    lv_color_t ink = s_readable_text_colour(background_rgb);
 
+    lv_obj_add_flag(s_image, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(background_rgb), LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_label, s_readable_text_colour(background_rgb), LV_PART_MAIN);
-    lv_label_set_text(s_label, label);
-    lv_obj_center(s_label);
-    lv_obj_remove_flag(s_label, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_set_style_text_color(s_title, ink, LV_PART_MAIN);
+    lv_label_set_text(s_title, title);
+    lv_obj_remove_flag(s_title, LV_OBJ_FLAG_HIDDEN);
+
+    if (detail != NULL && detail [0] != '\0') {
+        lv_obj_set_style_text_color(s_detail, ink, LV_PART_MAIN);
+        lv_label_set_text(s_detail, detail);
+        lv_obj_remove_flag(s_detail, LV_OBJ_FLAG_HIDDEN);
+    }
+    else {
+        lv_obj_add_flag(s_detail, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    if (qr_text != NULL && qr_text [0] != '\0') {
+        //  A QR needs a light background of its own to stay scannable, whatever
+        //  colour the screen is.
+        lv_qrcode_set_dark_color(s_qr, lv_color_hex(0x101410));
+        lv_qrcode_set_light_color(s_qr, lv_color_hex(0xFFFFFF));
+        lv_qrcode_update(s_qr, qr_text, strlen(qr_text));
+        lv_obj_set_style_border_width(s_qr, 4, LV_PART_MAIN);
+        lv_obj_set_style_border_color(s_qr, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+        lv_obj_remove_flag(s_qr, LV_OBJ_FLAG_HIDDEN);
+    }
+    else {
+        lv_obj_add_flag(s_qr, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    //  Lay the visible parts out from the top down, so a screen without a QR
+    //  or without a detail line still looks deliberate rather than lopsided.
+    bool has_qr = qr_text != NULL && qr_text [0] != '\0';
+    bool has_detail = detail != NULL && detail [0] != '\0';
+
+    if (has_qr) {
+        lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, 12);
+        lv_obj_align(s_qr, LV_ALIGN_TOP_MID, 0, 56);
+        lv_obj_align(s_detail, LV_ALIGN_BOTTOM_MID, 0, -14);
+    }
+    else if (has_detail) {
+        lv_obj_align(s_title, LV_ALIGN_CENTER, 0, -18);
+        lv_obj_align(s_detail, LV_ALIGN_CENTER, 0, 24);
+    }
+    else {
+        lv_obj_center(s_title);
+    }
 
     bsp_display_unlock();
 

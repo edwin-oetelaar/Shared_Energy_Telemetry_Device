@@ -24,11 +24,16 @@ esp_err_t display_init(void);
 //  Show the bring-up image, full screen.
 esp_err_t display_show_bringup(void);
 
-//  Show one line of text on a coloured background. The colour is plain
-//  0xRRGGBB so that callers do not have to know about LVGL. The text colour is
-//  chosen from the background's brightness, so a caller cannot pick a pair
-//  that nobody can read.
-esp_err_t display_show_status(const char *label, uint32_t background_rgb);
+//  Show a screen with a title, an optional line under it, and an optional QR
+//  code. Pass NULL for detail or qr_text to leave that part out.
+//
+//  The colour is plain 0xRRGGBB so that callers do not have to know about
+//  LVGL. The text colour is chosen from the background's brightness, so a
+//  caller cannot pick a pair that nobody can read.
+esp_err_t display_show_status(const char *title,
+                              const char *detail,
+                              const char *qr_text,
+                              uint32_t background_rgb);
 
 //  Whether display_init () succeeded. Callers that draw should check this
 //  first; drawing without a screen is not an error worth reporting every time.

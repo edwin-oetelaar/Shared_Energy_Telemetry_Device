@@ -139,6 +139,10 @@ static status_view_state_t s_state_to_show(void)
         return STATUS_VIEW_STARTING;
     }
 
+    if (wifi_state == WIFI_PROV_STATE_CONNECT_FAILED) {
+        return STATUS_VIEW_CONNECT_FAILED;
+    }
+
     if (wifi_state != WIFI_PROV_STATE_CONNECTED) {
         return STATUS_VIEW_CONNECTING;
     }

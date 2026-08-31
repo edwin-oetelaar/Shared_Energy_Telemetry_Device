@@ -12,8 +12,11 @@
 
 #include "esp_log.h"
 
+#include <stdio.h>
+
 #include "inc/display.h"
 #include "inc/status_view.h"
+#include "inc/wifi_provisioning.h"
 
 static const char *TAG = "[status_view]";
 
@@ -43,6 +46,8 @@ static const struct {
                                    "Instellen",         PAINT_COLOUR, 0x1E5A8A },
     [STATUS_VIEW_CONNECTING]   = { "connecting",   "credentials known, network not up",
                                    "Verbinden",         PAINT_COLOUR, 0x334A55 },
+    [STATUS_VIEW_CONNECT_FAILED] = { "connect-failed", "the network refused us or is absent",
+                                   "Geen verbinding",   PAINT_COLOUR, 0x8A3A2A },
     [STATUS_VIEW_SURPLUS]      = { "surplus",      "energy available to share",
                                    "Energie over",      PAINT_COLOUR, 0x1F9E4B },
     [STATUS_VIEW_DEFICIT]      = { "deficit",      "energy has to be bought",
@@ -55,6 +60,53 @@ static const struct {
 
 static status_view_state_t s_current = STATUS_VIEW_STARTING;
 static bool s_shown = false;
+
+//  Built when a state is drawn, so the screen never holds a pointer into
+//  something that has since changed.
+static char s_detail [64];
+static char s_qr [96];
+
+
+//  --------------------------------------------------------------------------
+//  The line under the title. Only two states have something worth saying
+//  there, and both of them name a network.
+
+static const char *s_detail_for(status_view_state_t state)
+{
+    switch (state) {
+        case STATUS_VIEW_PROVISIONING:
+            snprintf(s_detail, sizeof(s_detail), "Wifi: %s", wifi_prov_ap_ssid());
+            return s_detail;
+
+        case STATUS_VIEW_CONNECTING:
+        case STATUS_VIEW_CONNECT_FAILED:
+            if (wifi_prov_current_ssid() [0] == '\0') {
+                return NULL;
+            }
+            snprintf(s_detail, sizeof(s_detail), "%s", wifi_prov_current_ssid());
+            return s_detail;
+
+        default:
+            return NULL;
+    }
+}
+
+
+//  --------------------------------------------------------------------------
+//  A QR code only helps in one place: joining the device's own access point.
+//  The WIFI: form is what phone cameras understand; T:nopass says the network
+//  is open, which is what wifi_prov_start_ap () sets up.
+
+static const char *s_qr_for(status_view_state_t state)
+{
+    if (state != STATUS_VIEW_PROVISIONING) {
+        return NULL;
+    }
+
+    snprintf(s_qr, sizeof(s_qr), "WIFI:S:%s;T:nopass;;", wifi_prov_ap_ssid());
+
+    return s_qr;
+}
 
 
 //  --------------------------------------------------------------------------
@@ -113,7 +165,10 @@ esp_err_t status_view_show(status_view_state_t state)
 
     esp_err_t err = s_view [state].paint == PAINT_IMAGE
                   ? display_show_bringup()
-                  : display_show_status(s_view [state].label, s_view [state].rgb);
+                  : display_show_status(s_view [state].label,
+                                        s_detail_for(state),
+                                        s_qr_for(state),
+                                        s_view [state].rgb);
 
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Could not draw '%s': %s", s_view [state].name, esp_err_to_name(err));
