@@ -806,6 +806,40 @@ broncode en decodeert nog steeds niet, dus de dubbele-decodering waar de verdenk
 bestaat niet. En het gedrag van het reconnect-schema tijdens die mislukte pogingen leverde
 **M10** op.
 
+### Derde ronde: op de ESP32-S3-BOX-3
+
+**Board:** ESP32-S3-BOX-3 · 16 MB flash · 16 MB octal PSRAM
+**Datum:** 2026-08-31 · **Firmware:** branch `box3/plan`, ESP-IDF v6.1, fase 3 van het plan
+**Uitgevoerd:** NVS leeg, provisioning volledig doorlopen via het portaal, daarna twee
+telemetrierondes.
+
+| Bevinding | Status | Grondslag |
+| --- | --- | --- |
+| **C4** API-setup pagina | **Bevestigd** | Pagina rendert, sleutels geaccepteerd, token opgehaald |
+| **M1** Netwerklijst als JSON | **Bevestigd** | Netwerk uit de lijst gekozen, verbinding gelegd |
+| **M8** Eén antwoord per request | **Bevestigd** | Het portaal verwerkt `/api-check` en gaat door |
+| **M3** Verplicht telemetrieveld | **Bevestigd** | Twee geldige antwoorden doorgelaten en verwerkt |
+| **M4** Jitter op het interval | **Bevestigd** | 73,16 s tussen twee rondes; zonder jitter zou dat steeds 60 s plus verzoektijd zijn |
+| **M7** Twee betekenissen | **Bevestigd** | Zie hieronder |
+| **C1** URL-decoding | **Deels** | Het decodeerpad liep. Of het wachtwoord tekens bevatte die decodering nodig hadden is niet vastgesteld |
+| **C2** Reconnect-backoff | **Niet getest** | Er is geen verbinding weggevallen |
+
+**M7 liet zich in het wild zien.** Tussen het krijgen van een IP-adres en het invoeren van de
+API-sleutels zat 216 seconden. Al die tijd stond er **"Geen gegevens"** op het scherm: het
+apparaat was verbonden, maar wist niets over de gemeenschap. Op de oude hardware was de ring in
+diezelfde situatie gedoofd geweest — niet te onderscheiden van "in balans". Dit is precies het
+geval waar de bevinding over ging, en het duurde ruim drie minuten.
+
+De toestanden liepen in de juiste volgorde over het scherm: `provisioning` → `connecting` →
+`no-data` → `deficit`. Vier van de zeven toestanden zijn daarmee op hardware gezien.
+
+Verder in de log, en allebei ongevaarlijk:
+
+- `httpd_uri: URI '/generate_204' not found` — Android controleert zo of er internet achter het
+  accesspoint zit. De 404-handler stuurt hem door naar het portaal; zo hoort het te werken.
+- `wifi: Password length matches WPA2 standards, authmode threshold changes from OPEN to WPA2` —
+  de wifi-stack scherpt zijn eigen drempel aan op grond van de wachtwoordlengte.
+
 ---
 
 ## Wat er goed is

@@ -270,6 +270,10 @@ Vanaf drie of vier beelden verhuist het naar de beeldpartitie uit fase 1.
 > ophaalt.
 >
 > Firmware 1,64 MB, nog 47 procent vrij in het slot.
+>
+> **Op hardware bevestigd op 2026-08-31.** Een volledige provisioningronde liet de toestanden
+> in de juiste volgorde over het scherm lopen: `provisioning` → `connecting` → `no-data` →
+> `deficit`. Bij `community_power_result_kw = -3,954` stond er "Energie inkopen" op geel.
 
 ### Fase 4 — Provisioning op het scherm
 
