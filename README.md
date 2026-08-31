@@ -1,32 +1,36 @@
 # Shared Energy Telemetry Device
 
-Firmware voor een ESP32-S3 die toont hoeveel energie de energiegemeenschap op dit moment
-over heeft. Het apparaat haalt de meetwaarden op bij de Energyboxx-API en toont de
-uitkomst op een ledring.
+![Energy Owl](assets/energy-owl.png)
 
-Dit apparaat hoort bij de Energiegemeenschap Wilhelminaweg in Wageningen. Dat is een
-groep huishoudens die overtollige zonne-energie deelt. Wat dat project wil bereiken en
-hoe, staat in [docs/energiegemeenschap-wilhelminaweg.md](docs/energiegemeenschap-wilhelminaweg.md).
+Firmware voor een ESP32-S3-BOX-3 die toont hoeveel energie de energiegemeenschap op dit
+moment over heeft. Het apparaat haalt de meetwaarden op bij de Energyboxx-API en toont de
+uitkomst op zijn scherm.
 
-De gebruiker stelt de wifi- en API-gegevens in via een webportaal op het apparaat zelf.
-De gegevens staan dus niet in de firmware.
+Dit apparaat hoort bij de Energiegemeenschap Wilhelminaweg in Wageningen. Dat is een groep
+huishoudens die overtollige zonne-energie deelt. Wat dat project wil bereiken en hoe, staat
+in [docs/energiegemeenschap-wilhelminaweg.md](docs/energiegemeenschap-wilhelminaweg.md).
+
+De gebruiker stelt de wifi- en API-gegevens in via een webportaal op het apparaat zelf. De
+gegevens staan dus niet in de firmware.
 
 ## Wat het apparaat doet
 
-Het apparaat vraagt elke minuut de telemetrie op. Het stuurt de ledring aan op het veld
+Het apparaat vraagt elke minuut de telemetrie op. Het stuurt het scherm aan op het veld
 `community_power_result_kw`.
 
-| Uitkomst | Betekenis | Ledring |
+| Uitkomst | Op het scherm | Kleur |
 | --- | --- | --- |
-| Meer dan `+0,05 kW` | De gemeenschap heeft energie over om te delen | Groen |
-| Minder dan `-0,05 kW` | De gemeenschap moet energie inkopen | Geel |
-| Tussen `-0,05` en `+0,05 kW` | Vraag en aanbod zijn gelijk | Uit |
-| Geen wifi of geen antwoord van de API | De gegevens zijn niet actueel | Uit |
+| Meer dan `+0,05 kW` | Energie over | Groen |
+| Minder dan `-0,05 kW` | Energie inkopen | Geel |
+| Tussen `-0,05` en `+0,05 kW` | In balans | Donkergroen |
+| Geen actuele meting | Geen gegevens | Grijs |
 
-Alle acht leds branden tegelijk in dezelfde kleur.
+Het scherm kent nog drie toestanden die over het apparaat zelf gaan: **Instellen** tijdens
+provisioning, **Verbinden** terwijl het een netwerk zoekt, en **Sleutels nodig** als er geen
+API-gegevens zijn.
 
-Het apparaat start een tweede ledring op, maar gebruikt die nog niet. Die ring is bedoeld
-voor latere uitbreiding.
+Bij het opstarten toont het apparaat minstens een seconde de Energy Owl, met het
+versienummer van de firmware rechtsonder.
 
 ## Vaste termen
 
@@ -34,48 +38,66 @@ voor latere uitbreiding.
 | --- | --- |
 | Provisioning | Het instellen van de wifi- en API-gegevens via het webportaal |
 | Portaal | De webpagina's die het apparaat zelf aanbiedt tijdens provisioning |
-| Ledring | Een ring van acht WS2812-leds |
-| Status-led | Een losse led die één toestand toont: wifi, voeding of data |
+| Toestand | Wat het apparaat op dit moment over zichzelf of de gemeenschap toont |
+| Statusscherm | Het beeld met wifi, sleutels, laatste meting en portaal |
+| Voorbeeld | Een toestand waar iemand naartoe gebladerd is, en die dus niet gemeten is |
 | Telemetrie | De meetwaarden die het apparaat bij de Energyboxx-API ophaalt |
 | Credentials | De opgeslagen wifi- en API-gegevens |
 
 ## Hardware
 
-De huidige opzet gebruikt een ESP32-S3 en twee ledringen van acht pixels.
+Het apparaat is een **ESP32-S3-BOX-3**, zonder losse onderdelen eromheen.
 
-### Aansluitingen
+| Onderdeel | |
+| --- | --- |
+| Module | ESP32-S3-WROOM-1 |
+| Flash | 16 MB |
+| PSRAM | 16 MB, octal |
+| Scherm | 2,4 inch, 320 × 240, ILI9341 |
+| Aanraakscherm | GT911 |
+| Knoppen | drie |
+| Geluid | luidspreker en twee microfoons, nog niet in gebruik |
 
-| Functie | Pin op het board | GPIO |
-| --- | --- | --- |
-| Ongebruikte ledring | D0 | GPIO 1 |
-| Ledring voor de energiestatus | D1 | GPIO 2 |
-| Status-led wifi (blauw) | D7 / RX | GPIO 44 |
-| Status-led voeding (rood) | D8 | GPIO 7 |
-| Status-led data (blauw) | D9 | GPIO 8 |
-| Knop om credentials te wissen | — | GPIO 17 |
+De driverlaag komt uit de BSP van Espressif, `espressif/esp-box-3`. Die staat als
+afhankelijkheid in `main/idf_component.yml` en brengt LVGL mee.
 
-De drie status-leds zijn actief-hoog. Plaats een geschikte voorschakelweerstand bij elke
-externe led. De firmware begrenst de helderheid van de ledringen op 10 procent. Die
-grens staat in `main/main.c`.
+## Bediening
 
-### Betekenis van de status-leds
+| Handeling | Werking |
+| --- | --- |
+| Aanraking op het scherm | begint met bladeren en zet de pijlen erbij |
+| Pijl links en rechts | een beeld terug of verder |
+| Knop `config` | een beeld terug |
+| Knop `mute` | een beeld verder |
+| Knop `main` op het paneel | meteen terug naar de telemetrie |
 
-| Led | Uit | Knippert | Brandt |
-| --- | --- | --- | --- |
-| Wifi | De eerste verbinding loopt nog | Provisioning is actief, of de verbinding is mislukt | Het apparaat heeft verbinding |
-| Voeding | De firmware is nog niet gestart | — | De firmware draait |
-| Data | — | Geen geldig token, of geen geslaagd antwoord | Token en telemetrie werken |
+Bladeren gaat door zes beelden: het statusscherm, de Energy Owl en de vier
+energietoestanden. Na vijftien seconden zonder aanraking volgt het apparaat de telemetrie
+weer.
 
-Een knipperende led is 500 ms aan en 500 ms uit.
+Een beeld waar iemand naartoe gebladerd is en dat niet de actuele toestand is, krijgt
+linksboven het merkteken **voorbeeld**. Zonder dat merkteken is een gekozen beeld niet van
+een meting te onderscheiden.
+
+### Het statusscherm
+
+Het eerste beeld in de bladerlijst toont wat het apparaat over zichzelf weet:
+
+```text
+Wifi      OETELX
+          192.168.50.145
+Sleutels  goed, nog 119 min
+Meting    42 s geleden
+Portaal   dicht
+```
+
+Onderaan staat de knop **Sleutels invoeren**. Zie "Sleutels opnieuw invoeren".
 
 ## Provisioning
 
-Het apparaat probeert bij het opstarten eerst de opgeslagen credentials. Het start een
-eigen accesspoint zodra één van deze drie situaties zich voordoet:
-
-- Er zijn geen wifigegevens opgeslagen.
-- Het opgeslagen netwerk antwoordt niet binnen 30 seconden.
-- De opgeslagen API-gegevens zijn ongeldig.
+Het apparaat probeert bij het opstarten eerst de opgeslagen credentials. Het start een eigen
+accesspoint zodra er geen wifigegevens zijn opgeslagen, of het opgeslagen netwerk niet binnen
+30 seconden antwoordt.
 
 Het accesspoint heeft deze gegevens:
 
@@ -84,52 +106,66 @@ SSID: SETD_Provisioning
 Wachtwoord: geen
 ```
 
-Verbind een telefoon of computer met dit netwerk. Het portaal opent daarna meestal
-vanzelf. Open anders het gateway-adres van het accesspoint in een browser.
+Op het scherm staat een **QR-code**. Richt daar een telefooncamera op: de telefoon biedt aan
+het netwerk te joinen. Wie liever handmatig zoekt, vindt het netwerk onder de naam hierboven.
+Het portaal opent daarna meestal vanzelf; anders is het `http://192.168.4.1`.
 
 Het portaal vraagt twee dingen, in deze volgorde:
 
 1. Kies een wifinetwerk en vul het wachtwoord in.
 2. Vul de Energyboxx client ID en client secret in.
 
-Het apparaat slaat gegevens pas op als het ze heeft beproefd. De wifigegevens gaan naar
-NVS zodra de verbinding lukt. De API-gegevens gaan naar NVS zodra de tokenaanvraag lukt.
+Het apparaat slaat gegevens pas op als het ze heeft beproefd. De wifigegevens gaan naar NVS
+zodra de verbinding lukt. De API-gegevens gaan naar NVS zodra de tokenaanvraag lukt.
 
-Na de provisioning stopt het portaal. Het apparaat schakelt daarna over naar wifi in
+Als de sleutels worden goedgekeurd toont het scherm zes seconden **Klaar, we zijn online**.
+Drie seconden later sluit het portaal zichzelf en schakelt het apparaat over naar wifi in
 alleen station-modus.
+
+### Ontbrekende sleutels
+
+Werkt de wifi wel maar ontbreken de API-sleutels, dan blijft het apparaat niet wachten. Het
+verbindt, toont **Sleutels nodig**, en draait door. Wie langsloopt kan het portaal vanaf het
+statusscherm openen.
+
+### Sleutels opnieuw invoeren
+
+Druk op **Sleutels invoeren** op het statusscherm. Het apparaat zet zijn accesspoint aan
+terwijl het op zijn eigen netwerk blijft, dus de wifigegevens hoeven niet opnieuw. Omdat er
+al een verbinding is, komt de bezoeker meteen op de sleutelpagina uit.
+
+Het portaal sluit zichzelf zodra de sleutels zijn geaccepteerd, of na vijftien minuten
+zonder gebruik. Worden de nieuwe sleutels afgekeurd, dan zet het apparaat de vorige terug en
+werkt het gewoon door.
 
 ## Credentials wissen
 
-Er zijn twee manieren om de opgeslagen wifi- en Energyboxx-gegevens te wissen:
+Schakel de voeding drie keer binnen tien seconden uit en weer in.
 
-- Houd de knop op GPIO 17 tijdens het opstarten minstens drie seconden laag.
-- Schakel de voeding drie keer binnen tien seconden uit en weer in.
-
-De teller voor die tweede manier gaat na tien seconden draaien terug naar nul. Alleen een
-echte in- en uitschakeling telt mee. Een herstart door een firmwarefout, een watchdog of
-een onderspanning telt niet mee. Een softwarefout kan de credentials dus niet zelf wissen.
+De teller gaat na tien seconden draaien terug naar nul. Alleen een echte in- en
+uitschakeling telt mee. Een herstart door een firmwarefout, een watchdog of een
+onderspanning telt niet mee, dus een softwarefout kan de credentials niet zelf wissen.
 
 ## Gedrag bij storingen
 
 Het apparaat geeft nooit op. Het probeert het opnieuw volgens vaste schema's.
 
-**Wifi weg.** Het apparaat blijft opnieuw verbinden, met een oplopende wachttijd:
-0,5 s, 1 s, 2 s, 5 s, 10 s, 30 s, 60 s en daarna elke 5 minuten. De wifi-led knippert
-zodra het schema bij de stap van tien seconden komt. Het schema is de tabel
-`s_retry_schedule` in `main/src/wifi_provisioning.c`.
+**Wifi weg.** Het apparaat blijft opnieuw verbinden, met een oplopende wachttijd: 0,5 s,
+1 s, 2 s, 5 s, 10 s, 30 s, 60 s en daarna elke 5 minuten. Vanaf de stap van tien seconden
+toont het scherm **Geen verbinding**. Het schema is de tabel `s_retry_schedule` in
+`main/src/wifi_provisioning.c`.
 
-**API onbereikbaar.** Een mislukte token- of telemetrieaanvraag stopt de firmware niet.
-Het apparaat wist de energiering en probeert het opnieuw. De wachttijd loopt op:
-10 s, 20 s, 40 s, 80 s, 160 s en daarna elke 5 minuten. Het schema is de tabel
-`s_api_retry_delay_ms` in `main/main.c`.
+**API onbereikbaar.** Een mislukte token- of telemetrieaanvraag stopt de firmware niet. Het
+apparaat toont **Geen gegevens** en probeert het opnieuw. De wachttijd loopt op: 10 s, 20 s,
+40 s, 80 s, 160 s en daarna elke 5 minuten. Het schema is de tabel `s_api_retry_delay_ms` in
+`main/main.c`.
 
-**Spreiding.** Elke wachttijd krijgt tot een vijfde extra. Dat geldt ook voor de gewone
-tussentijd van één minuut. Zo vragen apparaten die tegelijk zijn opgestart niet tegelijk
-opnieuw.
+**Spreiding.** Elke wachttijd krijgt tot een vijfde extra, ook de gewone tussentijd van één
+minuut. Zo vragen apparaten die tegelijk zijn opgestart niet tegelijk opnieuw.
 
-**Portaal blijft ongebruikt.** Het apparaat herstart na vijftien minuten stilte en
-probeert de opgeslagen credentials opnieuw. Elke pagina en elke handeling in het portaal
-zet die klok terug. De teller meet dus stilte, geen verstreken tijd.
+**Portaal blijft ongebruikt.** Het apparaat sluit het portaal na vijftien minuten stilte.
+Gebeurt dat tijdens de eerste installatie, dan herstart het en probeert het de opgeslagen
+credentials opnieuw. Elke pagina en elke handeling in het portaal zet die klok terug.
 
 ## Bouwen
 
@@ -158,11 +194,15 @@ Draai geen `idf.py set-target`. Dat commando gooit `sdkconfig.defaults` weg.
 
 Het project haalt twee afhankelijkheden op met de ESP-IDF Component Manager:
 
-- `espressif/led_strip`
 - `espressif/cjson`
+- `espressif/esp-box-3`, de BSP van het bord, die LVGL en de drivers voor scherm,
+  aanraking, knoppen en geluid meebrengt
 
-`sdkconfig.defaults` kiest een ESP32-S3 met 8 MB flash en een partitie-indeling met twee
-OTA-slots.
+`sdkconfig.defaults` kiest een ESP32-S3 met 16 MB flash en 16 MB octal PSRAM, en verwijst
+naar `partitions-box3.csv`. Die tabel staat toegelicht in
+[docs/PLAN-box3.md](docs/PLAN-box3.md): twee OTA-slots van 3 MB, ruimte voor beelden en
+spraakmodellen, een partitie voor coredumps, en de partitietabel op offset 0x11000 zodat
+secure boot later nog past.
 
 Kies bewust wanneer je naar een nieuwere ESP-IDF gaat. Bouw en flash daarna een board, en
 loop de tests uit [docs/REVIEW.md](docs/REVIEW.md) opnieuw na. Een nieuwe hoofdversie kan
@@ -258,28 +298,49 @@ De belangrijkste instellingen staan bovenin `main/main.c`:
 
 | Instelling | Waarde | Doel |
 | --- | --- | --- |
-| `BRIGHTNESS_PERCENTAGE` | `10.0` | Helderheid van de ledringen |
 | `POWER_BALANCE_DEADBAND_KW` | `0.05` | Grens waarbinnen de gemeenschap in balans is |
 | `TELEMETRY_INTERVAL_MS` | `60000` | Tijd tussen twee telemetrieaanvragen |
 | `WIFI_WAIT_POLL_MS` | `10000` | Hoe vaak het apparaat kijkt of wifi terug is |
 | `RESET_HOLD_MS` | `3000` | Hoe lang de knop laag moet blijven |
 
-Drie schema's staan in een tabel in plaats van in losse waarden. Zo is het hele beleid in
+Vier schema's staan in een tabel in plaats van in losse waarden. Zo is het hele beleid in
 één oogopslag te zien:
 
 | Tabel | Bestand | Bepaalt |
 | --- | --- | --- |
 | `s_api_retry_delay_ms` | `main/main.c` | De wachttijd na een mislukte API-ronde |
-| `s_retry_schedule` | `main/src/wifi_provisioning.c` | De pogingen om wifi te herstellen |
 | `s_reset_reason` | `main/main.c` | Welke herstarts meetellen voor het wissen |
+| `s_retry_schedule` | `main/src/wifi_provisioning.c` | De pogingen om wifi te herstellen |
+| `s_view` | `main/src/status_view.c` | Wat elke toestand op het scherm doet |
 
-`main/src/energyboxx_api.c` bevat drie andere instellingen: de URL's van de endpoints,
-de marge voor het vernieuwen van het token en de grootte van de antwoordbuffer. De
-stilte-timeout van het portaal staat als `PROVISIONING_SILENCE_TIMEOUT_MS` in
-`main/src/wifi_provisioning.c`.
+Instellingen voor het scherm en de bediening:
 
-Git negeert `main/inc/secrets.h`. De huidige firmware gebruikt dat bestand niet. Zet
-nooit echte credentials in de repository.
+| Instelling | Waarde | Bestand |
+| --- | --- | --- |
+| `BRINGUP_MIN_VISIBLE_MS` | `1000` | `main/src/status_view.c` |
+| `BROWSE_TIMEOUT_MS` | `15000` | `main/src/status_view.c` |
+| `PROVISIONING_SILENCE_TIMEOUT_MS` | 15 minuten | `main/src/wifi_provisioning.c` |
+| `API_RETRY_WHILE_PROVISIONING_MS` | `30000` | `main/src/wifi_provisioning.c` |
+
+`main/src/energyboxx_api.c` bevat drie andere instellingen: de URL's van de endpoints, de
+marge voor het vernieuwen van het token en de grootte van de antwoordbuffer.
+
+Git negeert `main/inc/secrets.h`. De huidige firmware gebruikt dat bestand niet. Zet nooit
+echte credentials in de repository.
+
+### Het opstartbeeld vervangen
+
+De tekening staat als `assets/energy-owl.png` in de repository. Het beeld dat het apparaat
+toont wordt daaruit gemaakt:
+
+```bash
+python3 tools/png_to_lvgl.py --crop 219,10,637,478 assets/energy-owl.png assets/energy-owl-bringup.bin
+```
+
+De uitsnede laat de tablet uit de illustratie weg en houdt titel en uil over. Een ander
+bronbeeld mag elke maat hebben; het script schaalt naar 320 × 240 en houdt de verhouding
+aan. Er zit geen PNG-decoder in de firmware: het beeld staat er in het formaat waarin het
+scherm het tekent.
 
 ## Opbouw van het project
 
@@ -289,31 +350,38 @@ main/
 ├── inc/                      Publieke headers
 └── src/
     ├── api_storage.c         Energyboxx-gegevens in NVS
+    ├── display.c             Scherm, LVGL en de beelden
     ├── dns_server.c          DNS-omleiding voor het portaal
     ├── energyboxx_api.c      Tokenaanvraag en telemetrie
-    ├── status_led.c          Ledringen en losse status-leds
+    ├── input.c               De drie knoppen
+    ├── status_view.c         Welke toestand het apparaat toont
     ├── uri_decode.c          Decoderen van formulierwaarden
-    ├── wifi_provisioning.c   Wifitoestand en het accesspoint
+    ├── wifi_provisioning.c   Wifitoestand, accesspoint en portaal
     ├── wifi_storage.c        Wifigegevens in NVS
     └── wifi_web.c            Het webportaal
 
+assets/energy-owl.png         De tekening, onbewerkt
+assets/energy-owl-bringup.bin Het opstartbeeld zoals het scherm het tekent
+partitions-box3.csv           Partitie-indeling van de 16 MB flash
 docs/REVIEW.md                Review vóór productie, met werklijst
+docs/PLAN-box3.md             De overstap naar de ESP32-S3-BOX-3, in fasen
 docs/energiegemeenschap-wilhelminaweg.md   Het project waar dit apparaat bij hoort
 test/                         Host-tests voor de modules zonder ESP-IDF
-tools/idfenv.sh               Terugvaloptie: bouwen met de ESP-IDF van PlatformIO (5.5.x)
-tools/monitor.py              Seriële monitor met tijdstempels
+tools/                        Beeldomzetter, seriële monitor, bouwomgeving
 ```
 
 ## Verloop na het opstarten
 
 ```text
 Opstarten
-  -> NVS en leds klaarzetten
+  -> NVS klaarzetten
+  -> scherm aan, Energy Owl tonen
+  -> knoppen en aanraking klaarzetten
   -> opgeslagen wifigegevens laden en verbinden
      -> provisioning starten als dat niet lukt
   -> API-gegevens laden en beproeven
-     -> provisioning starten als dat niet lukt
+     -> "Sleutels nodig" tonen als dat niet lukt
   -> telemetrie opvragen
-  -> de energiering bijwerken
+  -> de toestand op het scherm bijwerken
   -> 60 seconden wachten en opnieuw beginnen
 ```
