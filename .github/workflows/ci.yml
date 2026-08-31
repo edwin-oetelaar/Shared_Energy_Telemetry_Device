@@ -1,8 +1,12 @@
 name: CI
 
 on:
+  # Every branch is covered without running twice: a push to main builds main,
+  # and everything else is built through its pull request. The earlier filter
+  # named specific branches, so work on a branch nobody had listed - box3/** -
+  # went unbuilt until it reached a pull request.
   push:
-    branches: [main, 'hardening/**']
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
