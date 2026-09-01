@@ -585,6 +585,16 @@ void wifi_prov_wait_until_completed(void)
     //  boot - so it happens on a slow tick, not once a second, and it goes
     //  through the same lock as the portal.
 
+    //  On this path nobody has read NVS yet: main.c only does that when the
+    //  device connects with credentials it already had. Somebody who moves the
+    //  device to another router therefore got asked for API keys again, while
+    //  perfectly good ones were sitting in flash. Those keys are long, hard to
+    //  type and usually not to hand, so try them before asking.
+    if (energyboxx_api_load_stored_credentials() == ESP_OK) {
+        ESP_LOGI (TAG, "Stored API credentials still work, no need to ask again");
+        wifi_prov_note_credentials_accepted();
+    }
+
     TickType_t next_retry = xTaskGetTickCount ();
     wifi_prov_note_portal_activity ();
 

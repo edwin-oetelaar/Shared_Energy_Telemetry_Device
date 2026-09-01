@@ -54,6 +54,12 @@ static lv_obj_t *s_qr = NULL;
 
 static bool s_ready = false;
 
+//  The bottom strip belongs to the two browse arrows, which can appear over any
+//  screen at any moment. Nothing else is placed there. Two things have already
+//  been put in that corner and had to be moved: the version label and the QR on
+//  the About page. This is the rule that stops it happening a third time.
+#define ARROW_STRIP_HEIGHT  60
+
 //  Defined further down, next to the screen it belongs to.
 static lv_color_t s_readable_text_colour(uint32_t background_rgb);
 
@@ -209,7 +215,8 @@ esp_err_t display_show_about(const char *title,
         lv_qrcode_update(s_qr, qr_text, strlen(qr_text));
         lv_obj_set_style_border_width(s_qr, 4, LV_PART_MAIN);
         lv_obj_set_style_border_color(s_qr, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-        lv_obj_align(s_qr, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
+        //  Above the arrow strip, not in it.
+        lv_obj_align(s_qr, LV_ALIGN_TOP_RIGHT, -10, 52);
         lv_obj_remove_flag(s_qr, LV_OBJ_FLAG_HIDDEN);
     }
     else {
@@ -260,7 +267,8 @@ esp_err_t display_show_report(const char *title,
 
     if (action_label != NULL && action_label [0] != '\0') {
         lv_label_set_text(s_action_label, action_label);
-        lv_obj_align(s_action, LV_ALIGN_BOTTOM_MID, 0, -8);
+        //  Centred, so it sits between the two arrows rather than under one.
+        lv_obj_align(s_action, LV_ALIGN_BOTTOM_MID, 0, -10);
         lv_obj_remove_flag(s_action, LV_OBJ_FLAG_HIDDEN);
     }
     else {
@@ -522,9 +530,10 @@ esp_err_t display_show_status(const char *title,
     bool has_detail = detail != NULL && detail [0] != '\0';
 
     if (has_qr) {
-        lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, 12);
-        lv_obj_align(s_qr, LV_ALIGN_TOP_MID, 0, 56);
-        lv_obj_align(s_detail, LV_ALIGN_BOTTOM_MID, 0, -14);
+        lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, 8);
+        lv_obj_align(s_qr, LV_ALIGN_TOP_MID, 0, 48);
+        //  Just above the arrow strip; the arrows may appear over this screen.
+        lv_obj_align(s_detail, LV_ALIGN_BOTTOM_MID, 0, -ARROW_STRIP_HEIGHT + 4);
     }
     else if (has_detail) {
         lv_obj_align(s_title, LV_ALIGN_CENTER, 0, -18);

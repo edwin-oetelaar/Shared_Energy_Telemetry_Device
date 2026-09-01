@@ -259,7 +259,8 @@ static esp_err_t api_setup_get_handler(httpd_req_t *req)
     const char *piece [] = {
         html_head,
         api_ready
-            ? "Er zijn al werkende sleutels opgeslagen. Nieuwe invoeren vervangt ze."
+            ? "Klaar. De opgeslagen sleutels werken, u kunt deze pagina sluiten. "
+              "Nieuwe invoeren vervangt ze."
             : "Status: Ready",
         html_body
     };

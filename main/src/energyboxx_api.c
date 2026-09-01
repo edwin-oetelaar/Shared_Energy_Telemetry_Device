@@ -16,6 +16,8 @@
 #include <string.h>
 #include "cJSON.h"
 
+#include "inc/api_storage.h"
+
 #define ENERGYBOXX_TOKEN_URL "https://energyboxx.grexx.today/oauth/access_token"
 
 #define ENERGYBOXX_DATA_URL "https://energyboxx.grexx.today/api/v1/form/1:10173:112860/1:10310:6276618"
@@ -554,6 +556,35 @@ esp_err_t energyboxx_api_restore_previous(void)
     //  Fetch straight away, so the device is working again before the person
     //  who mistyped has finished reading the error on their phone.
     return energyboxx_api_fetch_token();
+}
+
+
+esp_err_t energyboxx_api_load_stored_credentials(void)
+{
+    char stored_id [128] = {0};
+    char stored_secret [256] = {0};
+
+    esp_err_t err = api_storage_load_credentials(stored_id, sizeof(stored_id),
+                                                 stored_secret, sizeof(stored_secret));
+    if (err != ESP_OK) {
+        ESP_LOGI(TAG, "No stored credentials to try");
+        return err;
+    }
+
+    err = energyboxx_api_setup(stored_id, stored_secret);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    err = energyboxx_api_fetch_token();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Stored credentials were refused");
+        return err;
+    }
+
+    ESP_LOGI(TAG, "Stored credentials work");
+
+    return ESP_OK;
 }
 
 
