@@ -64,7 +64,8 @@ firmware terug. Firmware die meteen vastloopt, verdwijnt zo vanzelf.
 
 ## De terugval beproeven
 
-Een vangnet dat nooit is beproefd, is een aanname. Beproef de terugval daarom met een release die
+Een vangnet dat nooit is beproefd, is een aanname. Deze beproeving is gedaan op 2026-09-01; de
+uitkomst staat in [REVIEW.md](REVIEW.md), vierde ronde. Beproef de terugval daarom met een release die
 met opzet stuk is. Doe dit met een apparaat op tafel, met een kabel binnen bereik.
 
 De opzet: een tak naast `main`, met daarin één regel die het apparaat drie seconden na de start
