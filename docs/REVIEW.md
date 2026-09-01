@@ -39,7 +39,7 @@ te repareren.
 | Betrouwbaarheid in het veld | **Zakt** | Goed | Backoff zonder bovengrens, geen aborts meer op externe input |
 | Security | **Zwak** | Zwak | C5, H5 open: open AP + plain HTTP, plaintext NVS, geen flash encryption |
 | Onderhoudbaarheid | Matig | Matig | L5–L8 open: HTML als C-string, copy-paste JSON, dode code |
-| Updatebaarheid | **Zakt** | Goed | H4 opgelost: OTA vanaf GitHub Releases, met versiecheck en terugval |
+| Updatebaarheid | **Zakt** | Goed | H4 opgelost en op hardware bevestigd: bijwerken én terugvallen |
 | Testbaarheid | **Zakt** | Redelijk | CI met host-tests, cppcheck en firmwarebuild; nog geen hardwaretest |
 | Reproduceerbaarheid | Matig | Redelijk | `sdkconfig.defaults` op orde; M9 open: IDF-versie niet gepind |
 | Documentatie | Goed | Goed | README loopt mee met elke gedragswijziging |
@@ -1026,6 +1026,76 @@ Verder in de log, en allebei ongevaarlijk:
   accesspoint zit. De 404-handler stuurt hem door naar het portaal; zo hoort het te werken.
 - `wifi: Password length matches WPA2 standards, authmode threshold changes from OPEN to WPA2` —
   de wifi-stack scherpt zijn eigen drempel aan op grond van de wachtwoordlengte.
+
+### Vierde ronde: bijwerken over de lucht
+
+**Board:** ESP32-S3-BOX-3 · 16 MB flash · 16 MB octal PSRAM
+**Datum:** 2026-09-01 · **Firmware:** `main` op `v0.2.0`, ESP-IDF v6.1
+**Uitgevoerd:** een echte update over de lucht, en daarna de terugval, met releases van
+GitHub.
+
+| Bevinding | Status | Grondslag |
+| --- | --- | --- |
+| **H4** Bijwerken over de lucht | **Bevestigd** | Zie de twee beproevingen hieronder |
+| **H2** Resetreden | **Bevestigd** | De paniek van de kapotte versie telt niet mee als stroomonderbreking; de credentials bleven staan |
+
+**De update zelf.** Het apparaat draaide `v0.2.0` uit slot `ota_0`. Na het publiceren van
+`v0.2.1`:
+
+```
+[ 96.4] updater: update: idle --check--> checking
+[101.2] esp_https_ota: Writing to <ota_1> partition at offset 0x330000
+[101.2] updater: Updating from v0.2.0 to v0.2.1
+[121.3] updater: update: downloading --installed--> ready
+[121.3] updater: Restarting into v0.2.1
+[125.5] boot: Loaded app from partition at offset 0x330000
+[128.6] app_init: App version: v0.2.1
+[129.0] updater: This image is on probation until the device does its work
+[132.4] updater: This image works and is now permanent
+```
+
+Het ophalen en schrijven van 1,7 MB duurde 20 seconden. De proeftijd duurde 3 seconden en
+eindigde bij de eerste volledige ronde langs de API.
+
+**De versievergelijking, beide kanten op.** Een kwartier eerder gaf dezelfde knop
+`Running v0.2.0, offered v0.2.0: nothing to do`. GitHub serveerde toen nog de oude release uit
+zijn tussengeheugen. Er is toen geen byte van de image opgehaald en er is niet herstart. Dat is
+het bewijs dat de vergelijking vóór de download plaatsvindt en niet erna.
+
+**De terugval.** Beproefd met een release die met opzet stuk was: `v0.2.2` liep drie seconden na
+de start vast. Dat is korter dan beide bewijzen waarmee firmware zichzelf definitief maakt.
+
+```
+[46.9] updater: Updating from v0.2.1 to v0.2.2
+[70.7] updater: Restarting into v0.2.2
+[74.9] boot: Loaded app from partition at offset 0x30000
+[75.7] app_init: App version: v0.2.2
+[76.3] updater: This image is on probation until the device does its work
+[78.9] main: MET OPZET STUK: beproeving van de terugval, tot ziens
+[78.9] abort() was called at PC 0x42014b6b on core 0
+[79.3] esp_core_dump_flash: Core dump has been saved to flash.
+[79.7] boot: Loaded app from partition at offset 0x330000
+[80.7] app_init: App version: v0.2.1
+```
+
+Elf seconden tussen het opstarten van de kapotte versie en het draaien van de vorige. Er is
+niets ingegrepen: het apparaat stond op tafel met een kabel binnen bereik, maar die was niet
+nodig.
+
+Drie dingen die deze beproeving en passant liet zien:
+
+1. De paniek werd **wel** in het coredump-vak geschreven en telde **niet** mee als
+   stroomonderbreking. Een kapotte versie die blijft herstarten wist dus niet de configuratie
+   van de klant. Dat is bevinding **H2**, hier voor het eerst in het wild.
+2. De terugval schrijft niets terug. Het bootprogramma kiest het andere slot, waar de vorige
+   versie onaangeroerd staat.
+3. Een ingetrokken release is een minuut lang niet gelijk aan zichzelf: direct na het intrekken
+   antwoordde de vaste URL kort met "Not Found", daarna weer met de vorige versie. Voor een
+   apparaat maakt dat niets uit — dat probeert het een uur later gewoon opnieuw.
+
+**Wat hiermee niet is beproefd:** een download die halverwege afbreekt, en een apparaat dat
+tijdens het schrijven de stroom verliest. Beide horen ongevaarlijk te zijn omdat er in het
+andere slot wordt geschreven, maar aangetoond is dat niet.
 
 ---
 
