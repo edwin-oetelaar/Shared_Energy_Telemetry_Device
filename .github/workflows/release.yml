@@ -34,6 +34,18 @@ jobs:
         with:
           fetch-depth: 0
 
+      # A container job runs as root, while the checkout belongs to the runner
+      # user. Git then refuses to look at the repository at all ("dubious
+      # ownership"), git describe fails, and ESP-IDF silently falls back to
+      # version "1". That is how the first release build produced an image
+      # whose version was "1" instead of the tag. Nothing warns you; the build
+      # succeeds and the number is wrong.
+      - name: Let git read this checkout
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          echo "version: $(git describe --always --tags --dirty)"
+
       - name: Build
         shell: bash
         run: |
