@@ -23,14 +23,15 @@ haalde het de streep niet: een wifi-wachtwoord met een spatie erin werd verkeerd
 apparaat kwam na vijf mislukte reconnects nooit meer online zonder stekker eruit, en een
 firmwarebug kon zelf de configuratie van de klant wissen.
 
-**Nu:** 17 van de 30 bevindingen zijn opgelost. Van het kritieke blok resteert alleen C5, en de
-twee overgebleven hoge punten (H4, H5) zijn geen code maar beslissingen. Wat er nu ligt is
-firmware die een routerherstart overleeft, die geen enkele reboot meer laat uitlokken door een
-webrequest, en waarvan elke wijziging automatisch wordt gebouwd, geanalyseerd en getest.
+**Nu:** 27 van de 39 bevindingen zijn opgelost. Van het kritieke blok resteert alleen C5, en van
+de hoge punten alleen H5. Wat er nu ligt is firmware die een routerherstart overleeft, die geen
+enkele reboot meer laat uitlokken door een webrequest, die zichzelf bijwerkt en bij een mislukte
+update terugvalt op de vorige versie, en waarvan elke wijziging automatisch wordt gebouwd,
+geanalyseerd en getest.
 
-**Wat de doorslag geeft voor productie:** de drie openstaande beslissingen (C5, H4, H5) en het
-feit dat nog niets op hardware is bevestigd. Dat laatste is inmiddels het zwaarste openstaande
-punt van de hele lijst.
+**Wat de doorslag geeft voor productie:** de twee openstaande beslissingen (C5, H5). Beide raken
+het productieproces en niet alleen de firmware, en beide zijn na uitlevering niet meer goedkoop
+te repareren.
 
 | Norm | Bij aanvang | Nu | Toelichting |
 | --- | --- | --- | --- |
@@ -38,7 +39,7 @@ punt van de hele lijst.
 | Betrouwbaarheid in het veld | **Zakt** | Goed | Backoff zonder bovengrens, geen aborts meer op externe input |
 | Security | **Zwak** | Zwak | C5, H5 open: open AP + plain HTTP, plaintext NVS, geen flash encryption |
 | Onderhoudbaarheid | Matig | Matig | L5–L8 open: HTML als C-string, copy-paste JSON, dode code |
-| Updatebaarheid | **Zakt** | **Zakt** | H4 open: twee OTA-partities, geen regel OTA-code |
+| Updatebaarheid | **Zakt** | Goed | H4 opgelost: OTA vanaf GitHub Releases, met versiecheck en terugval |
 | Testbaarheid | **Zakt** | Redelijk | CI met host-tests, cppcheck en firmwarebuild; nog geen hardwaretest |
 | Reproduceerbaarheid | Matig | Redelijk | `sdkconfig.defaults` op orde; M9 open: IDF-versie niet gepind |
 | Documentatie | Goed | Goed | README loopt mee met elke gedragswijziging |
@@ -64,7 +65,7 @@ punt van de hele lijst.
 - [x] **H9** `wifi_prov_start_ap()` aborteert bij een fout, en draait nu tijdens bedrijf — opgelost
 - [x] **H10** Een afgekeurde sleutel laat een werkend apparaat zonder credentials achter — opgelost
 - [x] **M12** Het scherm bleef "Instellen" met QR tonen nadat het portaal was gesloten — opgelost
-- [ ] **H4** Geen OTA, terwijl de partitietabel er twee slots voor heeft
+- [x] **H4** Geen OTA, terwijl de partitietabel er twee slots voor heeft — opgelost, `esp_https_ota` met versiecheck en terugval
 - [ ] **H5** Credentials liggen leesbaar in flash
 
 ### Middel
@@ -460,6 +461,43 @@ apparaten die bij mensen thuis staan is dat het verschil tussen een bug en een t
 
 **Fix:** `esp_https_ota` met versiecheck en rollback (`app_rollback`) toevoegen zolang de vloot
 nog klein is.
+
+> **Opgelost.** `main/src/updater.c` haalt firmware op bij GitHub Releases, via de vaste URL
+> `releases/latest/download/energy-owl.bin`. Daardoor is er geen manifest nodig en is er één
+> plek die bepaalt wat de apparaten krijgen: het publiceren van de release.
+>
+> De module heeft dezelfde vorm als de machines uit fase 6b: vijf toestanden, één tabel
+> `s_next [state][event]`, en `updater_handle()` als enige schrijver. Elke overgang komt in het
+> log te staan.
+>
+> Het versienummer komt uit de git-tag via `git describe`, dus niemand hoeft een constante bij
+> te werken. De updater leest eerst de beschrijving van het aangeboden beeld en breekt af als
+> die niet nieuwer is — er wordt dan geen enkele byte van de image binnengehaald. Een build uit
+> een werkmap (`v0.1.0-dirty`) wordt herkend en telt niet als release.
+>
+> Terugval is aan (`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`). Nieuwe firmware staat in proeftijd
+> en wordt pas definitief na een volledige ronde langs de API, of na tien minuten
+> aaneengesloten netwerk. Dat tweede bewijs voorkomt dat een API-storing goede firmware
+> terugdraait; het is nog steeds sterk genoeg, want firmware die het netwerk haalt kan altijd
+> nog vervangen worden. Firmware die meteen vastloopt haalt geen van beide en verdwijnt bij de
+> volgende start vanzelf.
+>
+> Er wordt vijf minuten na het opstarten voor het eerst gekeken en daarna elk uur, met een knop
+> **Nu bijwerken** op de About-pagina voor wie niet wil wachten. Tijdens het ophalen neemt het
+> scherm de toestand `updating` aan met het percentage erbij, want er komt een herstart aan.
+>
+> Uitgeven gaat via `.github/workflows/release.yml`: een tag `v*` bouwt de firmware, controleert
+> of het versienummer in het beeld gelijk is aan de tag, en hangt het bestand aan een
+> **concept**-release. Zolang die een concept is, haalt geen apparaat hem op. Zie
+> [OTA.md](OTA.md) voor de procedure.
+>
+> Wat hier nog niet in zit: het apparaat controleert het certificaat van GitHub, maar geen
+> handtekening onder het bestand zelf. Dat is H5.
+>
+> **De eerste keer moet met een kabel.** De firmware die nu op de vijf apparaten staat kan
+> zichzelf niet bijwerken.
+>
+> Gebouwd voor esp32s3 op ESP-IDF 6.1. Nog niet op hardware getest.
 
 ### H5 — Credentials liggen leesbaar in flash
 `sdkconfig`: geen `SECURE_FLASH_ENC_ENABLED`, geen `NVS_ENCRYPTION`, geen `SECURE_BOOT`
@@ -1017,9 +1055,10 @@ Stappen 1 en 2 zijn afgerond (C1–C4, H1–H3, M1–M4, M6, M8, L1, L3, L9, L10
    flashen en de vijf scenario's hieronder doorlopen weegt zwaarder dan welke volgende bevinding
    ook — zie "Wat niet is gecontroleerd".
 2. **Beslissen vóór de eerste serie.** C5 (WPA2 met per-apparaat wachtwoord op het
-   provisioning-AP), H4 (OTA) en H5 (flash encryption, secure boot, NVS-encryptie). Alle drie
-   raken het productieproces, niet alleen de firmware, en H4 en H5 zijn na uitlevering niet meer
-   aan te zetten. Ook M9 hoort hier: leg de ESP-IDF-versie vast.
+   provisioning-AP) en H5 (flash encryption, secure boot, NVS-encryptie). Beide raken het
+   productieproces, niet alleen de firmware, en H5 is na uitlevering niet meer aan te zetten.
+   H5 weegt zwaarder nu H4 er is: de apparaten installeren voortaan zelf wat GitHub aanbiedt,
+   en alleen secure boot maakt van "wat GitHub aanbiedt" ook "wat wij ondertekend hebben".
 3. **Gedrag afmaken.** M7 (LED-semantiek: "uit" betekent nog twee dingen) en M5 (NVS-schrijfactie
    uit de event handler).
 4. **Opruimen.** L2 en L4–L8, L11. Geen daarvan verandert gedrag; ze bepalen hoe het project over

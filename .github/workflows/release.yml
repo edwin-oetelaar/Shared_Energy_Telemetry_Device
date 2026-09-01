@@ -1,0 +1,67 @@
+# Builds the firmware for a release and attaches it to that release.
+#
+# The devices ask GitHub for
+# releases/latest/download/energy-owl.bin and install what they get, so this
+# file is the only thing that decides which build reaches five houses. It runs
+# on a tag, never on a branch: what a device downloads must be a version with a
+# name, not "whatever main was that afternoon".
+#
+# To publish a new version:
+#   1. git tag -a v0.2.0 -m "what changed"
+#   2. git push origin v0.2.0
+#   3. Wait for this workflow, then publish the draft release.
+#
+# The release is a draft, so nothing is downloaded before somebody has looked
+# at it. Publishing the draft is the moment the update goes out.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  firmware:
+    name: Build and attach the firmware
+    runs-on: ubuntu-latest
+    container: espressif/idf:v6.1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          idf.py build
+
+      # The version in the image is what the device compares against; a build
+      # whose version is not the tag would leave every device either updating
+      # in a loop or refusing the update. Fail here rather than on the wall.
+      - name: Check the version in the image against the tag
+        shell: bash
+        run: |
+          set -e
+          . "$IDF_PATH/export.sh"
+          tag="${GITHUB_REF_NAME}"
+          in_image=$(python -m esptool image_info build/energy-owl.bin \
+                     | sed -n 's/^App version: *//p')
+          echo "tag      $tag"
+          echo "in image $in_image"
+          test "$tag" = "$in_image"
+
+      - name: Attach the firmware to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: build/energy-owl.bin
+          body: |
+            Firmware ${{ github.ref_name }} for the Energy Owl.
+
+            Devices that run this firmware or newer install this release by
+            themselves, within an hour of publication.

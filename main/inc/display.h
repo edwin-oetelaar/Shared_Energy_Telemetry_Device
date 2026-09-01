@@ -67,6 +67,7 @@ esp_err_t display_show_report(const char *title,
 esp_err_t display_show_about(const char *title,
                              const char *body,
                              const char *qr_text,
+                             const char *action_label,
                              uint32_t background_rgb);
 
 //  Mark the screen as a preview rather than a live reading. Without this a

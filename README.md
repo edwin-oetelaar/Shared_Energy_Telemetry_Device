@@ -104,16 +104,22 @@ Paddy, Job en Edwin        [QR]
 (c) 2026
 Dolphin Solutions
 dolphinsolutions.nl
-Versie    c92a479
+Versie    v0.1.0
 Gebouwd   Sep  1 2026
 Apparaat  CB8B90
+Update    niets te doen
+
+     [ Nu bijwerken ]
 ```
 
 De QR-code opent
 [dolphinsolutions.nl/gestuurde-energie-gemeenschap](https://www.dolphinsolutions.nl/gestuurde-energie-gemeenschap/).
 
+De knop **Nu bijwerken** laat het apparaat meteen bij GitHub kijken of er nieuwe firmware is.
+De regel `Update` zegt wat de updater doet. Zie [docs/OTA.md](docs/OTA.md).
+
 Versie en bouwdatum komen uit de firmware zelf, niet uit een constante die iemand moet
-bijwerken. `Apparaat` toont de laatste drie bytes van het MAC-adres: met meerdere
+bijwerken. Het versienummer komt uit de git-tag. `Apparaat` toont de laatste drie bytes van het MAC-adres: met meerdere
 testapparaten in omloop is "welk apparaat is dit?" de eerste vraag bij een storingsmelding,
 en dit is hetzelfde nummer dat de router laat zien.
 
@@ -383,6 +389,7 @@ main/
     ├── energyboxx_api.c      Tokenaanvraag en telemetrie
     ├── input.c               De drie knoppen
     ├── status_view.c         Welke toestand het apparaat toont
+    ├── updater.c             Nieuwe firmware ophalen en installeren
     ├── uri_decode.c          Decoderen van formulierwaarden
     ├── wifi_provisioning.c   Wifitoestand, accesspoint en portaal
     ├── wifi_storage.c        Wifigegevens in NVS
@@ -393,6 +400,7 @@ assets/energy-owl-bringup.bin Het opstartbeeld zoals het scherm het tekent
 partitions-box3.csv           Partitie-indeling van de 16 MB flash
 docs/REVIEW.md                Review vóór productie, met werklijst
 docs/PLAN-box3.md             De overstap naar de ESP32-S3-BOX-3, in fasen
+docs/OTA.md                   Bijwerken over de lucht, en een versie uitgeven
 docs/energiegemeenschap-wilhelminaweg.md   Het project waar dit apparaat bij hoort
 test/                         Host-tests voor de modules zonder ESP-IDF
 tools/                        Beeldomzetter, seriële monitor, bouwomgeving

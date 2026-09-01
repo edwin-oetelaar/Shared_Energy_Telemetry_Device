@@ -8,6 +8,7 @@
 */
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "esp_log.h"
@@ -23,6 +24,7 @@
 
 #include "inc/display.h"
 #include "inc/status_view.h"
+#include "inc/updater.h"
 #include "inc/wifi_provisioning.h"
 
 static const char *TAG = "[status_view]";
@@ -37,6 +39,11 @@ static const char *TAG = "[status_view]";
 //
 //  The bring-up image has its own row rather than a colour: while the device is
 //  starting, the owl is what people see.
+//
+//  `live` marks the views that carry numbers which move while somebody is
+//  looking at them: the report counts seconds, the About page counts a
+//  download, and the update view counts percent. Those are painted again on
+//  every pass; the rest only when the state changes.
 
 typedef enum { PAINT_IMAGE = 0, PAINT_COLOUR, PAINT_REPORT, PAINT_ABOUT } paint_t;
 
@@ -46,6 +53,7 @@ static const struct {
     const char *label;
     paint_t     paint;
     uint32_t    rgb;
+    bool        live;
 } s_view [STATUS_VIEW_STATE_COUNT] = {
     [STATUS_VIEW_STARTING]     = { "starting",     "powered on",
                                    "",                  PAINT_IMAGE,  0x000000 },
@@ -66,11 +74,13 @@ static const struct {
     [STATUS_VIEW_NO_DATA]      = { "no-data",      "no fresh telemetry",
                                    "Geen gegevens",     PAINT_COLOUR, 0x5A5A5A },
     [STATUS_VIEW_REPORT]       = { "report",       "what the device knows about itself",
-                                   "Status",            PAINT_REPORT, 0x243028 },
+                                   "Status",            PAINT_REPORT, 0x243028, true },
     [STATUS_VIEW_ABOUT]        = { "about",        "who made this and which build it is",
-                                   "Energy Owl",        PAINT_ABOUT,  0x14324A },
+                                   "Energy Owl",        PAINT_ABOUT,  0x14324A, true },
     [STATUS_VIEW_SETUP_DONE]   = { "setup-done",   "credentials accepted, setup finished",
-                                   "Klaar, we zijn online", PAINT_COLOUR, 0x1F7A3D }
+                                   "Klaar, we zijn online", PAINT_COLOUR, 0x1F7A3D },
+    [STATUS_VIEW_UPDATING]     = { "updating",     "installing new firmware",
+                                   "Bijwerken",         PAINT_COLOUR, 0x1E5A8A, true }
 };
 
 //  The bring-up image is how somebody learns what this product is. A device
@@ -183,7 +193,35 @@ static void s_build_report(void)
 
 #define PROJECT_PAGE  "https://www.dolphinsolutions.nl/gestuurde-energie-gemeenschap/"
 
-static char s_about [320];
+static char s_about [384];
+
+//  What the updater is doing, in words a tester can read out over the phone.
+//  One row per state, so the enum and the screen cannot drift apart.
+
+static const char *s_update_words [UPDATER_STATE_COUNT] = {
+    [UPDATER_IDLE]        = "niets te doen",
+    [UPDATER_CHECKING]    = "zoeken",
+    [UPDATER_DOWNLOADING] = "bezig",
+    [UPDATER_READY]       = "klaar, herstart",
+    [UPDATER_FAILED]      = "mislukt"
+};
+
+static char s_update_line [40];
+
+static const char *s_update_status(void)
+{
+    updater_state_t state = updater_get_state();
+
+    if (state == UPDATER_DOWNLOADING) {
+        snprintf(s_update_line, sizeof(s_update_line), "bezig, %d%%",
+                 updater_progress_percent());
+    }
+    else {
+        snprintf(s_update_line, sizeof(s_update_line), "%s", s_update_words [state]);
+    }
+
+    return s_update_line;
+}
 
 static void s_build_about(void)
 {
@@ -199,9 +237,11 @@ static void s_build_about(void)
              "dolphinsolutions.nl\n"
              "Versie    %s\n"
              "Gebouwd   %s\n"
-             "Apparaat  %02X%02X%02X",
+             "Apparaat  %02X%02X%02X\n"
+             "Update    %s",
              app->version, app->date,
-             mac [3], mac [4], mac [5]);
+             mac [3], mac [4], mac [5],
+             s_update_status());
 }
 
 
@@ -214,6 +254,10 @@ static const char *s_detail_for(status_view_state_t state)
     switch (state) {
         case STATUS_VIEW_PROVISIONING:
             snprintf(s_detail, sizeof(s_detail), "Wifi: %s", wifi_prov_ap_ssid());
+            return s_detail;
+
+        case STATUS_VIEW_UPDATING:
+            snprintf(s_detail, sizeof(s_detail), "%s", s_update_status());
             return s_detail;
 
         case STATUS_VIEW_CONNECTING:
@@ -280,24 +324,57 @@ esp_err_t status_view_init(void)
 
 
 //  --------------------------------------------------------------------------
-//  Only a change is worth saying out loud. Callers can therefore report their
-//  state on every pass of their loop without filling the log.
+//  The button under the view, and what pressing it does. Two views carry one;
+//  the rest have an empty row, which means no button and nothing to press.
+//  The label is asked for on every paint, because both of them change with
+//  what the device is doing.
 
-static esp_err_t s_draw(status_view_state_t state)
+static void s_open_portal(void);
+static void s_check_for_update(void);
+
+static const char *s_portal_button(void)
 {
-    if (s_shown && state == s_current) {
-        return ESP_OK;
+    return wifi_prov_portal_is_open() ? "Portaal is open" : "Sleutels invoeren";
+}
+
+static const char *s_update_button(void)
+{
+    updater_state_t state = updater_get_state();
+
+    if (state == UPDATER_CHECKING || state == UPDATER_DOWNLOADING) {
+        return "Bezig met bijwerken";
     }
 
-    ESP_LOGI(TAG, "%s - %s", s_view [state].name, s_view [state].meaning);
-
-    s_current = state;
-    s_shown = true;
-
-    if (state == STATUS_VIEW_STARTING && s_bringup_since_us == 0) {
-        s_bringup_since_us = esp_timer_get_time();
+    if (state == UPDATER_READY) {
+        return "Klaar, herstart nu";
     }
 
+    return "Nu bijwerken";
+}
+
+static const struct {
+    const char *(*label) (void);
+    void        (*run)   (void);
+} s_action [STATUS_VIEW_STATE_COUNT] = {
+    [STATUS_VIEW_REPORT] = { s_portal_button, s_open_portal },
+    [STATUS_VIEW_ABOUT]  = { s_update_button, s_check_for_update }
+};
+
+
+//  The words on the button, or nothing at all for a view without one.
+
+static const char *s_action_label_for(status_view_state_t state)
+{
+    return s_action [state].label ? s_action [state].label () : NULL;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Put a view on the screen. Says nothing and decides nothing; s_draw () and
+//  the browse loop decide when this is called.
+
+static esp_err_t s_paint(status_view_state_t state)
+{
     //  No screen is not an error worth reporting on every state change. The
     //  device keeps working; display_init () already said so once.
     if (!display_is_ready()) {
@@ -309,14 +386,13 @@ static esp_err_t s_draw(status_view_state_t state)
     if (s_view [state].paint == PAINT_ABOUT) {
         s_build_about();
         err = display_show_about(s_view [state].label, s_about,
-                                 PROJECT_PAGE, s_view [state].rgb);
+                                 PROJECT_PAGE, s_action_label_for(state),
+                                 s_view [state].rgb);
     }
     else if (s_view [state].paint == PAINT_REPORT) {
         s_build_report();
         err = display_show_report(s_view [state].label, s_report,
-                                  wifi_prov_portal_is_open()
-                                      ? "Portaal is open"
-                                      : "Sleutels invoeren",
+                                  s_action_label_for(state),
                                   s_view [state].rgb);
     }
     else if (s_view [state].paint == PAINT_IMAGE) {
@@ -334,6 +410,30 @@ static esp_err_t s_draw(status_view_state_t state)
     }
 
     return err;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Only a change is worth saying out loud. Callers can therefore report their
+//  state on every pass of their loop without filling the log. A live view is
+//  painted again on every pass, but still only logged when it arrives.
+
+static esp_err_t s_draw(status_view_state_t state)
+{
+    if (s_shown && state == s_current) {
+        return s_view [state].live ? s_paint(state) : ESP_OK;
+    }
+
+    ESP_LOGI(TAG, "%s - %s", s_view [state].name, s_view [state].meaning);
+
+    s_current = state;
+    s_shown = true;
+
+    if (state == STATUS_VIEW_STARTING && s_bringup_since_us == 0) {
+        s_bringup_since_us = esp_timer_get_time();
+    }
+
+    return s_paint(state);
 }
 
 
@@ -387,7 +487,7 @@ void status_view_announce(status_view_state_t state, int milliseconds)
 }
 
 
-void status_view_open_portal(void)
+static void s_open_portal(void)
 {
     esp_err_t err = wifi_prov_open_portal();
 
@@ -399,6 +499,28 @@ void status_view_open_portal(void)
     //  Keep the report on screen and let it refresh; it now says the portal is
     //  open, and the QR for joining lives on the provisioning screen next door.
     s_start_browsing();
+}
+
+
+static void s_check_for_update(void)
+{
+    updater_check_now();
+
+    //  Stay on the About page: it carries the update line, and whoever pressed
+    //  the button wants to see what happens next.
+    s_start_browsing();
+}
+
+
+void status_view_action(void)
+{
+    if (s_action [s_current].run == NULL) {
+        return;                 //  This view has no button; nothing to do
+    }
+
+    ESP_LOGI(TAG, "Button pressed on '%s'", s_view [s_current].name);
+
+    s_action [s_current].run ();
 }
 
 
@@ -458,15 +580,10 @@ esp_err_t status_view_show(status_view_state_t state)
 
     if (s_browsing) {
         if (esp_timer_get_time() < s_browse_until_us) {
-            //  The report ages while you look at it, so it is redrawn rather
-            //  than left standing with a stale "42 s geleden".
-            if (s_current == STATUS_VIEW_REPORT) {
-                s_build_report();
-                display_show_report(s_view [STATUS_VIEW_REPORT].label, s_report,
-                                    wifi_prov_portal_is_open()
-                                        ? "Portaal is open"
-                                        : "Sleutels invoeren",
-                                    s_view [STATUS_VIEW_REPORT].rgb);
+            //  A live view ages while somebody looks at it, so it is painted
+            //  again rather than left standing with a stale "42 s geleden".
+            if (s_view [s_current].live) {
+                s_paint(s_current);
             }
             return ESP_OK;
         }
