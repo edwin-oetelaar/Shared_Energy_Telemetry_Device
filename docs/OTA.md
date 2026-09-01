@@ -8,6 +8,11 @@ ook hoe u een nieuwe versie uitgeeft.
 De vijf testapparaten staan bij mensen thuis. Een fix moet die apparaten bereiken zonder dat
 iemand met een kabel langsgaat. Het apparaat haalt daarom zelf nieuwe firmware op bij GitHub.
 
+Bijwerken is niet vrijwillig. Het apparaat vraagt de gebruiker niets. Het installeert elke
+gepubliceerde versie die nieuwer is dan de zijne, en start daarna opnieuw op. Er is geen
+instelling om dat te weigeren. Wie een versie uitgeeft, verandert dus alle apparaten die op het
+netwerk zitten. Behandel het publiceren van een release naar die maatstaf.
+
 ## Vaste termen
 
 | Term | Betekenis |

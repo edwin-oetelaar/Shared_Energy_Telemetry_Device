@@ -107,18 +107,25 @@ Die twee gegevens bepalen hoeveel energie de gemeenschap werkelijk kan delen.
 ## 12. De rol van dit apparaat
 
 Dit apparaat maakt de toestand van de gemeenschap zichtbaar in huis. Het haalt elke minuut
-de meetwaarden op bij de Energyboxx-API en toont het resultaat op een ledring:
+de meetwaarden op bij de Energyboxx-API en toont het resultaat op een scherm:
 
-| Toestand | Betekenis | Ledring |
+| Toestand | Betekenis | Op het scherm |
 | --- | --- | --- |
-| Overschot | De gemeenschap heeft energie over om te delen | Groen |
-| Tekort | De gemeenschap moet energie inkopen | Geel |
-| In balans | Vraag en aanbod zijn gelijk | Uit |
+| Overschot | De gemeenschap heeft energie over om te delen | Energie over, groen |
+| Tekort | De gemeenschap moet energie inkopen | Energie inkopen, geel |
+| In balans | Vraag en aanbod zijn gelijk | In balans, donkergroen |
+| Geen meting | Het apparaat heeft geen actuele gegevens | Geen gegevens, grijs |
 
 Een deelnemer ziet daardoor in één oogopslag of dit een goed moment is om een wasmachine
 of een auto te laden. Zo verschuift het gebruik naar de momenten waarop de gemeenschap
-zelf energie over heeft. De technische beschrijving van het apparaat staat in de
-[README](../README.md).
+zelf energie over heeft.
+
+Het apparaat werkt zichzelf bij. Het haalt nieuwe firmware op bij de maker en installeert die
+zonder iets te vragen. Tijdens het bijwerken toont het scherm "Bijwerken", en daarna start het
+apparaat opnieuw op. Dat duurt ongeveer een halve minuut. Het apparaat is in ontwikkeling, en
+deelnemers krijgen verbeteringen zo vanzelf.
+
+De technische beschrijving van het apparaat staat in de [README](../README.md).
 
 ## 13. Woordenlijst
 
