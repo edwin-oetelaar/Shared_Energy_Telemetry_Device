@@ -183,10 +183,30 @@ esp_err_t display_show_preview_marker(bool visible)
 
 
 //  --------------------------------------------------------------------------
+//  Put the action button up, or take it away when the page has nothing to
+//  offer. Both pages that carry a button put it in the same place: centred, so
+//  it sits between the two browse arrows rather than under one of them. The
+//  caller already holds the display lock.
+
+static void s_place_action(const char *action_label)
+{
+    if (action_label != NULL && action_label [0] != '\0') {
+        lv_label_set_text(s_action_label, action_label);
+        lv_obj_align(s_action, LV_ALIGN_BOTTOM_MID, 0, -10);
+        lv_obj_remove_flag(s_action, LV_OBJ_FLAG_HIDDEN);
+    }
+    else {
+        lv_obj_add_flag(s_action, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+
+//  --------------------------------------------------------------------------
 
 esp_err_t display_show_about(const char *title,
                              const char *body,
                              const char *qr_text,
+                             const char *action_label,
                              uint32_t background_rgb)
 {
     assert (title);             //  Caller's contract
@@ -205,7 +225,6 @@ esp_err_t display_show_about(const char *title,
     lv_obj_add_flag(s_image, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_version, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_detail, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_action, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(background_rgb), LV_PART_MAIN);
 
@@ -213,6 +232,8 @@ esp_err_t display_show_about(const char *title,
     lv_label_set_text(s_title, title);
     lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, 6);
     lv_obj_remove_flag(s_title, LV_OBJ_FLAG_HIDDEN);
+
+    s_place_action(action_label);
 
     //  The text column stops well before the QR. At 194 wide it ended on 204
     //  while the QR started at 202, so the two touched.
@@ -281,15 +302,7 @@ esp_err_t display_show_report(const char *title,
     lv_obj_align(s_body, LV_ALIGN_TOP_LEFT, 14, 48);
     lv_obj_remove_flag(s_body, LV_OBJ_FLAG_HIDDEN);
 
-    if (action_label != NULL && action_label [0] != '\0') {
-        lv_label_set_text(s_action_label, action_label);
-        //  Centred, so it sits between the two arrows rather than under one.
-        lv_obj_align(s_action, LV_ALIGN_BOTTOM_MID, 0, -10);
-        lv_obj_remove_flag(s_action, LV_OBJ_FLAG_HIDDEN);
-    }
-    else {
-        lv_obj_add_flag(s_action, LV_OBJ_FLAG_HIDDEN);
-    }
+    s_place_action(action_label);
 
     bsp_display_unlock();
 

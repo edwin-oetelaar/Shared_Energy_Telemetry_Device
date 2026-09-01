@@ -10,6 +10,7 @@ idf_component_register(
         "src/status_view.c"
         "src/display.c"
         "src/input.c"
+        "src/updater.c"
         "src/uri_decode.c"
     INCLUDE_DIRS
         "."
@@ -28,6 +29,8 @@ idf_component_register(
         mbedtls
         esp_timer
         esp_app_format
+        esp_https_ota
+        app_update
 )
 
 #  Warnings for this component only. ESP-IDF itself is built with a milder set,

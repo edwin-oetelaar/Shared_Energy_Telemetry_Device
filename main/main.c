@@ -19,6 +19,7 @@
 #include "inc/display.h"
 #include "inc/input.h"
 #include "inc/status_view.h"
+#include "inc/updater.h"
 #include "soc/gpio_num.h"
 
 static const char *TAG = "[main]";
@@ -128,6 +129,13 @@ static bool
 
 static status_view_state_t s_state_to_show(void)
 {
+    //  An update takes over the screen. It ends in a restart, and somebody
+    //  standing in front of the device should know that before the screen goes
+    //  dark rather than after.
+    if (updater_get_state() != UPDATER_IDLE && updater_get_state() != UPDATER_FAILED) {
+        return STATUS_VIEW_UPDATING;
+    }
+
     wifi_prov_state_t wifi_state = wifi_prov_get_state();
 
     if (wifi_state == WIFI_PROV_STATE_AP_ACTIVE) {
@@ -305,6 +313,12 @@ static void energyboxx_task(void *pvParameters)
 
         data_connection_ok = true;
         api_retry_row = 0;              //  A good round starts the backoff over
+
+        //  Network up, credentials accepted, telemetry in hand: whatever is
+        //  running does its job. If this image is on probation, that ends here.
+        //  Anything less than a full round is not proof: a device that boots
+        //  and shows a screen can still be unable to reach the API.
+        updater_note_device_working();
         energyboxx_data_print(&data);
         if(data.community_power_result_kw < -POWER_BALANCE_DEADBAND_KW)
         {
@@ -382,7 +396,7 @@ void app_main(void)
     //  has started. A finger and a button do the same thing, so both are wired
     //  to the same two functions in status_view.
     display_set_input_callbacks(status_view_touched, status_view_browse);
-    display_set_action_callback(status_view_open_portal);
+    display_set_action_callback(status_view_action);
     wifi_prov_set_credentials_accepted_cb(s_credentials_accepted);
     s_log_if_failed("starting the buttons", input_init());
 
@@ -438,6 +452,10 @@ void app_main(void)
     }
 
     ESP_ERROR_CHECK(wifi_prov_init());
+
+    //  After the network is set up, before anything waits: this only arms a
+    //  timer, and the first check is minutes away.
+    s_log_if_failed("arming the update checks", updater_init());
 
     BaseType_t status_task_created = xTaskCreate(
         status_view_task,

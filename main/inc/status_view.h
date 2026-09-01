@@ -33,6 +33,7 @@ typedef enum {
     STATUS_VIEW_REPORT,         //  What the device knows about itself
     STATUS_VIEW_ABOUT,          //  Who made this, which build, where to read more
     STATUS_VIEW_SETUP_DONE,     //  Credentials just accepted; setup is finished
+    STATUS_VIEW_UPDATING,       //  Fetching and installing new firmware
     STATUS_VIEW_STATE_COUNT     //  Not a state; the size of the table
 } status_view_state_t;
 
@@ -53,9 +54,10 @@ void status_view_browse(int direction);
 //  the timeout.
 void status_view_resume_auto(void);
 
-//  Somebody pressed the button on the report screen: open the portal so they
-//  can enter API credentials, without touching the stored Wi-Fi settings.
-void status_view_open_portal(void);
+//  Somebody pressed the button under the view that is on screen. What that
+//  does depends on the view: the report opens the portal, the About page looks
+//  for new firmware. Views without a button ignore this.
+void status_view_action(void);
 
 //  Somebody touched the screen without choosing a direction. Starts browsing
 //  at the view already on screen, and puts the arrows up.
