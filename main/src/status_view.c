@@ -16,6 +16,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "esp_app_desc.h"
+#include "esp_mac.h"
+
 #include "inc/energyboxx_api.h"
 
 #include "inc/display.h"
@@ -35,7 +38,7 @@ static const char *TAG = "[status_view]";
 //  The bring-up image has its own row rather than a colour: while the device is
 //  starting, the owl is what people see.
 
-typedef enum { PAINT_IMAGE = 0, PAINT_COLOUR, PAINT_REPORT } paint_t;
+typedef enum { PAINT_IMAGE = 0, PAINT_COLOUR, PAINT_REPORT, PAINT_ABOUT } paint_t;
 
 static const struct {
     const char *name;
@@ -64,6 +67,8 @@ static const struct {
                                    "Geen gegevens",     PAINT_COLOUR, 0x5A5A5A },
     [STATUS_VIEW_REPORT]       = { "report",       "what the device knows about itself",
                                    "Status",            PAINT_REPORT, 0x243028 },
+    [STATUS_VIEW_ABOUT]        = { "about",        "who made this and which build it is",
+                                   "Energy Owl",        PAINT_ABOUT,  0x14324A },
     [STATUS_VIEW_SETUP_DONE]   = { "setup-done",   "credentials accepted, setup finished",
                                    "Klaar, we zijn online", PAINT_COLOUR, 0x1F7A3D }
 };
@@ -84,6 +89,7 @@ static const struct {
 //  them would be a lie.
 static const status_view_state_t s_browsable [] = {
     STATUS_VIEW_REPORT,
+    STATUS_VIEW_ABOUT,
     STATUS_VIEW_STARTING,
     STATUS_VIEW_SURPLUS,
     STATUS_VIEW_DEFICIT,
@@ -161,6 +167,38 @@ static void s_build_report(void)
     snprintf(s_report, sizeof(s_report), "%s\n%s\n%s\nPortaal   %s",
              wifi_line, keys_line, data_line,
              wifi_prov_portal_is_open() ? "open" : "dicht");
+}
+
+
+//  --------------------------------------------------------------------------
+//  Who made this, which build is running, and where to read more. The version
+//  and the build date come from the image itself rather than from a constant
+//  somebody has to remember to raise. The MAC address is there for support:
+//  with several testers running different builds, "which device is this?" is
+//  the first question, and this is the number their router shows too.
+
+#define PROJECT_PAGE  "https://www.dolphinsolutions.nl/gestuurde-energie-gemeenschap/"
+
+static char s_about [320];
+
+static void s_build_about(void)
+{
+    const esp_app_desc_t *app = esp_app_get_description();
+
+    uint8_t mac [6] = {0};
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+
+    snprintf(s_about, sizeof(s_about),
+             "Paddy, Job en Edwin\n"
+             "(c) 2026 Dolphin Solutions\n"
+             "dolphinsolutions.nl\n"
+             "\n"
+             "Versie    %s\n"
+             "Gebouwd   %s\n"
+             "ESP-IDF   %s\n"
+             "Apparaat  %02X%02X%02X",
+             app->version, app->date, app->idf_ver,
+             mac [3], mac [4], mac [5]);
 }
 
 
@@ -265,7 +303,12 @@ static esp_err_t s_draw(status_view_state_t state)
 
     esp_err_t err;
 
-    if (s_view [state].paint == PAINT_REPORT) {
+    if (s_view [state].paint == PAINT_ABOUT) {
+        s_build_about();
+        err = display_show_about(s_view [state].label, s_about,
+                                 PROJECT_PAGE, s_view [state].rgb);
+    }
+    else if (s_view [state].paint == PAINT_REPORT) {
         s_build_report();
         err = display_show_report(s_view [state].label, s_report,
                                   wifi_prov_portal_is_open()

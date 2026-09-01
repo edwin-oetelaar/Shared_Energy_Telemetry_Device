@@ -71,8 +71,8 @@ afhankelijkheid in `main/idf_component.yml` en brengt LVGL mee.
 | Knop `mute` | een beeld verder |
 | Knop `main` op het paneel | meteen terug naar de telemetrie |
 
-Bladeren gaat door zes beelden: het statusscherm, de Energy Owl en de vier
-energietoestanden. Na vijftien seconden zonder aanraking volgt het apparaat de telemetrie
+Bladeren gaat door zeven beelden: het statusscherm, de About-pagina, de Energy Owl en de
+vier energietoestanden. Na vijftien seconden zonder aanraking volgt het apparaat de telemetrie
 weer.
 
 Een beeld waar iemand naartoe gebladerd is en dat niet de actuele toestand is, krijgt
@@ -92,6 +92,31 @@ Portaal   dicht
 ```
 
 Onderaan staat de knop **Sleutels invoeren**. Zie "Sleutels opnieuw invoeren".
+
+### De About-pagina
+
+Het tweede beeld noemt de makers en de herkomst, en zegt welke build er draait:
+
+```text
+Energy Owl
+
+Paddy, Job en Edwin          [QR]
+(c) 2026 Dolphin Solutions
+dolphinsolutions.nl
+
+Versie    1331d84
+Gebouwd   Sep  1 2026
+ESP-IDF   v6.1
+Apparaat  CB8B90
+```
+
+De QR-code opent
+[dolphinsolutions.nl/gestuurde-energie-gemeenschap](https://www.dolphinsolutions.nl/gestuurde-energie-gemeenschap/).
+
+Versie, bouwdatum en ESP-IDF-versie komen uit de firmware zelf, niet uit een constante die
+iemand moet bijwerken. `Apparaat` toont de laatste drie bytes van het MAC-adres: met
+meerdere testapparaten in omloop is "welk apparaat is dit?" de eerste vraag bij een
+storingsmelding, en dit is hetzelfde nummer dat de router laat zien.
 
 ## Provisioning
 

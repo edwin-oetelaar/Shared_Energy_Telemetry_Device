@@ -165,6 +165,63 @@ esp_err_t display_show_preview_marker(bool visible)
 
 //  --------------------------------------------------------------------------
 
+esp_err_t display_show_about(const char *title,
+                             const char *body,
+                             const char *qr_text,
+                             uint32_t background_rgb)
+{
+    assert (title);             //  Caller's contract
+    assert (body);
+
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!bsp_display_lock(1000)) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    lv_color_t ink = s_readable_text_colour(background_rgb);
+
+    lv_obj_add_flag(s_image, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_version, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_detail, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_action, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(background_rgb), LV_PART_MAIN);
+
+    lv_obj_set_style_text_color(s_title, ink, LV_PART_MAIN);
+    lv_label_set_text(s_title, title);
+    lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, 6);
+    lv_obj_remove_flag(s_title, LV_OBJ_FLAG_HIDDEN);
+
+    //  The text keeps to the left so it never runs under the QR on the right.
+    lv_obj_set_style_text_color(s_body, ink, LV_PART_MAIN);
+    lv_label_set_text(s_body, body);
+    lv_obj_set_width(s_body, 194);
+    lv_obj_align(s_body, LV_ALIGN_TOP_LEFT, 10, 46);
+    lv_obj_remove_flag(s_body, LV_OBJ_FLAG_HIDDEN);
+
+    if (qr_text != NULL && qr_text [0] != '\0') {
+        lv_qrcode_set_size(s_qr, 100);
+        lv_qrcode_set_dark_color(s_qr, lv_color_hex(0x101410));
+        lv_qrcode_set_light_color(s_qr, lv_color_hex(0xFFFFFF));
+        lv_qrcode_update(s_qr, qr_text, strlen(qr_text));
+        lv_obj_set_style_border_width(s_qr, 4, LV_PART_MAIN);
+        lv_obj_set_style_border_color(s_qr, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+        lv_obj_align(s_qr, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
+        lv_obj_remove_flag(s_qr, LV_OBJ_FLAG_HIDDEN);
+    }
+    else {
+        lv_obj_add_flag(s_qr, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    bsp_display_unlock();
+
+    return ESP_OK;
+}
+
+
 esp_err_t display_show_report(const char *title,
                               const char *body,
                               const char *action_label,
@@ -197,6 +254,7 @@ esp_err_t display_show_report(const char *title,
 
     lv_obj_set_style_text_color(s_body, ink, LV_PART_MAIN);
     lv_label_set_text(s_body, body);
+    lv_obj_set_width(s_body, BRINGUP_WIDTH - 28);
     lv_obj_align(s_body, LV_ALIGN_TOP_LEFT, 14, 48);
     lv_obj_remove_flag(s_body, LV_OBJ_FLAG_HIDDEN);
 
@@ -313,7 +371,9 @@ static esp_err_t s_build_screen(void)
     lv_obj_set_style_pad_hor(s_version, 6, LV_PART_MAIN);
     lv_obj_set_style_pad_ver(s_version, 3, LV_PART_MAIN);
     lv_obj_set_style_radius(s_version, 4, LV_PART_MAIN);
-    lv_obj_align(s_version, LV_ALIGN_BOTTOM_RIGHT, -6, -6);
+    //  Top right, not bottom right: the forward arrow sits in the bottom right
+    //  corner and covered this label completely as soon as somebody browsed.
+    lv_obj_align(s_version, LV_ALIGN_TOP_RIGHT, -6, -6);
     lv_obj_add_flag(s_version, LV_OBJ_FLAG_HIDDEN);
 
     ESP_LOGI(TAG, "Firmware version on screen: %s", app->version);
