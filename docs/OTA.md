@@ -62,18 +62,166 @@ te vervangen door een volgende versie.
 Blijft beide bewijzen uit en start het apparaat opnieuw op, dan zet het bootprogramma de vorige
 firmware terug. Firmware die meteen vastloopt, verdwijnt zo vanzelf.
 
+## De terugval beproeven
+
+Een vangnet dat nooit is beproefd, is een aanname. Beproef de terugval daarom met een release die
+met opzet stuk is. Doe dit met een apparaat op tafel, met een kabel binnen bereik.
+
+De opzet: een tak naast `main`, met daarin één regel die het apparaat drie seconden na de start
+laat vastlopen. Drie seconden is te kort voor beide bewijzen uit de vorige paragraaf, dus de
+firmware maakt zichzelf nooit definitief.
+
+1. Maak de tak en de fout:
+
+   ```
+   git checkout -b test/rollback main
+   ```
+
+   Voeg in `main/main.c` een taak toe die drie seconden wacht en dan `abort()` aanroept.
+
+2. Tag de tak en duw de tag. **Breng deze tak nooit naar `main`.**
+
+   ```
+   git tag -a v0.2.2 -m "Met opzet stuk: beproeving van de terugval"
+   git push origin test/rollback
+   git push origin v0.2.2
+   ```
+
+3. Publiceer de release en kijk mee op de seriële lijn.
+
+4. Wat u hoort te zien: het apparaat haalt de kapotte versie op, start erin op, loopt vast,
+   start opnieuw op, en staat daarna weer op de vorige versie.
+
+5. **Trek de kapotte release meteen in.** Zolang die de laatste is, haalt het apparaat hem elk uur
+   opnieuw op:
+
+   ```
+   gh release edit v0.2.2 --draft=true
+   ```
+
+6. Geef daarna een goede versie uit met een hoger nummer, zodat het apparaat weer bij is.
+
+7. Ruim de tag en de tak op:
+
+   ```
+   git push origin --delete v0.2.2 test/rollback
+   git tag -d v0.2.2
+   ```
+
 ## Een nieuwe versie uitgeven
 
-1. Werk de code bij en breng die naar `main`.
-2. Maak een tag: `git tag -a v0.2.0 -m "wat er verandert"`.
-3. Duw de tag: `git push origin v0.2.0`.
-4. Wacht op de workflow **Release**. Die bouwt de firmware en controleert of het versienummer in
-   het bestand gelijk is aan de tag.
-5. Open de concept-release op GitHub en lees de beschrijving na.
-6. Publiceer de release.
+Deze paragraaf geeft de volledige procedure op de opdrachtregel. De voorbeelden gebruiken
+`v0.2.3`. Vervang dat nummer door het nummer dat u uitgeeft.
 
-Stap 6 is het moment waarop de update naar de apparaten gaat. Zolang de release een concept is,
-haalt geen enkel apparaat het bestand op.
+U hebt `git` en `gh` nodig. `gh` moet zijn aangemeld: controleer dat met `gh auth status`.
+
+### Stap 1 — Haal de laatste `main` op
+
+```
+git checkout main
+git pull --ff-only
+```
+
+### Stap 2 — Controleer dat de werkmap schoon is
+
+```
+git status --porcelain
+```
+
+Deze opdracht hoort niets te tonen. Elk bestand dat wel verschijnt, komt niet in de release
+terecht, want de bouwserver bouwt de tag en niet uw werkmap.
+
+### Stap 3 — Kies het nummer
+
+```
+git tag --list 'v*' --sort=-v:refname | head -3
+```
+
+Neem het hoogste nummer en verhoog het. Zie "Regels voor het versienummer" hieronder.
+
+### Stap 4 — Maak de tag
+
+```
+git tag -a v0.2.3 -m "wat er verandert"
+```
+
+Gebruik `-a`. Een tag zonder toelichting zegt over een half jaar niets meer.
+
+### Stap 5 — Duw de tag
+
+```
+git push origin v0.2.3
+```
+
+De workflow **Release** start hierdoor vanzelf.
+
+### Stap 6 — Wacht op de bouw
+
+```
+gh run watch $(gh run list --workflow=Release --limit 1 --json databaseId -q '.[0].databaseId')
+```
+
+De workflow bouwt de firmware, controleert of het versienummer in het bestand gelijk is aan de
+tag, en hangt het bestand aan een **concept**-release.
+
+Mislukt de bouw, kijk dan in het log:
+
+```
+gh run view --log-failed
+```
+
+### Stap 7 — Controleer de concept-release
+
+```
+gh release view v0.2.3
+```
+
+Controleer twee dingen:
+
+| Wat | Verwachting |
+|---|---|
+| `draft` | `true` — de release staat nog stil |
+| Bijlage | `energy-owl.bin` staat erbij |
+
+### Stap 8 — Publiceer
+
+```
+gh release edit v0.2.3 --draft=false
+```
+
+Dit is het moment waarop de update naar de apparaten gaat.
+
+### Stap 9 — Controleer wat de apparaten krijgen
+
+```
+curl -sL -o /tmp/served.bin \
+  https://github.com/edwin-oetelaar/Shared_Energy_Telemetry_Device/releases/latest/download/energy-owl.bin
+python -m esptool image_info /tmp/served.bin | grep "App version"
+```
+
+Er hoort `App version: v0.2.3` te staan. Staat er een ouder nummer, wacht dan een minuut: GitHub
+bewaart het antwoord op de vaste URL kort in een tussengeheugen.
+
+### Stap 10 — Kijk mee bij het eerste apparaat
+
+```
+python3 tools/monitor.py /dev/ttyACM0 600
+```
+
+Het apparaat kijkt vijf minuten na het opstarten en daarna elk uur. Wilt u niet wachten, druk dan
+op **Nu bijwerken** op de About-pagina.
+
+## Een release intrekken
+
+Werkt een uitgegeven versie niet, zet de release dan terug op concept:
+
+```
+gh release edit v0.2.3 --draft=true
+```
+
+Apparaten die de versie nog niet hebben, halen hem daarna niet meer op. Apparaten die hem al
+hebben, houden hem: intrekken haalt niets terug. Geef daarom altijd meteen een nieuwe versie uit
+met een hoger nummer, met daarin de reparatie of de vorige toestand.
 
 ## Regels voor het versienummer
 
