@@ -31,6 +31,7 @@ typedef enum {
     STATUS_VIEW_KEYS_NEEDED,    //  Online, but nobody has given us API keys yet
     STATUS_VIEW_NO_DATA,        //  Connected or not, but no fresh telemetry
     STATUS_VIEW_REPORT,         //  What the device knows about itself
+    STATUS_VIEW_ABOUT,          //  Who made this, which build, where to read more
     STATUS_VIEW_SETUP_DONE,     //  Credentials just accepted; setup is finished
     STATUS_VIEW_STATE_COUNT     //  Not a state; the size of the table
 } status_view_state_t;

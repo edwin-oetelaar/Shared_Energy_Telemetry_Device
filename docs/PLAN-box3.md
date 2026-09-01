@@ -425,6 +425,52 @@ opnieuw kan invoeren zonder het wifi-wachtwoord.
 >
 > Zie ook **M11** in `docs/REVIEW.md` voor het merkteken op voorbeelden.
 
+### Fase 6b — Twee toestandsmachines in plaats van vlaggen
+
+Aanleiding: vier van de bevindingen van 31 augustus en 1 september waren mismatches tussen
+losse vlaggen. `wifi_provisioning.c` had acht toestandsvariabelen, en `wifi_set_state()` werd
+vanaf zes plekken aangeroepen.
+
+De diepere oorzaak zat niet in de vlaggen maar in wat ze bewaarden: `wifi_prov_state_t` propte
+twee onafhankelijke dingen in één variabele. `AP_ACTIVE` is geen toestand van de verbinding
+maar van het portaal. Daardoor overschreef het opzetten van het accesspoint de
+verbindingstoestand, en moest het sluiten *raden* wat het terug moest zetten.
+
+1. Splits de twee dimensies: een machine voor de verbinding, een voor het portaal.
+2. Geef elke machine een overgangstabel en één functie die de toestand mag wijzigen.
+3. Maak het opzetten en afbreken van het portaal entry-acties van die toestanden.
+4. Leid af wat een scherm leest, in plaats van het op te slaan.
+
+**Klaar als:** de toestand nog maar op één plek per machine verandert, en elke overgang in de
+log staat.
+
+> **Uitgevoerd op 2026-09-01.** Twee machines met een volledige overgangstabel:
+>
+> | Machine | Toestanden | Gebeurtenissen |
+> | --- | --- | --- |
+> | Link | idle, connecting, connected, failed | connect, got-ip, lost, gave-up |
+> | Portaal | closed, open, closing | open, accepted, done, silent, grace-over |
+>
+> Elke combinatie van toestand en gebeurtenis heeft een antwoord in de tabel, dus er is geen
+> gebeurtenis die een machine ergens ongedefinieerd achterlaat.
+>
+> Het aantal plekken dat de toestand wijzigt ging van zes naar twee: `link_handle()` en
+> `portal_handle()`. Het afbreken van het portaal is de entry-actie van `PORTAL_CLOSED`, dus een
+> tweede kopie die iets vergeet kan niet bestaan — dat was **M12**.
+>
+> `wifi_prov_get_state()` wordt nu **afgeleid** uit beide machines in plaats van opgeslagen. Een
+> open portaal maskeert de verbinding zolang het openstaat; zodra het sluit komt de
+> verbindingstoestand vanzelf terug. Er is geen moment waarop het gemelde en het werkelijke uit
+> elkaar kunnen lopen.
+>
+> `PORTAL_CLOSING` is nieuw en maakt de drie seconden respijt voor de browser een toestand in
+> plaats van een teller naast de vlaggen.
+>
+> Elke overgang wordt gelogd: `link: connecting --got-ip--> connected`. De mismatch waar we een
+> uur op joegen was daarmee één regel geweest.
+>
+> Op hardware bevestigd: opstarten, verbinden en telemetrie ophalen.
+
 ### Fase 6 — Tekst op het scherm
 
 1. Kies een lettertype met de tekens die het Nederlands nodig heeft.

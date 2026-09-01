@@ -55,7 +55,158 @@ static esp_netif_t *s_ap_netif = NULL;
 
 static const char *TAG = "[wifi_prov]";
 
-static wifi_prov_state_t s_state = WIFI_PROV_STATE_IDLE;
+
+/*  =========================================================================
+    Two state machines, because the device is doing two independent things.
+
+    The link is its connection to a network. The portal is the access point and
+    web server it offers so somebody can set it up. They overlap freely: a
+    device can be online and still have its portal open.
+
+    These used to share one variable written from six places. That is where the
+    mismatches came from: bringing the access point up overwrote the connection
+    state, and closing it had to guess what to put back. The state a screen
+    reads is now derived from both machines rather than stored, so it cannot
+    disagree with them.
+    =========================================================================
+*/
+
+typedef enum {
+    LINK_IDLE = 0,      //  Nothing has been asked of the radio yet
+    LINK_CONNECTING,    //  Trying, or waiting out a backoff step
+    LINK_CONNECTED,     //  On a network, with an address
+    LINK_FAILED,        //  Still trying, but the fast attempts are used up
+    LINK_STATE_COUNT
+} link_state_t;
+
+typedef enum {
+    LINK_EV_CONNECT = 0,    //  Somebody asked for a network
+    LINK_EV_GOT_IP,         //  The network gave us an address
+    LINK_EV_LOST,           //  The connection dropped; another try is planned
+    LINK_EV_GAVE_UP,        //  The schedule has reached its slow tail
+    LINK_EV_COUNT
+} link_event_t;
+
+typedef enum {
+    PORTAL_CLOSED = 0,
+    PORTAL_OPEN,
+    PORTAL_CLOSING,     //  Accepted, but the browser still needs its answer
+    PORTAL_STATE_COUNT
+} portal_state_t;
+
+typedef enum {
+    PORTAL_EV_OPEN = 0,     //  Bring it up, or keep it up
+    PORTAL_EV_ACCEPTED,     //  Credentials were accepted
+    PORTAL_EV_DONE,         //  Somebody pressed Klaar, or start-up finished
+    PORTAL_EV_SILENT,       //  Nobody has used it for a long time
+    PORTAL_EV_GRACE_OVER,   //  The browser has had its moment
+    PORTAL_EV_COUNT
+} portal_event_t;
+
+//  One row per state, one column per event. Every combination has an answer,
+//  so no event can leave a machine somewhere undefined.
+
+static const link_state_t s_link_next [LINK_STATE_COUNT][LINK_EV_COUNT] = {
+    /*                     CONNECT          GOT_IP          LOST             GAVE_UP      */
+    [LINK_IDLE]       = { LINK_CONNECTING, LINK_CONNECTED, LINK_IDLE,       LINK_IDLE    },
+    [LINK_CONNECTING] = { LINK_CONNECTING, LINK_CONNECTED, LINK_CONNECTING, LINK_FAILED  },
+    [LINK_CONNECTED]  = { LINK_CONNECTING, LINK_CONNECTED, LINK_CONNECTING, LINK_FAILED  },
+    [LINK_FAILED]     = { LINK_CONNECTING, LINK_CONNECTED, LINK_FAILED,     LINK_FAILED  }
+};
+
+static const portal_state_t s_portal_next [PORTAL_STATE_COUNT][PORTAL_EV_COUNT] = {
+    /*                    OPEN            ACCEPTED         DONE             SILENT          GRACE_OVER    */
+    [PORTAL_CLOSED]  = { PORTAL_OPEN,    PORTAL_CLOSED,   PORTAL_CLOSED,   PORTAL_CLOSED,  PORTAL_CLOSED },
+    [PORTAL_OPEN]    = { PORTAL_OPEN,    PORTAL_CLOSING,  PORTAL_CLOSING,  PORTAL_CLOSED,  PORTAL_OPEN   },
+    [PORTAL_CLOSING] = { PORTAL_CLOSING, PORTAL_CLOSING,  PORTAL_CLOSING,  PORTAL_CLOSED,  PORTAL_CLOSED }
+};
+
+static const char *s_link_name [LINK_STATE_COUNT] = { "idle", "connecting", "connected", "failed" };
+static const char *s_portal_name [PORTAL_STATE_COUNT] = { "closed", "open", "closing" };
+static const char *s_link_event_name [LINK_EV_COUNT] = { "connect", "got-ip", "lost", "gave-up" };
+static const char *s_portal_event_name [PORTAL_EV_COUNT] =
+    { "open", "accepted", "done", "silent", "grace-over" };
+
+static link_state_t s_link = LINK_IDLE;
+static portal_state_t s_portal = PORTAL_CLOSED;
+
+//  Set on entering PORTAL_CLOSING, so the browser gets its answer before the
+//  access point disappears from under it.
+static int64_t s_portal_close_at_us = 0;
+
+static esp_err_t s_portal_bring_up(void);
+static void s_portal_tear_down(void);
+
+
+//  --------------------------------------------------------------------------
+//  The only place the link state changes. Every transition is logged, so a
+//  device that ends up somewhere unexpected says how it got there.
+
+static void link_handle(link_event_t event)
+{
+    assert (event < LINK_EV_COUNT);         //  Caller's contract
+
+    link_state_t next = s_link_next [s_link][event];
+
+    if (next == s_link) {
+        return;
+    }
+
+    ESP_LOGI(TAG, "link: %s --%s--> %s",
+             s_link_name [s_link], s_link_event_name [event], s_link_name [next]);
+
+    s_link = next;
+}
+
+
+//  --------------------------------------------------------------------------
+//  The only place the portal state changes, and therefore the only place the
+//  access point and web server go up or down. Tearing down is the entry action
+//  of PORTAL_CLOSED, so a second copy of it cannot exist to forget something.
+
+static void portal_handle(portal_event_t event)
+{
+    assert (event < PORTAL_EV_COUNT);       //  Caller's contract
+
+    portal_state_t next = s_portal_next [s_portal][event];
+
+    if (next == s_portal) {
+        //  Asking an open portal to open again is how activity is refreshed.
+        if (event == PORTAL_EV_OPEN) {
+            wifi_prov_note_portal_activity();
+        }
+        return;
+    }
+
+    ESP_LOGI(TAG, "portal: %s --%s--> %s",
+             s_portal_name [s_portal], s_portal_event_name [event], s_portal_name [next]);
+
+    portal_state_t previous = s_portal;
+    s_portal = next;
+
+    switch (next) {
+        case PORTAL_OPEN:
+            if (s_portal_bring_up() != ESP_OK) {
+                s_portal = previous;
+            }
+            break;
+
+        case PORTAL_CLOSING:
+            s_portal_close_at_us = esp_timer_get_time() + 3 * 1000 * 1000;
+            break;
+
+        case PORTAL_CLOSED:
+            s_portal_tear_down();
+            break;
+
+        default:
+            break;
+    }
+}
+
+
+
+
 
 //  Reconnect schedule. Each row says how long to wait before the next attempt
 //  and what the device reports about itself while it waits. The last row
@@ -65,18 +216,18 @@ static wifi_prov_state_t s_state = WIFI_PROV_STATE_IDLE;
 
 typedef struct {
     uint32_t delay_ms;
-    wifi_prov_state_t state;
+    link_event_t event;     //  What this step means for the link machine
 } retry_step_t;
 
 static const retry_step_t s_retry_schedule [] = {
-    {    500, WIFI_PROV_STATE_CONNECTING     },
-    {   1000, WIFI_PROV_STATE_CONNECTING     },
-    {   2000, WIFI_PROV_STATE_CONNECTING     },
-    {   5000, WIFI_PROV_STATE_CONNECTING     },
-    {  10000, WIFI_PROV_STATE_CONNECT_FAILED },
-    {  30000, WIFI_PROV_STATE_CONNECT_FAILED },
-    {  60000, WIFI_PROV_STATE_CONNECT_FAILED },
-    { 300000, WIFI_PROV_STATE_CONNECT_FAILED }
+    {    500, LINK_EV_LOST    },
+    {   1000, LINK_EV_LOST    },
+    {   2000, LINK_EV_LOST    },
+    {   5000, LINK_EV_LOST    },
+    {  10000, LINK_EV_GAVE_UP },
+    {  30000, LINK_EV_GAVE_UP },
+    {  60000, LINK_EV_GAVE_UP },
+    { 300000, LINK_EV_GAVE_UP }
 };
 
 #define RETRY_SCHEDULE_ROWS  (sizeof (s_retry_schedule) / sizeof (s_retry_schedule [0]))
@@ -85,23 +236,12 @@ static esp_timer_handle_t s_retry_timer = NULL;
 static size_t s_retry_row = 0;
 
 static TickType_t s_last_portal_activity = 0;
-static bool s_portal_open = false;
 static esp_timer_handle_t s_portal_timer = NULL;
-
-//  Set once the credentials are accepted, so the browser gets its answer
-//  before the access point disappears from under it.
-static int64_t s_portal_close_at_us = 0;
 
 static wifi_prov_accepted_cb_t s_accepted_cb = NULL;
 
 static char current_ssid[33] = {0};
 static char current_password[65] = {0};
-
-static void wifi_set_state(wifi_prov_state_t state)
-{
-    s_state = state;
-}
-
 
 //  --------------------------------------------------------------------------
 //  The backoff delay has passed, so ask Wi-Fi to try again. A refusal here is
@@ -132,8 +272,8 @@ static void
     if (s_retry_row + 1 < RETRY_SCHEDULE_ROWS)
         s_retry_row++;
 
-    wifi_set_state (step->state);
-    if (step->state == WIFI_PROV_STATE_CONNECT_FAILED)
+    link_handle (step->event);
+    if (step->event == LINK_EV_GAVE_UP)
         xEventGroupSetBits (s_wifi_event_group, WIFI_FAIL_BIT);
 
     ESP_LOGW (TAG, "Reconnecting in %" PRIu32 " ms", step->delay_ms);
@@ -179,12 +319,11 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         if (current_ssid [0] != '\0')
             s_schedule_retry ();
         else
-            wifi_set_state (WIFI_PROV_STATE_IDLE);
+            link_handle (LINK_EV_LOST);
     }
 
     else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_START) {
         ESP_LOGI(TAG, "Provisioning AP started");
-        wifi_set_state(WIFI_PROV_STATE_AP_ACTIVE);
     }
 
     else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_STACONNECTED) {
@@ -203,7 +342,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
 
         s_reset_retry_schedule ();
-        wifi_set_state(WIFI_PROV_STATE_CONNECTED);
+        link_handle(LINK_EV_GOT_IP);
 
         wifi_storage_save_credentials(current_ssid, current_password);
 
@@ -268,8 +407,6 @@ esp_err_t wifi_prov_init(void)
 
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    wifi_set_state(WIFI_PROV_STATE_IDLE);
-
     ESP_LOGI(TAG, "WiFi provisioning initialized");
 
     return ESP_OK;
@@ -284,23 +421,19 @@ static void s_portal_watchdog(void *argument)
 {
     (void) argument;
 
-    if (!s_portal_open) {
+    if (s_portal == PORTAL_CLOSING
+    &&  s_portal_close_at_us != 0
+    &&  esp_timer_get_time() >= s_portal_close_at_us) {
+        portal_handle(PORTAL_EV_GRACE_OVER);
         return;
     }
 
-    if (s_portal_close_at_us != 0) {
-        if (esp_timer_get_time() >= s_portal_close_at_us) {
-            ESP_LOGI(TAG, "Credentials accepted, closing the portal");
-            wifi_prov_close_portal();
-        }
-        return;
-    }
-
-    if (xTaskGetTickCount() - s_last_portal_activity
+    if (s_portal == PORTAL_OPEN
+    &&  xTaskGetTickCount() - s_last_portal_activity
     >   pdMS_TO_TICKS(PROVISIONING_SILENCE_TIMEOUT_MS)) {
-        ESP_LOGW(TAG, "Nobody used the portal for %d minutes, closing it",
+        ESP_LOGW(TAG, "Nobody used the portal for %d minutes",
                  PROVISIONING_SILENCE_TIMEOUT_MS / 60000);
-        wifi_prov_close_portal();
+        portal_handle(PORTAL_EV_SILENT);
     }
 }
 
@@ -319,29 +452,26 @@ void wifi_prov_note_credentials_accepted(void)
         s_accepted_cb();
     }
 
-    if (!s_portal_open) {
-        return;
-    }
-
-    //  Three seconds so the browser can show the person that it worked before
-    //  the access point they are on disappears.
-    s_portal_close_at_us = esp_timer_get_time() + 3 * 1000 * 1000;
+    portal_handle(PORTAL_EV_ACCEPTED);
 }
 
 
 bool wifi_prov_portal_is_open(void)
 {
-    return s_portal_open;
+    return s_portal != PORTAL_CLOSED;
 }
 
 
-esp_err_t wifi_prov_close_portal(void)
-{
-    if (!s_portal_open) {
-        return ESP_OK;
-    }
+//  The only way a portal is taken down. It used to refuse when the portal had
+//  not been opened from the screen, which left the portal that runs at start-up
+//  to tear itself down by hand - and that copy forgot to put the reported state
+//  back, so the screen kept showing "Instellen" with a QR code for an access
+//  point that was no longer there.
+//
+//  Safe to call when there is nothing to close: every step below checks.
 
-    s_portal_open = false;
+static void s_portal_tear_down(void)
+{
     s_portal_close_at_us = 0;
 
     if (s_portal_timer != NULL) {
@@ -356,31 +486,25 @@ esp_err_t wifi_prov_close_portal(void)
     }
 
     //  Back to station only. The device keeps the network it was already on.
+    //  What a screen reports is derived from the two machines, so nothing has
+    //  to be put back by hand here; that guessing is what M12 was.
     esp_err_t err = esp_wifi_set_mode(WIFI_MODE_STA);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Could not return to station mode: %s", esp_err_to_name(err));
     }
-
-    //  wifi_prov_start_ap () reported the device as being in provisioning.
-    //  Put that back, or the screen keeps saying "Instellen" while the device
-    //  is online and fetching telemetry.
-    wifi_set_state(wifi_prov_is_connected()
-                       ? WIFI_PROV_STATE_CONNECTED
-                       : WIFI_PROV_STATE_IDLE);
-
-    ESP_LOGI(TAG, "Portal closed");
-
-    return err;
 }
 
 
-esp_err_t wifi_prov_open_portal(void)
+esp_err_t wifi_prov_close_portal(void)
 {
-    if (s_portal_open) {
-        wifi_prov_note_portal_activity();
-        return ESP_OK;
-    }
+    portal_handle(PORTAL_EV_DONE);
 
+    return ESP_OK;
+}
+
+
+static esp_err_t s_portal_bring_up(void)
+{
     esp_err_t err = wifi_prov_start_ap();
     if (err != ESP_OK) {
         return err;
@@ -405,14 +529,19 @@ esp_err_t wifi_prov_open_portal(void)
         }
     }
 
-    s_portal_open = true;
     s_portal_close_at_us = 0;
     wifi_prov_note_portal_activity();
     esp_timer_start_periodic(s_portal_timer, 5 * 1000 * 1000);
 
-    ESP_LOGI(TAG, "Portal open on request");
-
     return ESP_OK;
+}
+
+
+esp_err_t wifi_prov_open_portal(void)
+{
+    portal_handle(PORTAL_EV_OPEN);
+
+    return s_portal == PORTAL_CLOSED ? ESP_FAIL : ESP_OK;
 }
 
 
@@ -447,9 +576,6 @@ esp_err_t wifi_prov_start_ap(void)
         return err;
     }
 
-    wifi_set_state(WIFI_PROV_STATE_AP_ACTIVE);
-    wifi_prov_note_portal_activity();
-
     // Start the DNS server that will redirect all queries to the softAP IP
     dns_server_config_t dns_config = DNS_SERVER_CONFIG_SINGLE("*" /* all A queries */, "WIFI_AP_DEF" /* softAP netif ID */);
     s_dns_handle = start_dns_server(&dns_config);
@@ -478,7 +604,7 @@ esp_err_t wifi_prov_connect(const char *ssid, const char *password)
     }
 
     s_reset_retry_schedule ();
-    wifi_set_state(WIFI_PROV_STATE_CONNECTING);
+    link_handle(LINK_EV_CONNECT);
 
     xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
 
@@ -500,9 +626,22 @@ esp_err_t wifi_prov_connect(const char *ssid, const char *password)
     return esp_wifi_connect();
 }
 
+//  Derived, never stored. An open portal is what somebody standing in front of
+//  the device needs to see; underneath it the link keeps its own state, which
+//  comes back by itself the moment the portal closes.
+
 wifi_prov_state_t wifi_prov_get_state(void)
 {
-    return s_state;
+    if (s_portal != PORTAL_CLOSED) {
+        return WIFI_PROV_STATE_AP_ACTIVE;
+    }
+
+    switch (s_link) {
+        case LINK_CONNECTED:  return WIFI_PROV_STATE_CONNECTED;
+        case LINK_CONNECTING: return WIFI_PROV_STATE_CONNECTING;
+        case LINK_FAILED:     return WIFI_PROV_STATE_CONNECT_FAILED;
+        default:              return WIFI_PROV_STATE_IDLE;
+    }
 }
 
 esp_err_t wifi_prov_scan(wifi_ap_record_t *records, uint16_t *count)
@@ -585,6 +724,16 @@ void wifi_prov_wait_until_completed(void)
     //  boot - so it happens on a slow tick, not once a second, and it goes
     //  through the same lock as the portal.
 
+    //  On this path nobody has read NVS yet: main.c only does that when the
+    //  device connects with credentials it already had. Somebody who moves the
+    //  device to another router therefore got asked for API keys again, while
+    //  perfectly good ones were sitting in flash. Those keys are long, hard to
+    //  type and usually not to hand, so try them before asking.
+    if (energyboxx_api_load_stored_credentials() == ESP_OK) {
+        ESP_LOGI (TAG, "Stored API credentials still work, no need to ask again");
+        wifi_prov_note_credentials_accepted();
+    }
+
     TickType_t next_retry = xTaskGetTickCount ();
     wifi_prov_note_portal_activity ();
 
@@ -607,15 +756,10 @@ void wifi_prov_wait_until_completed(void)
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 
+    //  Three seconds so a browser that just got "done" can show it.
     vTaskDelay(pdMS_TO_TICKS(3000));
 
-    wifi_web_stop();
-    if(s_dns_handle != NULL) {
-        stop_dns_server(s_dns_handle);
-        s_dns_handle = NULL;
-    }
-
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    wifi_prov_close_portal();
 }
 
 bool wifi_prov_wait_for_connection_timeout(TickType_t timeout)

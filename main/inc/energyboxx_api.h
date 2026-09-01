@@ -29,6 +29,11 @@ esp_err_t energyboxx_api_setup(const char *client_id, const char *client_secret)
 //  forget the ones that replaced them. For when somebody types the wrong keys:
 //  a refused attempt should not leave a working device without a token.
 esp_err_t energyboxx_api_restore_previous(void);
+
+//  Read the credentials from NVS and try them. Returns ESP_OK when the device
+//  is ready to fetch telemetry. Anyone who has just got onto a network should
+//  call this before asking a person to type keys that are already stored.
+esp_err_t energyboxx_api_load_stored_credentials(void);
 esp_err_t energyboxx_api_fetch_token(void);
 esp_err_t energyboxx_api_get_data(energyboxx_data_t* data);
 const char *energyboxx_api_get_token(void);

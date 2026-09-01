@@ -54,6 +54,25 @@ static lv_obj_t *s_qr = NULL;
 
 static bool s_ready = false;
 
+//  The bottom strip belongs to the two browse arrows, which can appear over any
+//  screen at any moment. Nothing else is placed there. Two things have already
+//  been put in that corner and had to be moved: the version label and the QR on
+//  the About page. This is the rule that stops it happening a third time.
+#define ARROW_STRIP_HEIGHT  60
+
+//  The About page in two columns: text on the left, QR on the right. The
+//  numbers are kept together so the gutter between them stays visible. Screen
+//  is 320 wide; the QR carries a 4 px border on each side.
+#define ABOUT_QR_SIZE     92
+#define ABOUT_TEXT_WIDTH  184
+#define ABOUT_TEXT_TOP    44
+
+//  Given a height rather than left to grow, so the text cannot reach into the
+//  arrow strip however many lines it ends up being. Too much text is then
+//  visibly cut off, which is a fault somebody notices, instead of quietly
+//  sliding under a button.
+#define ABOUT_TEXT_HEIGHT (240 - ABOUT_TEXT_TOP - ARROW_STRIP_HEIGHT)
+
 //  Defined further down, next to the screen it belongs to.
 static lv_color_t s_readable_text_colour(uint32_t background_rgb);
 
@@ -165,6 +184,66 @@ esp_err_t display_show_preview_marker(bool visible)
 
 //  --------------------------------------------------------------------------
 
+esp_err_t display_show_about(const char *title,
+                             const char *body,
+                             const char *qr_text,
+                             uint32_t background_rgb)
+{
+    assert (title);             //  Caller's contract
+    assert (body);
+
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!bsp_display_lock(1000)) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    lv_color_t ink = s_readable_text_colour(background_rgb);
+
+    lv_obj_add_flag(s_image, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_version, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_detail, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_action, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(background_rgb), LV_PART_MAIN);
+
+    lv_obj_set_style_text_color(s_title, ink, LV_PART_MAIN);
+    lv_label_set_text(s_title, title);
+    lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, 6);
+    lv_obj_remove_flag(s_title, LV_OBJ_FLAG_HIDDEN);
+
+    //  The text column stops well before the QR. At 194 wide it ended on 204
+    //  while the QR started at 202, so the two touched.
+    lv_obj_set_style_text_color(s_body, ink, LV_PART_MAIN);
+    lv_label_set_text(s_body, body);
+    lv_obj_set_width(s_body, ABOUT_TEXT_WIDTH);
+    lv_obj_set_height(s_body, ABOUT_TEXT_HEIGHT);
+    lv_obj_align(s_body, LV_ALIGN_TOP_LEFT, 10, ABOUT_TEXT_TOP);
+    lv_obj_remove_flag(s_body, LV_OBJ_FLAG_HIDDEN);
+
+    if (qr_text != NULL && qr_text [0] != '\0') {
+        lv_qrcode_set_size(s_qr, ABOUT_QR_SIZE);
+        lv_qrcode_set_dark_color(s_qr, lv_color_hex(0x101410));
+        lv_qrcode_set_light_color(s_qr, lv_color_hex(0xFFFFFF));
+        lv_qrcode_update(s_qr, qr_text, strlen(qr_text));
+        lv_obj_set_style_border_width(s_qr, 4, LV_PART_MAIN);
+        lv_obj_set_style_border_color(s_qr, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+        //  Above the arrow strip, not in it.
+        lv_obj_align(s_qr, LV_ALIGN_TOP_RIGHT, -10, 52);
+        lv_obj_remove_flag(s_qr, LV_OBJ_FLAG_HIDDEN);
+    }
+    else {
+        lv_obj_add_flag(s_qr, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    bsp_display_unlock();
+
+    return ESP_OK;
+}
+
+
 esp_err_t display_show_report(const char *title,
                               const char *body,
                               const char *action_label,
@@ -197,12 +276,15 @@ esp_err_t display_show_report(const char *title,
 
     lv_obj_set_style_text_color(s_body, ink, LV_PART_MAIN);
     lv_label_set_text(s_body, body);
+    lv_obj_set_width(s_body, BRINGUP_WIDTH - 28);
+    lv_obj_set_height(s_body, LV_SIZE_CONTENT);
     lv_obj_align(s_body, LV_ALIGN_TOP_LEFT, 14, 48);
     lv_obj_remove_flag(s_body, LV_OBJ_FLAG_HIDDEN);
 
     if (action_label != NULL && action_label [0] != '\0') {
         lv_label_set_text(s_action_label, action_label);
-        lv_obj_align(s_action, LV_ALIGN_BOTTOM_MID, 0, -8);
+        //  Centred, so it sits between the two arrows rather than under one.
+        lv_obj_align(s_action, LV_ALIGN_BOTTOM_MID, 0, -10);
         lv_obj_remove_flag(s_action, LV_OBJ_FLAG_HIDDEN);
     }
     else {
@@ -313,7 +395,9 @@ static esp_err_t s_build_screen(void)
     lv_obj_set_style_pad_hor(s_version, 6, LV_PART_MAIN);
     lv_obj_set_style_pad_ver(s_version, 3, LV_PART_MAIN);
     lv_obj_set_style_radius(s_version, 4, LV_PART_MAIN);
-    lv_obj_align(s_version, LV_ALIGN_BOTTOM_RIGHT, -6, -6);
+    //  Top right, not bottom right: the forward arrow sits in the bottom right
+    //  corner and covered this label completely as soon as somebody browsed.
+    lv_obj_align(s_version, LV_ALIGN_TOP_RIGHT, -6, -6);
     lv_obj_add_flag(s_version, LV_OBJ_FLAG_HIDDEN);
 
     ESP_LOGI(TAG, "Firmware version on screen: %s", app->version);
@@ -462,9 +546,10 @@ esp_err_t display_show_status(const char *title,
     bool has_detail = detail != NULL && detail [0] != '\0';
 
     if (has_qr) {
-        lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, 12);
-        lv_obj_align(s_qr, LV_ALIGN_TOP_MID, 0, 56);
-        lv_obj_align(s_detail, LV_ALIGN_BOTTOM_MID, 0, -14);
+        lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, 8);
+        lv_obj_align(s_qr, LV_ALIGN_TOP_MID, 0, 48);
+        //  Just above the arrow strip; the arrows may appear over this screen.
+        lv_obj_align(s_detail, LV_ALIGN_BOTTOM_MID, 0, -ARROW_STRIP_HEIGHT + 4);
     }
     else if (has_detail) {
         lv_obj_align(s_title, LV_ALIGN_CENTER, 0, -18);

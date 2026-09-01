@@ -60,6 +60,15 @@ esp_err_t display_show_report(const char *title,
                               const char *action_label,
                               uint32_t background_rgb);
 
+//  A screen with a heading, several lines, and a QR code beside them. For the
+//  About page: the text says who made this and which build it is, the QR takes
+//  somebody to the project page without typing a URL on a device that has no
+//  keyboard.
+esp_err_t display_show_about(const char *title,
+                             const char *body,
+                             const char *qr_text,
+                             uint32_t background_rgb);
+
 //  Mark the screen as a preview rather than a live reading. Without this a
 //  view somebody browsed to looks exactly like a measurement, which is a way
 //  to leave a number on the wall that was never measured.

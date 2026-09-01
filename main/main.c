@@ -214,26 +214,9 @@ static bool reset_button_held_on_boot(void)
 
 static bool validate_stored_api_credentials(void)
 {
-    char client_id[128] = {0};
-    char client_secret[256] = {0};
-
-    if (api_storage_load_credentials(client_id, sizeof(client_id), client_secret, sizeof(client_secret)) != ESP_OK) {
-        ESP_LOGW(TAG, "API credentials not found in storage");
-        return false;
-    }
-
-    if (energyboxx_api_setup(client_id, client_secret) != ESP_OK) {
-        ESP_LOGW(TAG, "Stored API credentials could not be loaded");
-        return false;
-    }
-
-    if (energyboxx_api_fetch_token() != ESP_OK) {
-        ESP_LOGW(TAG, "Stored API credentials are invalid");
-        return false;
-    }
-
-    return true;
+    return energyboxx_api_load_stored_credentials() == ESP_OK;
 }
+
 
 //  --------------------------------------------------------------------------
 //  Spread a delay by up to a fifth, so devices that failed at the same moment -

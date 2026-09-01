@@ -214,54 +214,91 @@ static esp_err_t api_setup_get_handler(httpd_req_t *req)
         "<p>Enter your API credentials.</p>"
 
         "<label for='clientId'>Client ID</label>"
-        "<input id='clientId' type='text' placeholder='Client ID'>"
+        "<input id='clientId' type='text' autocomplete='off' placeholder='Client ID'>"
 
         "<label for='clientSecret'>Client Secret</label>"
-        "<input id='clientSecret' placeholder='Client Secret'>"
+        "<input id='clientSecret' type='password' autocomplete='off' placeholder='Client Secret'>"
 
-        "<button id='checkBtn' onclick='checkKeys()'>Check and save</button>"
+        "<button id='checkBtn' onclick='act()'>Controleren en opslaan</button>"
 
         "<div id='status'>";
 
-    //  The one variable part of this page. It used to disable the button when
-    //  credentials were already stored, on the assumption that valid
-    //  credentials meant there was nothing left to do here. That assumption
-    //  broke as soon as the portal could be opened again to replace working
-    //  keys: the page then refused the very thing it was opened for. It now
-    //  says what it knows and leaves the button alone.
+    //  Two variable parts. The first is what the status line says on arrival,
+    //  the second tells the script whether there are working credentials, which
+    //  decides what the button means when the fields are left empty.
     const char *html_body =
         "</div>"
         "</div>"
 
         "<script>"
-        "async function checkKeys(){"
-        " const status=document.getElementById('status');"
-        " const btn=document.getElementById('checkBtn');"
-        " status.textContent='Status: Checking keys...';"
+        "const apiReady=";
+
+    const char *html_tail =
+        ";"
+        "const id=document.getElementById('clientId');"
+        "const sec=document.getElementById('clientSecret');"
+        "const btn=document.getElementById('checkBtn');"
+        "const status=document.getElementById('status');"
+        "let mode='save';"
+
+        //  The button says what it will do, and does what it says. Empty
+        //  fields with working credentials means "leave things as they are";
+        //  filled fields mean "replace them". Half filled is neither, so the
+        //  button is off rather than failing on a blank secret.
+        "function refresh(){"
+        " const a=id.value.trim()!=='';"
+        " const b=sec.value.trim()!=='';"
+        " if(a&&b){mode='save';btn.textContent='Controleren en opslaan';btn.disabled=false;}"
+        " else if(!a&&!b&&apiReady){mode='done';btn.textContent='Klaar';btn.disabled=false;}"
+        " else {mode='save';btn.textContent='Controleren en opslaan';btn.disabled=true;}"
+        "}"
+        "id.addEventListener('input',refresh);"
+        "sec.addEventListener('input',refresh);"
+        "refresh();"
+
+        "async function act(){"
+        " if(mode==='done'){return finish();}"
+        " return checkKeys();"
+        "}"
+
+        "async function finish(){"
         " btn.disabled=true;"
-        " const clientId=document.getElementById('clientId').value;"
-        " const clientSecret=document.getElementById('clientSecret').value;"
+        " status.textContent='Afronden...';"
+        " try{"
+        "  await fetch('/done',{method:'POST'});"
+        "  status.textContent='Klaar. Het apparaat gaat verder; u kunt deze pagina sluiten.';"
+        " }catch(e){"
+        "  status.textContent='Klaar. Het apparaat gaat verder; u kunt deze pagina sluiten.';"
+        " }"
+        "}"
+
+        "async function checkKeys(){"
+        " status.textContent='Sleutels controleren...';"
+        " btn.disabled=true;"
         " try{"
         "  const r=await fetch('/api-check',{"
         "   method:'POST',"
         "   headers:{'Content-Type':'application/x-www-form-urlencoded'},"
-        "   body:`client_id=${encodeURIComponent(clientId)}&client_secret=${encodeURIComponent(clientSecret)}`"
+        "   body:`client_id=${encodeURIComponent(id.value.trim())}"
+        "&client_secret=${encodeURIComponent(sec.value.trim())}`"
         "  });"
         "  const j=await r.json();"
-        "  if(j.ok){btn.disabled=true;status.textContent='Status: Validation successful, you can close this page!';return;}"
-        "  status.textContent=j.message||'Status: Invalid keys';"
-        "  btn.disabled=false;"
-        " }catch(e){status.textContent='Status: Check failed';btn.disabled=false;}"
+        "  if(j.ok){status.textContent='Sleutels opgeslagen. Het apparaat gaat verder.';return;}"
+        "  status.textContent=j.message||'Sleutels afgekeurd';"
+        "  refresh();"
+        " }catch(e){status.textContent='Controle mislukt';refresh();}"
         "}"
         "</script></body></html>";
-
 
     const char *piece [] = {
         html_head,
         api_ready
-            ? "Er zijn al werkende sleutels opgeslagen. Nieuwe invoeren vervangt ze."
-            : "Status: Ready",
-        html_body
+            ? "De opgeslagen sleutels werken. Laat de velden leeg en druk op Klaar, "
+              "of vul nieuwe in om ze te vervangen."
+            : "Vul de Energyboxx client ID en client secret in.",
+        html_body,
+        api_ready ? "true" : "false",
+        html_tail
     };
 
     httpd_resp_set_type(req, "text/html");
@@ -500,6 +537,27 @@ static esp_err_t parse_api_credentials(httpd_req_t *req,
     return ESP_OK;
 }
 
+//  --------------------------------------------------------------------------
+//  "Klaar": somebody looked, changed nothing, and wants the device to carry on.
+//  Closing the portal here means they do not have to wait out the silence
+//  timeout with their phone on an access point that has no internet.
+
+static esp_err_t done_post_handler(httpd_req_t *req)
+{
+    wifi_prov_note_portal_activity();
+
+    ESP_LOGI(TAG, "Portal finished by the visitor");
+
+    httpd_resp_set_type(req, "application/json");
+    esp_err_t err = httpd_resp_sendstr(req, "{\"ok\":true}");
+
+    //  After the answer is on its way, so the browser still gets it.
+    wifi_prov_close_portal();
+
+    return err;
+}
+
+
 static esp_err_t api_check_post_handler(httpd_req_t *req)
 {
     wifi_prov_note_portal_activity();
@@ -511,6 +569,15 @@ static esp_err_t api_check_post_handler(httpd_req_t *req)
         httpd_resp_set_type(req, "application/json");
         return httpd_resp_sendstr(req,
             "{\"ok\":false,\"message\":\"Invalid request\"}");
+    }
+
+    //  The page will not submit empty fields, but a request can come from
+    //  anywhere. An empty key is never a valid one, so it is refused here
+    //  before it can push working credentials out of the way.
+    if (client_id [0] == '\0' || client_secret [0] == '\0') {
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_sendstr(req,
+            "{\"ok\":false,\"message\":\"Vul beide velden in\"}");
     }
 
     esp_err_t err = energyboxx_api_setup(client_id, client_secret);
@@ -605,6 +672,13 @@ esp_err_t wifi_web_start(void)
         .user_ctx = NULL,
     };
 
+    httpd_uri_t done_uri = {
+        .uri = "/done",
+        .method = HTTP_POST,
+        .handler = done_post_handler,
+        .user_ctx = NULL,
+    };
+
     httpd_uri_t api_check_uri = {
         .uri = "/api-check",
         .method = HTTP_POST,
@@ -657,6 +731,12 @@ esp_err_t wifi_web_start(void)
     err = httpd_register_uri_handler(s_server, &api_check_uri);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to register API check URI handler: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    err = httpd_register_uri_handler(s_server, &done_uri);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register done URI handler: %s", esp_err_to_name(err));
         return err;
     }
 
