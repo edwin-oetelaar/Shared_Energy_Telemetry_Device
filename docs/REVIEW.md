@@ -63,6 +63,7 @@ punt van de hele lijst.
 - [x] **H8** De DNS-server lekt zijn socket bij het stoppen — opgelost
 - [x] **H9** `wifi_prov_start_ap()` aborteert bij een fout, en draait nu tijdens bedrijf — opgelost
 - [x] **H10** Een afgekeurde sleutel laat een werkend apparaat zonder credentials achter — opgelost
+- [x] **M12** Het scherm bleef "Instellen" met QR tonen nadat het portaal was gesloten — opgelost
 - [ ] **H4** Geen OTA, terwijl de partitietabel er twee slots voor heeft
 - [ ] **H5** Credentials liggen leesbaar in flash
 
@@ -735,6 +736,28 @@ Twee gevolgen:
 reden die op verkeerde credentials wijst (`WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT`,
 `WIFI_REASON_AUTH_FAIL`). Doorproberen slaat pas aan als er credentials zijn die ooit hebben
 gewerkt.
+
+### M12 — Het scherm bleef "Instellen" met QR tonen nadat het portaal was gesloten
+`main/src/wifi_provisioning.c`
+
+Er waren twee manieren om het portaal af te breken. `wifi_prov_close_portal()` deed het netjes
+en zette de gemelde toestand terug. `wifi_prov_wait_until_completed()`, het pad dat bij het
+opstarten loopt, deed hetzelfde met de hand — maar vergat die toestand.
+
+Gevolg: na een geslaagde provisioning bleef `wifi_prov_get_state()` op `AP_ACTIVE` staan. Het
+scherm toonde "Instellen" met een QR-code voor een accesspoint dat niet meer bestond, terwijl
+het apparaat gewoon telemetrie ophaalde. Er was geen weg terug behalve herstarten.
+
+`wifi_prov_close_portal()` weigerde bovendien als het portaal niet vanaf het scherm was
+geopend, dus de knop "Klaar" op de sleutelpagina deed op dit pad helemaal niets.
+
+Waargenomen op hardware op 2026-09-01, tijdens een netwerkwissel naar een telefoonhotspot.
+
+**Fix:** één afbraakpad. `wifi_prov_close_portal()` is idempotent gemaakt en herstelt altijd de
+gemelde toestand; `wait_until_completed()` roept het aan in plaats van het over te doen. Daarmee
+verdween ook de laatste `ESP_ERROR_CHECK` op dit pad, dezelfde soort als **H9**.
+
+> **Opgelost.**
 
 ### M11 — Een gebladerd voorbeeld is niet te onderscheiden van een echte meting
 `main/src/status_view.c` (bladermodus, ingevoerd bij fase 5 van `docs/PLAN-box3.md`)

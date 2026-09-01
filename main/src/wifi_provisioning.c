@@ -97,6 +97,17 @@ static wifi_prov_accepted_cb_t s_accepted_cb = NULL;
 static char current_ssid[33] = {0};
 static char current_password[65] = {0};
 
+static const char *status_of(wifi_prov_state_t state)
+{
+    switch (state) {
+        case WIFI_PROV_STATE_CONNECTED: return "connected";
+        case WIFI_PROV_STATE_AP_ACTIVE: return "provisioning";
+        case WIFI_PROV_STATE_CONNECTING: return "connecting";
+        case WIFI_PROV_STATE_CONNECT_FAILED: return "connect failed";
+        default: return "idle";
+    }
+}
+
 static void wifi_set_state(wifi_prov_state_t state)
 {
     s_state = state;
@@ -335,12 +346,16 @@ bool wifi_prov_portal_is_open(void)
 }
 
 
+//  The only way a portal is taken down. It used to refuse when the portal had
+//  not been opened from the screen, which left the portal that runs at start-up
+//  to tear itself down by hand - and that copy forgot to put the reported state
+//  back, so the screen kept showing "Instellen" with a QR code for an access
+//  point that was no longer there.
+//
+//  Safe to call when there is nothing to close: every step below checks.
+
 esp_err_t wifi_prov_close_portal(void)
 {
-    if (!s_portal_open) {
-        return ESP_OK;
-    }
-
     s_portal_open = false;
     s_portal_close_at_us = 0;
 
@@ -368,7 +383,8 @@ esp_err_t wifi_prov_close_portal(void)
                        ? WIFI_PROV_STATE_CONNECTED
                        : WIFI_PROV_STATE_IDLE);
 
-    ESP_LOGI(TAG, "Portal closed");
+    ESP_LOGI(TAG, "Portal closed, device reports %s",
+             status_of(wifi_prov_get_state()));
 
     return err;
 }
@@ -617,15 +633,10 @@ void wifi_prov_wait_until_completed(void)
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 
+    //  Three seconds so a browser that just got "done" can show it.
     vTaskDelay(pdMS_TO_TICKS(3000));
 
-    wifi_web_stop();
-    if(s_dns_handle != NULL) {
-        stop_dns_server(s_dns_handle);
-        s_dns_handle = NULL;
-    }
-
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    wifi_prov_close_portal();
 }
 
 bool wifi_prov_wait_for_connection_timeout(TickType_t timeout)
