@@ -25,9 +25,12 @@ Het apparaat vraagt elke minuut de telemetrie op. Het stuurt het scherm aan op h
 | Tussen `-0,05` en `+0,05 kW` | In balans | Donkergroen |
 | Geen actuele meting | Geen gegevens | Grijs |
 
-Het scherm kent nog drie toestanden die over het apparaat zelf gaan: **Instellen** tijdens
-provisioning, **Verbinden** terwijl het een netwerk zoekt, en **Sleutels nodig** als er geen
-API-gegevens zijn.
+Het scherm kent nog vier toestanden die over het apparaat zelf gaan: **Instellen** tijdens
+provisioning, **Verbinden** terwijl het een netwerk zoekt, **Sleutels nodig** als er geen
+API-gegevens zijn, en **Bijwerken** terwijl het nieuwe firmware ophaalt.
+
+Het apparaat houdt zichzelf bij. Het haalt nieuwe firmware op bij de maker en installeert die
+zonder iets te vragen. Zie [Bijwerken](#bijwerken).
 
 Bij het opstarten toont het apparaat minstens een seconde de Energy Owl, met het
 versienummer van de firmware rechtsonder.
@@ -43,6 +46,9 @@ versienummer van de firmware rechtsonder.
 | Voorbeeld | Een toestand waar iemand naartoe gebladerd is, en die dus niet gemeten is |
 | Telemetrie | De meetwaarden die het apparaat bij de Energyboxx-API ophaalt |
 | Credentials | De opgeslagen wifi- en API-gegevens |
+| Release | Een uitgave van de firmware met een versienummer |
+| Proeftijd | De periode waarin nieuwe firmware moet bewijzen dat zij werkt |
+| Terugval | Het apparaat start de vorige firmware weer op |
 
 ## Hardware
 
@@ -200,6 +206,54 @@ minuut. Zo vragen apparaten die tegelijk zijn opgestart niet tegelijk opnieuw.
 **Portaal blijft ongebruikt.** Het apparaat sluit het portaal na vijftien minuten stilte.
 Gebeurt dat tijdens de eerste installatie, dan herstart het en probeert het de opgeslagen
 credentials opnieuw. Elke pagina en elke handeling in het portaal zet die klok terug.
+
+## Bijwerken
+
+Het apparaat houdt zichzelf bij. Het kijkt vijf minuten na het opstarten of er nieuwe firmware
+is, en daarna elk uur.
+
+**Bijwerken is niet vrijwillig.** Het apparaat vraagt niets en wacht op niemand. Vindt het een
+nieuwere versie, dan haalt het die op, installeert het die en start het opnieuw op. Er is geen
+instelling om dat te weigeren en geen knop om het uit te zetten. Wie het toch niet wil, houdt
+het apparaat van het netwerk — maar dan komt er ook geen telemetrie meer binnen, en toont het
+scherm "Geen gegevens".
+
+Wat de gebruiker ziet:
+
+| Moment | Op het scherm |
+| --- | --- |
+| Ophalen | **Bijwerken**, met het percentage eronder |
+| Herstarten | Het scherm gaat enkele seconden uit |
+| Klaar | De Energy Owl, en daarna het gewone beeld |
+
+Een update duurt ongeveer een halve minuut. Gemeten op 2026-09-01: 20 seconden voor 1,7 MB, en
+4 seconden voor de herstart.
+
+De knop **Nu bijwerken** op de About-pagina laat het apparaat meteen kijken. Die knop versnelt
+alleen; hij is niet de enige weg.
+
+### Waarom het zo werkt
+
+Vijf mensen testen het apparaat bij hen thuis. De API verandert nog, en functies veranderen mee.
+Een fix moet elk apparaat bereiken. Zonder deze werkwijze betekent elke fix een ronde langs vijf
+adressen met een kabel.
+
+### Wat er niet kan gebeuren
+
+| Voorval | Gevolg |
+| --- | --- |
+| De verbinding valt weg tijdens het ophalen | Het apparaat blijft op de huidige versie en probeert het later opnieuw |
+| De nieuwe firmware loopt vast | Het apparaat start de vorige versie weer op |
+| De nieuwe firmware bereikt de API niet | Het apparaat start de vorige versie weer op |
+
+Nieuwe firmware wordt in het vrije slot geschreven. De draaiende firmware blijft onaangeroerd
+tot de nieuwe zich bewijst. Dat is beproefd; zie de vierde ronde in [docs/REVIEW.md](docs/REVIEW.md).
+
+### Wie beslist
+
+De maker beslist. Het apparaat installeert wat er als laatste release gepubliceerd staat. Zolang
+er niets nieuws gepubliceerd is, gebeurt er niets. De volledige procedure staat in
+[docs/OTA.md](docs/OTA.md).
 
 ## Bouwen
 
@@ -420,4 +474,9 @@ Opstarten
   -> telemetrie opvragen
   -> de toestand op het scherm bijwerken
   -> 60 seconden wachten en opnieuw beginnen
+
+Naast deze lus, eenmalig:
+  -> na 5 minuten kijken of er nieuwe firmware is, daarna elk uur
+  -> is deze firmware zelf net opgehaald, dan staat zij in proeftijd
+     -> de eerste geslaagde telemetrieronde maakt haar definitief
 ```
