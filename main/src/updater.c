@@ -12,6 +12,7 @@
 #include "esp_app_desc.h"
 #include "esp_app_format.h"
 #include "esp_crt_bundle.h"
+#include "esp_http_client.h"
 #include "esp_https_ota.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
@@ -77,11 +78,60 @@ static const char *s_event_name [UPDATER_EV_COUNT] = {
     "check", "found", "nothing", "installed", "trouble"
 };
 
+//  Why an attempt came to nothing, in words. "ESP_FAIL" tells a tester
+//  nothing, and with five of them sending in logs the answer has to be in the
+//  log itself. The last row catches everything the table does not name, so the
+//  table cannot be incomplete.
+
+static const struct {
+    int status;
+    const char *meaning;
+} s_fetch_failure [] = {
+    { 404, "there is no published release yet - a draft release cannot be downloaded" },
+    { 403, "GitHub refused the download" },
+    { 429, "GitHub is turning us away for asking too often" },
+    {   0, "GitHub gave no usable answer" }
+};
+
+//  The status of the last answer from GitHub, or zero when there was none.
+//  esp_https_ota_begin () frees its handle when it fails, so the status has to
+//  be caught on the way past rather than asked for afterwards.
+static int s_http_status = 0;
+
 static updater_state_t s_state = UPDATER_IDLE;
 static int s_percent = 0;
 static bool s_on_probation = false;
 static bool s_marked_good = false;
 static esp_timer_handle_t s_timer = NULL;
+
+
+//  --------------------------------------------------------------------------
+//  Watch the answers go by, and say what went wrong when one of them is the
+//  last thing that happened.
+
+static esp_err_t s_http_event(esp_http_client_event_t *event)
+{
+    if (event->event_id == HTTP_EVENT_ON_HEADER
+    ||  event->event_id == HTTP_EVENT_ON_FINISH) {
+        s_http_status = esp_http_client_get_status_code(event->client);
+    }
+
+    return ESP_OK;
+}
+
+
+static void s_report_failure(esp_err_t err)
+{
+    size_t row = 0;
+
+    while (s_fetch_failure [row].status != 0
+    &&     s_fetch_failure [row].status != s_http_status) {
+        row++;
+    }
+
+    ESP_LOGE(TAG, "No update: %s (HTTP %d, %s)",
+             s_fetch_failure [row].meaning, s_http_status, esp_err_to_name(err));
+}
 
 
 //  --------------------------------------------------------------------------
@@ -185,6 +235,7 @@ static void s_run_update(void)
         .crt_bundle_attach = esp_crt_bundle_attach,
         .timeout_ms = 20000,
         .keep_alive_enable = true,
+        .event_handler = s_http_event,
         //  GitHub answers with a redirect whose headers do not fit the default
         //  512 bytes, and the redirect target carries a long signed query.
         .buffer_size = 2048,
@@ -199,9 +250,11 @@ static void s_run_update(void)
 
     esp_https_ota_handle_t handle = NULL;
 
+    s_http_status = 0;
+
     esp_err_t err = esp_https_ota_begin(&config, &handle);
     if (err != ESP_OK || handle == NULL) {
-        ESP_LOGE(TAG, "Could not reach the update: %s", esp_err_to_name(err));
+        s_report_failure(err);
         updater_handle(UPDATER_EV_TROUBLE);
         return;
     }
@@ -237,7 +290,9 @@ static void s_run_update(void)
     }
 
     if (err != ESP_OK || !esp_https_ota_is_complete_data_received(handle)) {
-        ESP_LOGE(TAG, "Update did not arrive whole: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Update did not arrive whole: %s (HTTP %d, %d of %d bytes)",
+                 esp_err_to_name(err), s_http_status,
+                 esp_https_ota_get_image_len_read(handle), total);
         esp_https_ota_abort(handle);
         updater_handle(UPDATER_EV_TROUBLE);
         return;
