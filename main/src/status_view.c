@@ -176,6 +176,10 @@ static void s_build_report(void)
 //  somebody has to remember to raise. The MAC address is there for support:
 //  with several testers running different builds, "which device is this?" is
 //  the first question, and this is the number their router shows too.
+//
+//  The ESP-IDF version is deliberately not here. It fitted only by pushing the
+//  text into the arrow strip, and of the four numbers it is the one a tester
+//  never has to read out: the version hash already pins the build it came from.
 
 #define PROJECT_PAGE  "https://www.dolphinsolutions.nl/gestuurde-energie-gemeenschap/"
 
@@ -190,14 +194,13 @@ static void s_build_about(void)
 
     snprintf(s_about, sizeof(s_about),
              "Paddy, Job en Edwin\n"
-             "(c) 2026 Dolphin Solutions\n"
+             "(c) 2026\n"
+             "Dolphin Solutions\n"
              "dolphinsolutions.nl\n"
-             "\n"
              "Versie    %s\n"
              "Gebouwd   %s\n"
-             "ESP-IDF   %s\n"
              "Apparaat  %02X%02X%02X",
-             app->version, app->date, app->idf_ver,
+             app->version, app->date,
              mac [3], mac [4], mac [5]);
 }
 

@@ -100,23 +100,26 @@ Het tweede beeld noemt de makers en de herkomst, en zegt welke build er draait:
 ```text
 Energy Owl
 
-Paddy, Job en Edwin          [QR]
-(c) 2026 Dolphin Solutions
+Paddy, Job en Edwin        [QR]
+(c) 2026
+Dolphin Solutions
 dolphinsolutions.nl
-
-Versie    1331d84
+Versie    c92a479
 Gebouwd   Sep  1 2026
-ESP-IDF   v6.1
 Apparaat  CB8B90
 ```
 
 De QR-code opent
 [dolphinsolutions.nl/gestuurde-energie-gemeenschap](https://www.dolphinsolutions.nl/gestuurde-energie-gemeenschap/).
 
-Versie, bouwdatum en ESP-IDF-versie komen uit de firmware zelf, niet uit een constante die
-iemand moet bijwerken. `Apparaat` toont de laatste drie bytes van het MAC-adres: met
-meerdere testapparaten in omloop is "welk apparaat is dit?" de eerste vraag bij een
-storingsmelding, en dit is hetzelfde nummer dat de router laat zien.
+Versie en bouwdatum komen uit de firmware zelf, niet uit een constante die iemand moet
+bijwerken. `Apparaat` toont de laatste drie bytes van het MAC-adres: met meerdere
+testapparaten in omloop is "welk apparaat is dit?" de eerste vraag bij een storingsmelding,
+en dit is hetzelfde nummer dat de router laat zien.
+
+De onderste 60 pixels van elk scherm zijn gereserveerd voor de bladerpijlen, die over elk
+beeld kunnen verschijnen. Het tekstblok op deze pagina heeft daarom een vaste hoogte: te
+veel tekst wordt zichtbaar afgekapt in plaats van onder een knop te verdwijnen.
 
 ## Provisioning
 

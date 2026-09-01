@@ -60,6 +60,19 @@ static bool s_ready = false;
 //  the About page. This is the rule that stops it happening a third time.
 #define ARROW_STRIP_HEIGHT  60
 
+//  The About page in two columns: text on the left, QR on the right. The
+//  numbers are kept together so the gutter between them stays visible. Screen
+//  is 320 wide; the QR carries a 4 px border on each side.
+#define ABOUT_QR_SIZE     92
+#define ABOUT_TEXT_WIDTH  184
+#define ABOUT_TEXT_TOP    44
+
+//  Given a height rather than left to grow, so the text cannot reach into the
+//  arrow strip however many lines it ends up being. Too much text is then
+//  visibly cut off, which is a fault somebody notices, instead of quietly
+//  sliding under a button.
+#define ABOUT_TEXT_HEIGHT (240 - ABOUT_TEXT_TOP - ARROW_STRIP_HEIGHT)
+
 //  Defined further down, next to the screen it belongs to.
 static lv_color_t s_readable_text_colour(uint32_t background_rgb);
 
@@ -201,15 +214,17 @@ esp_err_t display_show_about(const char *title,
     lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, 6);
     lv_obj_remove_flag(s_title, LV_OBJ_FLAG_HIDDEN);
 
-    //  The text keeps to the left so it never runs under the QR on the right.
+    //  The text column stops well before the QR. At 194 wide it ended on 204
+    //  while the QR started at 202, so the two touched.
     lv_obj_set_style_text_color(s_body, ink, LV_PART_MAIN);
     lv_label_set_text(s_body, body);
-    lv_obj_set_width(s_body, 194);
-    lv_obj_align(s_body, LV_ALIGN_TOP_LEFT, 10, 46);
+    lv_obj_set_width(s_body, ABOUT_TEXT_WIDTH);
+    lv_obj_set_height(s_body, ABOUT_TEXT_HEIGHT);
+    lv_obj_align(s_body, LV_ALIGN_TOP_LEFT, 10, ABOUT_TEXT_TOP);
     lv_obj_remove_flag(s_body, LV_OBJ_FLAG_HIDDEN);
 
     if (qr_text != NULL && qr_text [0] != '\0') {
-        lv_qrcode_set_size(s_qr, 100);
+        lv_qrcode_set_size(s_qr, ABOUT_QR_SIZE);
         lv_qrcode_set_dark_color(s_qr, lv_color_hex(0x101410));
         lv_qrcode_set_light_color(s_qr, lv_color_hex(0xFFFFFF));
         lv_qrcode_update(s_qr, qr_text, strlen(qr_text));
@@ -262,6 +277,7 @@ esp_err_t display_show_report(const char *title,
     lv_obj_set_style_text_color(s_body, ink, LV_PART_MAIN);
     lv_label_set_text(s_body, body);
     lv_obj_set_width(s_body, BRINGUP_WIDTH - 28);
+    lv_obj_set_height(s_body, LV_SIZE_CONTENT);
     lv_obj_align(s_body, LV_ALIGN_TOP_LEFT, 14, 48);
     lv_obj_remove_flag(s_body, LV_OBJ_FLAG_HIDDEN);
 
