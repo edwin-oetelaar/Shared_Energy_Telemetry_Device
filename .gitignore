@@ -3,6 +3,10 @@ build
 managed_components
 dependencies.lock
 main/inc/secrets.h
-test/test_uri_decode
+#  De gecompileerde host-tests, per patroon en niet per naam: een test die er
+#  later bij komt hoort niet alsnog in de repo te belanden omdat iemand vergat
+#  hier een regel toe te voegen. Dat is een keer gebeurd.
+test/test_*
+!test/test_*.c
 sdkconfig
 sdkconfig.old
