@@ -17,6 +17,25 @@ bool wifi_slots_is_empty (const wifi_slot_t *slot)
 }
 
 
+int wifi_slots_find (const wifi_slot_t *slots, const char *ssid)
+{
+    assert (slots);             //  Caller's contract
+    assert (ssid);
+
+    if (ssid [0] == '\0') {
+        return -1;              //  An empty name matches an empty slot, and
+    }                           //  "forget nothing" is not a request
+
+    for (size_t slot = 0; slot < WIFI_SLOT_COUNT; slot++) {
+        if (strcmp (slots [slot].ssid, ssid) == 0) {
+            return (int) slot;
+        }
+    }
+
+    return -1;
+}
+
+
 //  --------------------------------------------------------------------------
 //  Three rules, tried in order, and the first one that names a slot wins.
 //  Somebody standing at the portal types a network and a password; they do not

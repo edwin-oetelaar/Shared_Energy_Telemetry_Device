@@ -111,6 +111,41 @@ static void check_plan (void)
 }
 
 
+//  --------------------------------------------------------------------------
+//  Een netwerk terugvinden om het te vergeten.
+
+static void check_find_one (const char *what, const wifi_slot_t *slots,
+                            const char *ssid, int expect)
+{
+    int slot = wifi_slots_find (slots, ssid);
+
+    if (slot != expect) {
+        printf ("FAIL  %s: \"%s\" -> %d, verwacht %d\n", what, ssid, slot, expect);
+        failures++;
+    }
+    else
+        printf ("ok    %s: \"%s\" -> %d\n", what, ssid, slot);
+}
+
+static void check_find (void)
+{
+    wifi_slot_t drie [WIFI_SLOT_COUNT] = {
+        s_slot ("Thuis", 4), s_slot ("Kantoor", 9), s_slot ("Hotspot", 2)
+    };
+
+    check_find_one ("eerste", drie, "Thuis", 0);
+    check_find_one ("laatste", drie, "Hotspot", 2);
+    check_find_one ("onbekend", drie, "Buren", -1);
+    check_find_one ("hoofdletters", drie, "thuis", -1);
+
+    //  Een lege naam mag nooit een leeg slot aanwijzen: "vergeet niets" is
+    //  geen verzoek, en zou anders slot 1 wissen.
+    wifi_slot_t met_leeg [WIFI_SLOT_COUNT] = {0};
+    met_leeg [0] = s_slot ("Thuis", 1);
+    check_find_one ("lege naam", met_leeg, "", -1);
+}
+
+
 int main (void)
 {
     //  Alles leeg: het eerste lege slot.
@@ -166,6 +201,7 @@ int main (void)
         printf ("ok    gevuld slot herkend\n");
 
     check_plan ();
+    check_find ();
 
     printf ("\n%s\n", failures ? "TESTS GEFAALD" : "alle tests geslaagd");
 

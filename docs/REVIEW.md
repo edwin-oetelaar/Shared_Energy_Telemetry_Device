@@ -76,6 +76,7 @@ te repareren.
 - [x] **M2** `%d` met een `size_t` — opgelost
 - [x] **M3** Foutdetectie via `strstr` op de ruwe body — opgelost, structureel i.p.v. tekstueel
 - [x] **M4** Vaste retry van 10 seconden, oneindig lang — opgelost, backoff met jitter
+- [x] **M13** Een storing die te snel komt kost een goed netwerk zijn beurt — opgelost
 - [ ] **M5** NVS-schrijfactie in de event handler
 - [x] **M6** `app_main` kan oneindig blijven wachten — opgelost, stilte-timeout
 - [x] **M7** "Ring uit" betekent twee verschillende dingen — opgelost op het scherm van de BOX-3
@@ -888,6 +889,43 @@ gewerkt.
 >
 > Op hardware bevestigd; zie de zesde ronde onder "Bevestigd op hardware".
 
+### M13 — Een storing die te snel komt kost een goed netwerk zijn beurt
+`main/src/wifi_provisioning.c` (de rondes uit fase 2 van `docs/PLAN-wifi-slots.md`)
+
+Gevonden op 2026-09-02, op een bord met twee onthouden netwerken — de eerste keer dat de rondes
+uit fase 2 echt werk deden.
+
+Het apparaat vroeg om `OETELX`, het netwerk dat het laatst werkte en dat de scan zag. Vijftig
+milliseconden later kwam er een storing:
+
+```
+[4.41] Round: slot 1, network 1 of 2
+[4.41] Connecting to SSID: OETELX
+[4.41] STA disconnected, reason=2
+[4.41] Round: slot 0, network 2 of 2      <-- OETELX is zijn beurt kwijt
+```
+
+Vijftig milliseconden is te snel om een antwoord te zijn. Verbinden met een accesspoint is een
+uitwisseling van frames en duurt het grootste deel van een seconde; wat hier binnenkwam was de
+radio die nog nazoemde van de scan of van de poging ervoor. De ronde telde het als het oordeel
+van `OETELX`, ging door naar een netwerk dat er niet was, en kwam pas in de volgende ronde
+terug. Het apparaat kwam online in elf seconden in plaats van vier.
+
+Met één opgeslagen netwerk was dit onzichtbaar: er was niets anders om naartoe door te gaan, dus
+werd dezelfde poging gewoon herhaald. De rondes van fase 2 maakten er een verlies van.
+
+**Fix:** een storing binnen 600 ms na de aanvraag geeft het netwerk zijn beurt terug, één keer.
+Daarna telt hij gewoon mee, zodat een netwerk dat werkelijk elke keer meteen faalt de ronde niet
+kan blokkeren.
+
+> **Opgelost en op hardware bevestigd.** Drie starts achter elkaar: `Failed after 59 ms, sooner
+> than an answer can come; trying 'OETELX' once more`, gevolgd door `Got IP` op 5,6 s. Zie de
+> negende ronde onder "Bevestigd op hardware".
+>
+> In dezelfde beurt kregen de bekende afwijsredenen een eerlijke naam. `reason=2` werd gelogd
+> als "reason unknown to us", terwijl juist die reden bij **M10** uitvoerig is besproken. Een
+> log die "onbekend" zegt over iets bekends stuurt de volgende lezer de verkeerde kant op.
+
 ### M12 — Het scherm bleef "Instellen" met QR tonen nadat het portaal was gesloten
 `main/src/wifi_provisioning.c`
 
@@ -1348,6 +1386,29 @@ ving het op zonder dat iemand iets merkte.
 Het statusscherm toonde daarna `Wifi OETELX (2 van 2)`, van het scherm zelf gelezen. Dat is het
 laatste stuk van fase 3: welk van de onthouden netwerken in gebruik is, staat nu op het
 apparaat en niet alleen in een seriële log.
+
+### Negende ronde: twee netwerken, en een storing die te snel kwam
+
+**Board:** ESP32-S3-BOX-3 · 16 MB flash · 16 MB octal PSRAM
+**Datum:** 2026-09-02 · **Firmware:** branch `wifi/fase4-vergeten`, ESP-IDF v6.1
+**Uitgevoerd:** gewoon opstarten, met de twee netwerken die er sinds de achtste ronde in staan.
+
+| Bevinding | Status | Grondslag |
+| --- | --- | --- |
+| **M13** Te snelle storing kost een beurt | **Bevestigd** | Drie starts: 59, 61 en 58 ms, elke keer gevolgd door een geslaagde tweede poging |
+| Fase 2, de keuze uit meer netwerken | **Bevestigd** | `Plan 1: slot 1 'OETELX', -61 dBm, worked last time` / `Plan 2: slot 0 'CreateLAB', not in the scan` |
+
+Dit was de eerste start met twee échte netwerken, en daarmee de eerste keer dat het plan van
+fase 2 iets te kiezen had. Het koos goed: het netwerk dat het laatst werkte en dat de scan zag
+ging voorop, het netwerk dat weg is kwam erachter.
+
+| | Vóór M13 | Na M13 |
+| --- | --- | --- |
+| Tijd tot online | 11 s | 5,6 s |
+| Beurten verspild | de goede, elke ronde | geen |
+
+De resterende 2 s ten opzichte van één netwerk is de scan, en die is met twee netwerken de
+bedoeling.
 
 ### Vijfde ronde: het merkteken "voorbeeld"
 

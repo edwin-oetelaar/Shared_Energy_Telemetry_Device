@@ -276,7 +276,19 @@ static const struct {
     { WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT, DISCONNECT_REJECTED,  "the password is wrong" },
     { WIFI_REASON_HANDSHAKE_TIMEOUT,      DISCONNECT_REJECTED,  "the handshake was refused" },
     { WIFI_REASON_AUTH_FAIL,              DISCONNECT_REJECTED,  "the network refused our key" },
-    { WIFI_REASON_NO_AP_FOUND,            DISCONNECT_ABSENT,    "the network is not here" }
+    { WIFI_REASON_NO_AP_FOUND,            DISCONNECT_ABSENT,    "the network is not here" },
+
+    //  Named on purpose although they all mean TEMPORARY. "Reason unknown to
+    //  us" is a fair thing to log about a number we have never seen, and a
+    //  misleading thing to log about one we discussed at length - reason 2
+    //  below is the one M10 turns on. A log that says "unknown" about a known
+    //  thing sends the next reader looking in the wrong place.
+    { WIFI_REASON_AUTH_EXPIRE,            DISCONNECT_TEMPORARY, "the access point expired our authentication" },
+    { WIFI_REASON_ASSOC_TOOMANY,          DISCONNECT_TEMPORARY, "the access point has too many clients" },
+    { WIFI_REASON_ASSOC_LEAVE,            DISCONNECT_TEMPORARY, "the access point sent us away" },
+    { WIFI_REASON_BEACON_TIMEOUT,         DISCONNECT_TEMPORARY, "we stopped hearing the access point" },
+    { WIFI_REASON_ASSOC_FAIL,             DISCONNECT_TEMPORARY, "association failed" },
+    { WIFI_REASON_CONNECTION_FAIL,        DISCONNECT_TEMPORARY, "the connection failed" }
 };
 
 #define DISCONNECT_MEANING_ROWS \
@@ -355,6 +367,24 @@ static bool s_round_uncertain = false;
 //  The scan we asked for is ours, not the portal's "Refresh networks".
 static bool s_scan_for_plan = false;
 
+//  When the attempt that is running now was asked for, and whether it has
+//  already been given a second chance.
+//
+//  Associating with an access point is an exchange of frames and takes the
+//  better part of a second. A failure reported in a fraction of that is not
+//  this network's answer: it is the radio still settling from the scan, or
+//  from the attempt this one replaced. Measured on the BOX-3, the first
+//  attempt after a scan fails within 200 ms with reason 2 or 203, and the same
+//  network connects on the next try.
+//
+//  Without this, such a failure spent the good network's turn in the round.
+//  The device still got online, but in eleven seconds instead of four, and it
+//  looked like flakiness.
+#define ATTEMPT_SETTLING_MS  600
+
+static int64_t s_attempt_started_us = 0;
+static bool s_attempt_retried = false;
+
 //  The next time the schedule fires, look around again instead of trying the
 //  same network. Set when a round ends, and when the fast attempts on a
 //  network we were connected to are used up.
@@ -363,6 +393,7 @@ static bool s_replan_next = false;
 static void s_begin_round (void);
 static void s_try_next_in_round (void);
 static void s_plan_and_start_from_scan (void);
+static esp_err_t s_connect_to (const char *ssid, const char *password);
 
 //  --------------------------------------------------------------------------
 //  The backoff delay has passed, so ask Wi-Fi to try again. A refusal here is
@@ -470,6 +501,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 
         const char *what = NULL;
         disconnect_meaning_t meaning = s_meaning_of ((uint8_t) disc->reason, &what);
+        int64_t attempt_ms = (esp_timer_get_time () - s_attempt_started_us) / 1000;
 
         ESP_LOGW(TAG, "STA disconnected, reason=%d: %s", disc->reason, what);
 
@@ -479,6 +511,22 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         //  device is waiting to be provisioned, not for the router to return.
         if (current_ssid [0] == '\0')
             link_handle (LINK_EV_LOST);
+        else
+        if (s_in_round
+        &&  attempt_ms < ATTEMPT_SETTLING_MS
+        &&  !s_attempt_retried
+        &&  s_slot_in_use >= 0) {
+            //  Too soon to be this network's answer. Give it its turn back,
+            //  once, before moving on.
+            ESP_LOGW (TAG, "Failed after %d ms, sooner than an answer can come; "
+                           "trying '%s' once more",
+                      (int) attempt_ms, s_slots [s_slot_in_use].ssid);
+
+            s_attempt_retried = true;
+            s_attempt_started_us = esp_timer_get_time ();
+            s_connect_to (s_slots [s_slot_in_use].ssid,
+                          s_slots [s_slot_in_use].password);
+        }
         else
         if (s_in_round) {
             //  Inside a round nothing waits. This network is not here, or will
@@ -920,6 +968,8 @@ static void s_try_next_in_round(void)
              (unsigned) slot, (unsigned) s_plan_row, (unsigned) s_plan_count);
 
     s_slot_in_use = (int) slot;
+    s_attempt_retried = false;
+    s_attempt_started_us = esp_timer_get_time();
 
     esp_err_t err = s_connect_to(s_slots [slot].ssid, s_slots [slot].password);
 
@@ -1228,6 +1278,60 @@ const char *wifi_prov_ap_ssid(void)
 {
     return PROV_AP_SSID;
 }
+
+//  --------------------------------------------------------------------------
+//  Forget one remembered network.
+//
+//  Goes through here rather than straight to storage, because this module
+//  holds a copy of the slots and two answers derived from it: which slot is in
+//  use, and which one worked last. A slot emptied behind its back would leave
+//  the screen naming a network that is no longer there.
+//
+//  Forgetting the network the device is using right now is allowed. It does
+//  not drop the connection - the device stays on it until something else takes
+//  it down - and refusing would mean somebody standing at the portal cannot
+//  clear an entry they came to clear. The portal says what it means before
+//  asking.
+
+esp_err_t wifi_prov_forget(const char *ssid)
+{
+    if (ssid == NULL || ssid [0] == '\0') {
+        return ESP_ERR_INVALID_ARG;     //  From the portal, so not an assert
+    }
+
+    wifi_slot_t slots [WIFI_SLOT_COUNT];
+
+    esp_err_t err = wifi_storage_load_slots(slots);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    int slot = wifi_slots_find(slots, ssid);
+
+    if (slot < 0) {
+        ESP_LOGW(TAG, "Asked to forget '%s', which is not stored", ssid);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    err = wifi_storage_clear_slot((size_t) slot);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    ESP_LOGI(TAG, "Forgot '%s' from slot %d", ssid, slot);
+
+    wifi_storage_load_slots(s_slots);
+
+    if (s_slot_in_use == slot) {
+        s_slot_in_use = -1;     //  Still connected, no longer from a slot
+    }
+    if (s_last_ok == slot) {
+        s_last_ok = -1;
+    }
+
+    return ESP_OK;
+}
+
 
 //  --------------------------------------------------------------------------
 //  Which of the remembered networks is in use, and how many there are. Both

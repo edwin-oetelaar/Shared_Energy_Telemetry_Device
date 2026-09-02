@@ -268,6 +268,16 @@ esp_err_t wifi_storage_clear_slot(size_t slot)
     s_key_for(key, sizeof(key), "seq", slot);
     nvs_erase_key(handle, key);
 
+    //  Otherwise "the one that worked last time" points at an empty slot. The
+    //  planner survives that, but only because it checks; leaving a stale
+    //  answer in flash for a later reader to trip over is not a favour.
+    int32_t last_ok = -1;
+
+    if (nvs_get_i32(handle, KEY_LAST_OK, &last_ok) == ESP_OK
+    &&  last_ok == (int32_t) slot) {
+        nvs_erase_key(handle, KEY_LAST_OK);
+    }
+
     err = nvs_commit(handle);
 
     nvs_close(handle);
