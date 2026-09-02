@@ -363,8 +363,31 @@ probeert, en de rest blijft staan.
 > gekozen door wie het accesspoint bezit, en één met een tag erin mag deze pagina niet kunnen
 > schrijven. Dat is dezelfde zorg als bij **M1**, nu aan de kant van de browser.
 >
-> **Nog niet op hardware bevestigd:** het indrukken van de knop. Daarvoor is een browser op het
-> portaal-AP nodig en dat kan alleen een mens; WSL2 zit achter NAT en komt niet op dat netwerk.
+> **Op hardware bevestigd.** Edwin vergat `CreateLAB`, het netwerk dat niet meer bestond:
+>
+> ```
+> [141.52] wifi_prov:    portal: closed --open--> open
+> [161.76] wifi_prov:    Client connected to AP, AID=1
+> [184.81] wifi_storage: Cleared slot 0
+> [184.81] wifi_prov:    Forgot 'CreateLAB' from slot 0
+> ```
+>
+> Daarna drie starts achter elkaar, alle drie gelijk:
+>
+> ```
+> [2.01] 1 stored network, last success in slot 1
+> [2.01] Plan 1: slot 1 'OETELX', no scan was needed
+> [3.21] Got IP: 192.168.50.145
+> ```
+>
+> | | Twee netwerken | Eén netwerk |
+> | --- | --- | --- |
+> | Scan | ja, 2,4 s | nee |
+> | Tijd tot online | 5,6 s | **3,2 s** |
+>
+> Het gewiste slot was slot 0 en het overgebleven netwerk staat in slot 1. Dat het plan daar
+> gewoon `Plan 1: slot 1` van maakt, laat zien dat lege slots worden overgeslagen ongeacht hun
+> nummer — op de host getest bij fase 2, hier voor het eerst op een apparaat.
 
 ## 6. Risico's
 

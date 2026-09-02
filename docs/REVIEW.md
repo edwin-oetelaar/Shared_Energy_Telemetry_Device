@@ -1410,6 +1410,22 @@ ging voorop, het netwerk dat weg is kwam erachter.
 De resterende 2 s ten opzichte van één netwerk is de scan, en die is met twee netwerken de
 bedoeling.
 
+**Fase 4 in dezelfde ronde.** Edwin vergat `CreateLAB` via het portaal — `Forgot 'CreateLAB'
+from slot 0` — waarna drie starts achter elkaar op 3,2 s uitkwamen, zonder scan omdat er nog
+één netwerk over was. Het overgebleven netwerk staat in slot 1; dat het plan daar gewoon
+`Plan 1: slot 1` van maakt, laat zien dat lege slots worden overgeslagen ongeacht hun nummer.
+
+| Netwerken onthouden | Scan | Tijd tot online |
+| --- | --- | --- |
+| 2 | ja, 2,4 s | 5,6 s |
+| 1 | nee | 3,2 s |
+
+Onderweg bleek nog iets dat geen bevinding kreeg maar wel een fix: het portaal stuurt door naar
+de API-pagina zodra er een verbinding is, en daarmee was de netwerkpagina onbereikbaar voor wie
+het portaal met opzet opende om netwerken te beheren. Die pagina was tot fase 3 alleen een
+eerste-keer-pagina; met de lijst en de Forget-knoppen erop is ze een beheerpagina geworden. Er
+is nu `/wifi`, die haar altijd toont, met een link vanaf de API-pagina.
+
 ### Vijfde ronde: het merkteken "voorbeeld"
 
 **Board:** ESP32-S3-BOX-3 · 16 MB flash · 16 MB octal PSRAM
