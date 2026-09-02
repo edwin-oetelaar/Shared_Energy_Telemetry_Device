@@ -293,6 +293,40 @@ Doel: "waarom zit hij op het verkeerde netwerk?" is te beantwoorden zonder seri�
 
 **Klaar als:** iemand voor het apparaat kan zien welk van de drie netwerken het gebruikt.
 
+> **Uitgevoerd op 2026-09-02.** Het portaal schrijft nu naar het slot dat besluit 3 aanwijst in
+> plaats van altijd naar slot 0; daarmee zijn drie netwerken voor het eerst met de hand in te
+> stellen. Het statusscherm zet er `(2 van 3)` achter, en laat dat weg als er maar één netwerk
+> is, want "1 van 1" zegt niemand iets.
+>
+> Het portaal toont wat het apparaat onthoudt en waar een nieuwe invoer terechtkomt. Dat komt
+> van een nieuw eindpunt `/networks`, dat dezelfde `wifi_slots_choose_for ()` gebruikt als de
+> firmware: de regel staat niet ook nog eens in de pagina, want een regel op twee plekken gaat
+> ooit met zichzelf in tegenspraak.
+>
+> De log zegt nu waarom, en onderscheidt drie dingen die makkelijk door elkaar lopen:
+>
+> ```
+> Plan 1: slot 2 'CreateLAB', -47 dBm
+> Plan 2: slot 0 'ZZ-NietAanwezig-A', not in the scan
+> Plan 3: slot 1 'ZZ-NietAanwezig-B', not in the scan
+> ```
+>
+> en met één netwerk, waar niet voor gescand wordt:
+>
+> ```
+> Plan 1: slot 0 'CreateLAB', no scan was needed
+> ```
+>
+> **Een fout van fase 1 hersteld.** Het portaal kijkt of de toestand `failed` is om te weten
+> dat het misging. De nieuwe toestand `rejected` viel in `default: "unknown"`, waardoor de
+> pagina na een fout wachtwoord bleef pollen op iets wat ze niet kende — precies het geval
+> waarvoor fase 1 was bedoeld. `rejected` levert nu ook `failed`, en dat is de tak die zegt
+> "Could not connect. Check password."
+>
+> **Nog niet op hardware bevestigd:** het schrijven naar een tweede slot en de regel `(2 van 3)`
+> op het scherm. Daarvoor moet iemand een tweede netwerk in het portaal typen, en dat kan
+> alleen een mens. De keuzeregel zelf is met tien host-tests gedekt.
+
 ### Fase 4 — Een slot wissen, later
 
 Doel: een netwerk waar u nooit meer komt, kan weg zonder alles te wissen.

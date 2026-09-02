@@ -12,6 +12,7 @@
 #include "inc/energyboxx_api.h"
 #include "inc/api_storage.h"
 #include "inc/uri_decode.h"
+#include "inc/wifi_storage.h"
 
 static const char *TAG = "[wifi_web]";
 
@@ -111,6 +112,8 @@ static esp_err_t root_get_handler(httpd_req_t *req)
         "button{background:#111;color:white;border:none;margin-top:24px;font-weight:bold;}"
         "button:disabled{background:#999;}"
         "#status{margin-top:18px;font-weight:bold;}"
+        ".slots{margin-top:12px;padding:12px;background:#eef1f4;border-radius:10px;"
+        "font-size:14px;line-height:1.4;}"
         "</style>"
         "</head>"
         "<body>"
@@ -118,8 +121,10 @@ static esp_err_t root_get_handler(httpd_req_t *req)
         "<h1>SETD WiFi Setup</h1>"
         "<p>Choose the WiFi network this device should connect to.</p>"
 
+        "<div id='slots' class='slots'></div>"
+
         "<label for='ssid'>Network</label>"
-        "<select id='ssid'>"
+        "<select id='ssid' onchange='slots()'>"
         "<option>Scanning...</option>"
         "</select>"
         "<button type='button' onclick='scan()'>Refresh networks</button>"
@@ -146,6 +151,27 @@ static esp_err_t root_get_handler(httpd_req_t *req)
         "   ssid.appendChild(o);"
         "  });"
         " }catch(e){ssid.innerHTML='<option>Scan failed</option>';}"
+        " slots();"
+        "}"
+        ""
+
+        //  The device decides where a network goes; this only shows the answer.
+        "async function slots(){"
+        " const sel=document.getElementById('ssid');"
+        " const box=document.getElementById('slots');"
+        " const q=sel.value?('?ssid='+encodeURIComponent(sel.value)):'';"
+        " try{"
+        "  const r=await fetch('/networks'+q);"
+        "  const d=await r.json();"
+        "  const named=d.stored.filter(s=>s.length>0);"
+        "  let t=named.length?('This device remembers '+named.length+' of '+d.stored.length"
+        "   +' networks: '+named.join(', ')+'.')"
+        "   :'This device remembers no networks yet.';"
+        "  if(d.why!==undefined){"
+        "   t+=' What you enter now goes in place '+(d.target+1)+' ('+d.why+').';"
+        "  }"
+        "  box.textContent=t;"
+        " }catch(e){box.textContent='';}"
         "}"
         ""
         "async function connectWifi(){"
@@ -208,6 +234,8 @@ static esp_err_t api_setup_get_handler(httpd_req_t *req)
         "button{background:#111;color:white;border:none;margin-top:24px;font-weight:bold;}"
         "button:disabled{background:#999;}"
         "#status{margin-top:18px;font-weight:bold;}"
+        ".slots{margin-top:12px;padding:12px;background:#eef1f4;border-radius:10px;"
+        "font-size:14px;line-height:1.4;}"
         "</style></head><body>"
         "<div class='card'>"
         "<h1>SETD API Setup</h1>"
@@ -327,6 +355,11 @@ static const char *state_to_string(wifi_prov_state_t state)
         case WIFI_PROV_STATE_CONNECTING: return "connecting";
         case WIFI_PROV_STATE_CONNECTED: return "connected";
         case WIFI_PROV_STATE_CONNECT_FAILED: return "failed";
+        //  The page has one branch for "this did not work", and its message -
+        //  "Could not connect. Check password." - is exactly right here.
+        //  Without this line a refused password left the portal polling a
+        //  state it did not know, and the page waited for ever.
+        case WIFI_PROV_STATE_REJECTED: return "failed";
         default: return "unknown";
     }
 }
@@ -340,6 +373,78 @@ static esp_err_t status_get_handler(httpd_req_t *req)
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
 }
+
+//  --------------------------------------------------------------------------
+//  What the device remembers, and - when asked about a network - which slot
+//  that network would take. Somebody about to type a third network can see
+//  what it would replace before they do it.
+//
+//  The rule lives in wifi_slots_choose_for (). It is not repeated in the page,
+//  because a rule in two places is a rule that will disagree with itself.
+
+static esp_err_t networks_get_handler(httpd_req_t *req)
+{
+    wifi_prov_note_portal_activity();
+
+    wifi_slot_t slots [WIFI_SLOT_COUNT];
+
+    if (wifi_storage_load_slots(slots) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                            "Could not read the stored networks");
+        return ESP_FAIL;
+    }
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON *stored = cJSON_CreateArray();
+
+    if (root == NULL || stored == NULL) {
+        cJSON_Delete(root);
+        cJSON_Delete(stored);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+        return ESP_ERR_NO_MEM;
+    }
+
+    //  cJSON for the same reason as the network list: an SSID is chosen by
+    //  whoever owns the access point, and a quote in one must not be able to
+    //  break this answer apart.
+    for (size_t slot = 0; slot < WIFI_SLOT_COUNT; slot++) {
+        cJSON_AddItemToArray(stored, cJSON_CreateString(slots [slot].ssid));
+    }
+
+    cJSON_AddItemToObject(root, "stored", stored);
+
+    //  ?ssid=... asks where that network would go. The name arrives
+    //  percent-encoded, like every other field the portal sends.
+    char query [176] = {0};
+    char ssid [WIFI_SSID_SIZE] = {0};
+
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK
+    &&  httpd_query_key_value(query, "ssid", ssid, sizeof(ssid)) == ESP_OK
+    &&  uri_decode(ssid)
+    &&  ssid [0] != '\0') {
+        const char *why = NULL;
+        size_t target = wifi_slots_choose_for(slots, ssid, &why);
+
+        cJSON_AddNumberToObject(root, "target", (double) target);
+        cJSON_AddStringToObject(root, "why", why);
+    }
+
+    char *text = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+
+    if (text == NULL) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+        return ESP_ERR_NO_MEM;
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    esp_err_t err = httpd_resp_sendstr(req, text);
+
+    cJSON_free(text);
+
+    return err;
+}
+
 
 static esp_err_t connect_post_handler(httpd_req_t *req)
 {
@@ -659,6 +764,13 @@ esp_err_t wifi_web_start(void)
         .user_ctx = NULL,
     };
 
+    httpd_uri_t networks_uri = {
+        .uri = "/networks",
+        .method = HTTP_GET,
+        .handler = networks_get_handler,
+        .user_ctx = NULL
+    };
+
     httpd_uri_t scan_uri = {
         .uri = "/scan",
         .method = HTTP_GET,
@@ -719,6 +831,12 @@ esp_err_t wifi_web_start(void)
     err = httpd_register_uri_handler(s_server, &scan_uri);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to register scan URI handler: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    err = httpd_register_uri_handler(s_server, &networks_uri);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register networks URI handler: %s", esp_err_to_name(err));
         return err;
     }
 
