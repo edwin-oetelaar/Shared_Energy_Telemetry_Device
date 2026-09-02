@@ -44,6 +44,14 @@ static const char *TAG = "[status_view]";
 //  looking at them: the report counts seconds, the About page counts a
 //  download, and the update view counts percent. Those are painted again on
 //  every pass; the rest only when the state changes.
+//
+//  `reading` marks the views that claim something about the energy of the
+//  community: what stands there is what the device measured a moment ago.
+//  Those, and only those, can carry the "voorbeeld" mark in the corner, and
+//  only while somebody has browsed away from the live one. The report, the
+//  About page and the bring-up owl are about the device itself and are true
+//  whenever somebody looks at them, so they are never marked. This column is
+//  the whole rule; there is no second place that decides.
 
 typedef enum { PAINT_IMAGE = 0, PAINT_COLOUR, PAINT_REPORT, PAINT_ABOUT } paint_t;
 
@@ -54,6 +62,7 @@ static const struct {
     paint_t     paint;
     uint32_t    rgb;
     bool        live;
+    bool        reading;
 } s_view [STATUS_VIEW_STATE_COUNT] = {
     [STATUS_VIEW_STARTING]     = { "starting",     "powered on",
                                    "",                  PAINT_IMAGE,  0x000000 },
@@ -64,23 +73,23 @@ static const struct {
     [STATUS_VIEW_CONNECT_FAILED] = { "connect-failed", "the network refused us or is absent",
                                    "Geen verbinding",   PAINT_COLOUR, 0x8A3A2A },
     [STATUS_VIEW_SURPLUS]      = { "surplus",      "energy available to share",
-                                   "Energie over",      PAINT_COLOUR, 0x1F9E4B },
+                                   "Energie over",      PAINT_COLOUR, 0x1F9E4B, .reading = true },
     [STATUS_VIEW_DEFICIT]      = { "deficit",      "energy has to be bought",
-                                   "Energie inkopen",   PAINT_COLOUR, 0xE0A21B },
+                                   "Energie inkopen",   PAINT_COLOUR, 0xE0A21B, .reading = true },
     [STATUS_VIEW_BALANCED]     = { "balanced",     "supply and demand match",
-                                   "In balans",         PAINT_COLOUR, 0x243028 },
+                                   "In balans",         PAINT_COLOUR, 0x243028, .reading = true },
     [STATUS_VIEW_KEYS_NEEDED]  = { "keys-needed",  "no API credentials stored",
                                    "Sleutels nodig",    PAINT_COLOUR, 0x8A5A1A },
     [STATUS_VIEW_NO_DATA]      = { "no-data",      "no fresh telemetry",
-                                   "Geen gegevens",     PAINT_COLOUR, 0x5A5A5A },
+                                   "Geen gegevens",     PAINT_COLOUR, 0x5A5A5A, .reading = true },
     [STATUS_VIEW_REPORT]       = { "report",       "what the device knows about itself",
-                                   "Status",            PAINT_REPORT, 0x243028, true },
+                                   "Status",            PAINT_REPORT, 0x243028, .live = true },
     [STATUS_VIEW_ABOUT]        = { "about",        "who made this and which build it is",
-                                   "Energy Owl",        PAINT_ABOUT,  0x14324A, true },
+                                   "Energy Owl",        PAINT_ABOUT,  0x14324A, .live = true },
     [STATUS_VIEW_SETUP_DONE]   = { "setup-done",   "credentials accepted, setup finished",
                                    "Klaar, we zijn online", PAINT_COLOUR, 0x1F7A3D },
     [STATUS_VIEW_UPDATING]     = { "updating",     "installing new firmware",
-                                   "Bijwerken",         PAINT_COLOUR, 0x1E5A8A, true }
+                                   "Bijwerken",         PAINT_COLOUR, 0x1E5A8A, .live = true }
 };
 
 //  The bring-up image is how somebody learns what this product is. A device
@@ -119,6 +128,11 @@ static status_view_state_t s_auto_state = STATUS_VIEW_STARTING;
 static bool s_browsing = false;
 static size_t s_browse_row = 0;
 static int64_t s_browse_until_us = 0;
+
+//  Whether the corner mark is up. Remembered so the rule may be applied on
+//  every pass without taking the display lock for an answer that has not
+//  changed.
+static bool s_preview_marked = false;
 
 //  An announcement outranks browsing: news about what just happened matters
 //  more than whatever somebody was paging through.
@@ -318,6 +332,7 @@ esp_err_t status_view_init(void)
     s_current = STATUS_VIEW_STARTING;
     s_shown = false;
     s_bringup_since_us = 0;
+    s_preview_marked = false;   //  display_init () builds the mark hidden
 
     return ESP_OK;
 }
@@ -414,12 +429,41 @@ static esp_err_t s_paint(status_view_state_t state)
 
 
 //  --------------------------------------------------------------------------
+//  The mark in the corner says one thing: what you see is not what the device
+//  is measuring right now. So it goes up when a view that claims a reading is
+//  not the live one, and comes down otherwise. The table says which views
+//  claim a reading. The mark is decided again whenever either half moves, so a
+//  reading somebody parked on becomes a preview the moment the community moves
+//  on without them.
+
+static void s_mark_preview(status_view_state_t state)
+{
+    bool preview = s_view [state].reading && state != s_auto_state;
+
+    if (preview == s_preview_marked) {
+        return;
+    }
+
+    if (display_show_preview_marker(preview) == ESP_OK) {
+        s_preview_marked = preview;
+
+        //  In the log as well as on the screen, so that a hardware test can
+        //  say what the corner did instead of relying on somebody's memory of
+        //  what they saw.
+        ESP_LOGI(TAG, "Preview mark %s", preview ? "up" : "down");
+    }
+}
+
+
+//  --------------------------------------------------------------------------
 //  Only a change is worth saying out loud. Callers can therefore report their
 //  state on every pass of their loop without filling the log. A live view is
 //  painted again on every pass, but still only logged when it arrives.
 
 static esp_err_t s_draw(status_view_state_t state)
 {
+    s_mark_preview(state);
+
     if (s_shown && state == s_current) {
         return s_view [state].live ? s_paint(state) : ESP_OK;
     }
@@ -478,7 +522,6 @@ void status_view_announce(status_view_state_t state, int milliseconds)
 
     s_browsing = false;
     display_show_browse_controls(false);
-    display_show_preview_marker(false);
 
     s_announcing = true;
     s_announce_until_us = esp_timer_get_time() + (int64_t) milliseconds * 1000;
@@ -534,7 +577,6 @@ void status_view_resume_auto(void)
 
     s_browsing = false;
     display_show_browse_controls(false);
-    display_show_preview_marker(false);
 
     s_draw(s_auto_state);
 }
@@ -553,10 +595,6 @@ void status_view_browse(int direction)
     status_view_state_t state = s_browsable [s_browse_row];
 
     s_draw(state);
-
-    //  Anything that is not the live state is a preview, and has to say so.
-    //  The report is about the device itself, so it is never a preview.
-    display_show_preview_marker(state != s_auto_state && state != STATUS_VIEW_REPORT);
 }
 
 
@@ -580,6 +618,11 @@ esp_err_t status_view_show(status_view_state_t state)
 
     if (s_browsing) {
         if (esp_timer_get_time() < s_browse_until_us) {
+            //  The telemetry may have moved while somebody is looking at
+            //  something else, so the mark is decided again here, whether or
+            //  not this view repaints.
+            s_mark_preview(s_current);
+
             //  A live view ages while somebody looks at it, so it is painted
             //  again rather than left standing with a stale "42 s geleden".
             if (s_view [s_current].live) {
@@ -591,7 +634,6 @@ esp_err_t status_view_show(status_view_state_t state)
         ESP_LOGI(TAG, "Browsing timed out, following the telemetry again");
         s_browsing = false;
         display_show_browse_controls(false);
-        display_show_preview_marker(false);
     }
 
     //  Hold the bring-up image its minimum time, but only on the automatic
