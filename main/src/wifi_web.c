@@ -85,16 +85,8 @@ static esp_err_t favicon_get_handler(httpd_req_t *req)
     return httpd_resp_send(req, NULL, 0);
 }
 
-static esp_err_t root_get_handler(httpd_req_t *req)
+static esp_err_t s_send_wifi_page(httpd_req_t *req)
 {
-    wifi_prov_note_portal_activity();
-
-    if (wifi_prov_is_connected()) {
-        httpd_resp_set_status(req, "303 See Other");
-        httpd_resp_set_hdr(req, "Location", "/api-setup");
-        return httpd_resp_send(req, "Redirecting to API setup", HTTPD_RESP_USE_STRLEN);
-    }
-
     const char *html =
         "<!DOCTYPE html>"
         "<html>"
@@ -257,6 +249,37 @@ static esp_err_t root_get_handler(httpd_req_t *req)
     return httpd_resp_send(req, html, HTTPD_RESP_USE_STRLEN);
 }
 
+
+//  --------------------------------------------------------------------------
+//  Somebody who arrives at the door and has no network yet is taken through
+//  the steps in order, and the second step is where they should end up once
+//  the first one is done. Somebody who opened the portal on purpose from the
+//  device's own screen has usually come for the networks, and the device is
+//  online, so the redirect would send them straight past the page they came
+//  for. Hence /wifi, which always shows it, linked from the API page.
+
+static esp_err_t root_get_handler(httpd_req_t *req)
+{
+    wifi_prov_note_portal_activity();
+
+    if (wifi_prov_is_connected()) {
+        httpd_resp_set_status(req, "303 See Other");
+        httpd_resp_set_hdr(req, "Location", "/api-setup");
+        return httpd_resp_send(req, "Redirecting to API setup", HTTPD_RESP_USE_STRLEN);
+    }
+
+    return s_send_wifi_page(req);
+}
+
+
+static esp_err_t wifi_get_handler(httpd_req_t *req)
+{
+    wifi_prov_note_portal_activity();
+
+    return s_send_wifi_page(req);
+}
+
+
 static esp_err_t api_setup_get_handler(httpd_req_t *req)
 {
     wifi_prov_note_portal_activity();
@@ -309,6 +332,7 @@ static esp_err_t api_setup_get_handler(httpd_req_t *req)
     //  decides what the button means when the fields are left empty.
     const char *html_body =
         "</div>"
+        "<p><a href='/wifi'>Networks this device remembers</a></p>"
         "</div>"
 
         "<script>"
@@ -873,6 +897,13 @@ esp_err_t wifi_web_start(void)
         .user_ctx = NULL,
     };
 
+    httpd_uri_t wifi_uri = {
+        .uri = "/wifi",
+        .method = HTTP_GET,
+        .handler = wifi_get_handler,
+        .user_ctx = NULL
+    };
+
     httpd_uri_t forget_uri = {
         .uri = "/forget",
         .method = HTTP_POST,
@@ -959,6 +990,12 @@ esp_err_t wifi_web_start(void)
     err = httpd_register_uri_handler(s_server, &forget_uri);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to register forget URI handler: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    err = httpd_register_uri_handler(s_server, &wifi_uri);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register wifi URI handler: %s", esp_err_to_name(err));
         return err;
     }
 
