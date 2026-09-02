@@ -368,7 +368,10 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 {
     char json[64];
 
-    snprintf(json, sizeof(json),"{\"state\":\"%s\"}", state_to_string(wifi_prov_get_state()));
+    //  The link, not the merged view. This page is waiting to hear how its own
+    //  connection attempt went, and "the portal is open" - which stays true the
+    //  whole time somebody is using it - is not an answer to that.
+    snprintf(json, sizeof(json),"{\"state\":\"%s\"}", state_to_string(wifi_prov_link_state()));
 
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
@@ -727,6 +730,14 @@ esp_err_t wifi_web_start(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
     config.stack_size = 16384;
+
+    //  The default is eight, and this portal serves nine addresses. The ninth
+    //  did not fail loudly at the door: the server started, the pages that had
+    //  registered worked, and only "done" and "api-check" were quietly
+    //  missing - so setup could be started but not finished. Counted out here
+    //  with room to spare, because the failure is invisible until somebody is
+    //  standing in front of it.
+    config.max_uri_handlers = 16;
 
     ESP_LOGI(TAG, "Starting HTTP server");
 

@@ -68,6 +68,7 @@ te repareren.
 - [x] **H4** Geen OTA, terwijl de partitietabel er twee slots voor heeft — opgelost, `esp_https_ota` met versiecheck en terugval
 - [x] **H11** Het apparaat zet bij elke start zijn accesspoint aan — opgelost, de modus wordt
   nu expliciet gezet
+- [x] **H12** De opstartweg naar het portaal ging om de toestandsmachine heen — opgelost
 - [ ] **H5** Credentials liggen leesbaar in flash
 
 ### Middel
@@ -543,6 +544,54 @@ lucht komt.
 > `esp_wifi_start()`, met de reden erbij. Op hardware bevestigd: een koude start met geldige
 > credentials toont alleen nog `STA started`, en het accesspoint komt pas omhoog wanneer onze
 > eigen code erom vraagt. Zie de zesde ronde onder "Bevestigd op hardware".
+
+### H12 — De opstartweg naar het portaal ging om de toestandsmachine heen
+`main/main.c` (`start_provisioning_portal`)
+
+Gevonden op 2026-09-02, doordat Edwin er met een echt kapot netwerk voor stond.
+
+Er waren twee wegen naar het portaal, en ze waren het oneens.
+
+| Weg | Wat er gebeurde |
+| --- | --- |
+| Knop **Sleutels invoeren** op het statusscherm | `wifi_prov_open_portal()` → de toestandsmachine gaat naar `open` → `s_portal_bring_up()` |
+| Opstarten zonder werkend netwerk | `start_provisioning_portal()` riep `wifi_prov_start_ap()` en `wifi_web_start()` **rechtstreeks** aan |
+
+De tweede weg liet de machine geloven dat het portaal dicht was. Drie gevolgen, en alle drie
+raken juist de gebruiker die het portaal het hardst nodig heeft:
+
+1. `wifi_prov_get_state()` leidt "portaal open" af uit die machine. Het scherm toonde dus
+   **Geen verbinding** in plaats van **Instellen** met de QR-code om op het accesspoint te
+   komen — precies het beeld waarvoor fase 4 van `docs/PLAN-box3.md` is gebouwd.
+2. De vijftien-minutenwachter hangt aan `s_portal_bring_up()` en liep niet. Een portaal dat op
+   deze weg openging, ging uit zichzelf nooit meer dicht.
+3. Alles wat vraagt "staat er iemand in het portaal?" kreeg het verkeerde antwoord.
+
+Dit is een terugval uit fase 6b (2026-09-01), waar één toestandsvariabele door twee
+toestandsmachines is vervangen. `wifi_prov_start_ap()` zette die variabele; de machine kreeg
+die taak nooit. Niemand merkte het, omdat elke test sindsdien óf verbond óf de knop op het
+scherm gebruikte.
+
+**Fix:** `start_provisioning_portal()` gaat door `wifi_prov_open_portal()`, zoals de knop.
+
+> **Opgelost.** Op hardware bevestigd: `portal: closed --open--> open`, gevolgd door
+> `provisioning - waiting for the portal to be used` op het scherm.
+>
+> **Wat deze fix zelf blootlegde.** Met de machine kloppend brak de portalpagina. `/status`
+> gebruikte `wifi_prov_get_state()`, en die zegt "portaal open" zolang het portaal openstaat —
+> dus altijd, terwijl iemand er in staat. De pagina wacht op `connected` of `failed`, kreeg
+> eeuwig `ready`, hield haar knop uitgeschakeld en kon geen kant op. Vóór deze fix werkte dat
+> per ongeluk goed: de opstartweg zette de machine niet, dus gaf `/status` de verbinding terug.
+>
+> Twee vragen deelden één antwoord:
+>
+> | Wie vraagt | Wat die moet horen |
+> | --- | --- |
+> | Het scherm van het apparaat | "Instellen", zolang het portaal openstaat |
+> | De pagina ín dat portaal | hoe de verbinding die zij net startte afliep |
+>
+> Er is nu een `wifi_prov_link_state()` voor de tweede vraag. Zie de achtste ronde onder
+> "Bevestigd op hardware".
 
 ### H5 — Credentials liggen leesbaar in flash
 `sdkconfig`: geen `SECURE_FLASH_ENC_ENABLED`, geen `NVS_ENCRYPTION`, geen `SECURE_BOOT`
@@ -1238,6 +1287,67 @@ bedrijf wegvalt — hier faalde de verbinding vanaf het begin.
 
 Zie fase 2 in `docs/PLAN-wifi-slots.md` voor de volledige log en de twee afwegingen die
 tijdens het beproeven zijn bijgesteld.
+
+### Achtste ronde: een echt kapot netwerk
+
+**Board:** ESP32-S3-BOX-3 · 16 MB flash · 16 MB octal PSRAM
+**Datum:** 2026-09-02 · **Firmware:** branch `wifi/portaal-herstel`, ESP-IDF v6.1
+**Uitgevoerd:** niet gepland. Het netwerk `CreateLAB` was weg, Edwin wilde via het portaal een
+ander netwerk invoeren, en dat lukte niet.
+
+| Bevinding | Status | Grondslag |
+| --- | --- | --- |
+| **H12** Opstartweg om de toestandsmachine heen | **Bevestigd** | `provisioning` op het scherm na de fix, `connect-failed` ervoor |
+| **C2** Backoff loopt op | **Bevestigd** | 0,5 s → 1 → 2 → 5 → 10 → 30 s, en 300 s zodra het portaal openstaat |
+
+Deze ronde bracht drie fouten aan het licht, waarvan twee van dezelfde dag:
+
+1. **Het schema klom niet.** `s_connect_to()` zette de teller op nul, en sinds fase 2 wordt die
+   functie voor elk netwerk in een ronde aangeroepen. Het apparaat probeerde dus elke 3,4
+   seconden opnieuw, voor altijd. Daarmee was de radio permanent bezet — en dat is waarom
+   "Refresh networks" in het portaal faalde. Het is **M10** in een nieuwe vermomming.
+2. **Het portaal registreerde niet al zijn adressen.** Fase 3 voegde `/networks` toe; daarmee
+   werden het er negen, en `HTTPD_DEFAULT_CONFIG` staat er acht toe. Dat faalde niet hard: de
+   server startte, de pagina's die er wél waren werkten, en alleen `/done` en `/api-check`
+   ontbraken. Instellen kon dus wel beginnen en niet eindigen.
+3. **H12**, hierboven. En de fix daarvoor bracht er nog één aan het licht: met de
+   toestandsmachine kloppend gaf `/status` voortaan "portaal open" in plaats van de
+   verbindingstoestand, waardoor de portalpagina na "Connect" eeuwig op `ready` bleef staan
+   met een uitgeschakelde knop. Dat is hierboven bij H12 beschreven.
+
+De eerste twee zijn in fase 2 en fase 3 van diezelfde dag ontstaan. Beide waren onzichtbaar in
+de CI, want beide zijn grenzen die pas op een draaiend apparaat bestaan: een teller die niet
+klimt, en een tabel met acht plaatsen.
+
+Wat dit zegt over de proeven van die dag: fase 2 en 3 zijn beproefd met een netwerk dat er niet
+was óf een wachtwoord dat fout was, maar nooit lang genoeg om het schema te zien klimmen, en
+nooit met een portaal waar iemand echt iets in deed.
+
+**Daarna, met alles hersteld, is het portaal wél helemaal doorlopen.** Edwin voerde een tweede
+netwerk in en het apparaat kwam online:
+
+```
+[172.27] wifi_prov:    Connecting to SSID: OETELX
+[175.29] wifi_prov:    STA disconnected, reason=201: the network is not here
+[175.29] wifi_prov:    Reconnecting in 500 ms
+[178.10] wifi_prov:    Got IP: 192.168.50.145
+[178.10] wifi_storage: 'OETELX' goes in slot 1 (empty slot)
+[178.10] wifi_storage: Saved 'OETELX' in slot 1
+[179.50] wifi_prov:    Stored API credentials still work, no need to ask again
+[179.50] wifi_prov:    portal: open --accepted--> closing
+[184.12] wifi_prov:    portal: closing --grace-over--> closed
+[196.34] status_view:  deficit - energy has to be bought
+```
+
+Daarmee is fase 3 van `docs/PLAN-wifi-slots.md` op hardware bevestigd: het portaal schrijft naar
+het slot dat besluit 3 aanwijst — hier het eerste lege — en niet meer altijd naar slot 0. Het
+apparaat onthoudt nu twee netwerken. De eerste poging op `OETELX` gaf nog `reason=201` en de
+poging 500 ms later kreeg een adres; dat is de radio die net uit AP-modus komt, en het schema
+ving het op zonder dat iemand iets merkte.
+
+Het statusscherm toonde daarna `Wifi OETELX (2 van 2)`, van het scherm zelf gelezen. Dat is het
+laatste stuk van fase 3: welk van de onthouden netwerken in gebruik is, staat nu op het
+apparaat en niet alleen in een seriële log.
 
 ### Vijfde ronde: het merkteken "voorbeeld"
 

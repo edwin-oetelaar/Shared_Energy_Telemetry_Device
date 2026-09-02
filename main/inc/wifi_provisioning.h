@@ -27,6 +27,11 @@ esp_err_t wifi_prov_connect(const char *ssid, const char *password);
 //  the case for a device nobody has set up yet.
 esp_err_t wifi_prov_connect_stored(void);
 
+//  What the connection itself is doing, with an open portal left out of it.
+//  The screen wants wifi_prov_get_state (); the page inside the portal wants
+//  this one, because it is asking about the connection it just started.
+wifi_prov_state_t wifi_prov_link_state(void);
+
 //  Which remembered network is in use, counting from zero, or -1 when the
 //  device is not on one of them.
 int wifi_prov_current_slot(void);
