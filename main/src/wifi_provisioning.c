@@ -1167,6 +1167,23 @@ wifi_prov_state_t wifi_prov_get_state(void)
         return WIFI_PROV_STATE_AP_ACTIVE;
     }
 
+    return wifi_prov_link_state();
+}
+
+
+//  The connection on its own, with the portal left out of it.
+//
+//  Two callers want two different answers, and merging them broke the portal.
+//  Somebody standing in front of the device should see "Instellen" for as long
+//  as the portal is open, whatever the radio is doing - that is the function
+//  above. But the page inside that portal has just asked for a connection and
+//  is waiting to hear how it went; telling it "the portal is open" for ever
+//  leaves it polling a state that never changes, with its button disabled and
+//  nowhere to go.
+
+wifi_prov_state_t wifi_prov_link_state(void)
+{
+
     switch (s_link) {
         case LINK_CONNECTED:  return WIFI_PROV_STATE_CONNECTED;
         case LINK_CONNECTING: return WIFI_PROV_STATE_CONNECTING;

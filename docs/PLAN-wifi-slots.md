@@ -323,9 +323,10 @@ Doel: "waarom zit hij op het verkeerde netwerk?" is te beantwoorden zonder seri�
 > waarvoor fase 1 was bedoeld. `rejected` levert nu ook `failed`, en dat is de tak die zegt
 > "Could not connect. Check password."
 >
-> **Nog niet op hardware bevestigd:** het schrijven naar een tweede slot en de regel `(2 van 3)`
-> op het scherm. Daarvoor moet iemand een tweede netwerk in het portaal typen, en dat kan
-> alleen een mens. De keuzeregel zelf is met tien host-tests gedekt.
+> **Op hardware bevestigd op 2026-09-02**, nadat de storing van die avond was verholpen. Edwin
+> voerde `OETELX` in als tweede netwerk; het ging naar slot 1 — het eerste lege — precies zoals
+> het portaal vooraf zei. Zie de achtste ronde in `docs/REVIEW.md`. Het apparaat onthoudt nu
+> twee netwerken.
 
 ### Fase 4 — Een slot wissen, later
 

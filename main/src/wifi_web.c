@@ -368,7 +368,10 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 {
     char json[64];
 
-    snprintf(json, sizeof(json),"{\"state\":\"%s\"}", state_to_string(wifi_prov_get_state()));
+    //  The link, not the merged view. This page is waiting to hear how its own
+    //  connection attempt went, and "the portal is open" - which stays true the
+    //  whole time somebody is using it - is not an answer to that.
+    snprintf(json, sizeof(json),"{\"state\":\"%s\"}", state_to_string(wifi_prov_link_state()));
 
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
