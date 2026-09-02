@@ -12,12 +12,20 @@ typedef enum {
     WIFI_PROV_STATE_CONNECTING,
     WIFI_PROV_STATE_CONNECTED,
     WIFI_PROV_STATE_CONNECT_FAILED,
+    WIFI_PROV_STATE_REJECTED,       //  The network refused the password
 } wifi_prov_state_t;
 
 esp_err_t wifi_prov_init(void);
 
 esp_err_t wifi_prov_start_ap(void);
 esp_err_t wifi_prov_connect(const char *ssid, const char *password);
+
+//  Connect using the networks the device remembers. Scans, puts the stored
+//  networks in the order worth trying, and works through them: a network that
+//  is not here hands over to the next one at once instead of costing a
+//  timeout. Returns ESP_ERR_NOT_FOUND when no network is stored, which is
+//  the case for a device nobody has set up yet.
+esp_err_t wifi_prov_connect_stored(void);
 esp_err_t wifi_prov_scan(wifi_ap_record_t *records, uint16_t *count);
 wifi_prov_state_t wifi_prov_get_state(void);
 bool wifi_prov_is_connected(void);

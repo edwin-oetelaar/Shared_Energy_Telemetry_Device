@@ -66,6 +66,8 @@ te repareren.
 - [x] **H10** Een afgekeurde sleutel laat een werkend apparaat zonder credentials achter — opgelost
 - [x] **M12** Het scherm bleef "Instellen" met QR tonen nadat het portaal was gesloten — opgelost
 - [x] **H4** Geen OTA, terwijl de partitietabel er twee slots voor heeft — opgelost, `esp_https_ota` met versiecheck en terugval
+- [x] **H11** Het apparaat zet bij elke start zijn accesspoint aan — opgelost, de modus wordt
+  nu expliciet gezet
 - [ ] **H5** Credentials liggen leesbaar in flash
 
 ### Middel
@@ -76,7 +78,7 @@ te repareren.
 - [ ] **M5** NVS-schrijfactie in de event handler
 - [x] **M6** `app_main` kan oneindig blijven wachten — opgelost, stilte-timeout
 - [x] **M7** "Ring uit" betekent twee verschillende dingen — opgelost op het scherm van de BOX-3
-- [ ] **M10** Tijdens provisioning blijft het schema afgewezen credentials proberen — fase 1 van `docs/PLAN-wifi-slots.md`
+- [x] **M10** Tijdens provisioning blijft het schema afgewezen credentials proberen — opgelost, afwijsreden-tabel
 - [x] **M11** Een gebladerd voorbeeld is niet te onderscheiden van een echte meting — opgelost
 - [x] **M8** Twee responses op één request in het API-check pad — opgelost
 - [x] **M9** De ESP-IDF-versie ligt nergens vast — opgelost, vastgelegd op v6.1
@@ -499,6 +501,49 @@ nog klein is.
 >
 > Gebouwd voor esp32s3 op ESP-IDF 6.1. Nog niet op hardware getest.
 
+### H11 — Het apparaat zet bij elke start zijn accesspoint aan
+`main/src/wifi_provisioning.c` (`wifi_prov_init`)
+
+Gevonden op 2026-09-02, tijdens het beproeven van fase 1 van `docs/PLAN-wifi-slots.md`.
+
+`wifi_prov_init()` roept `esp_wifi_start()` aan zonder ooit `esp_wifi_set_mode()` te hebben
+aangeroepen. Met `CONFIG_ESP_WIFI_NVS_ENABLED=y` — de standaard, en het staat aan — bewaart de
+wifi-driver de modus én de accesspointconfiguratie in zijn eigen NVS-ruimte. Het apparaat
+start dus in de modus waarin het de vorige keer is achtergelaten.
+
+Op elk apparaat waarvan het portaal ooit open heeft gestaan, is dat AP+station. Gevolg: het
+open accesspoint komt bij **elke** start omhoog, aangezet door de driver en niet door onze
+code. In de log is dat te zien als `Provisioning AP started` zonder onze eigen
+`Starting provisioning AP` ervoor:
+
+```
+[2.01] wifi_prov: WiFi provisioning initialized
+[2.01] wifi_prov: STA started
+[2.01] wifi_prov: Provisioning AP started      <-- niemand heeft hierom gevraagd
+[2.01] wifi_prov: Connecting to SSID: CreateLAB
+```
+
+Drie gevolgen. De README belooft iets anders: die zegt dat het accesspoint aangaat "zodra er
+geen wifigegevens zijn opgeslagen, of het opgeslagen netwerk niet binnen dertig seconden
+verbindt". Een open accesspoint dat de hele dag aanstaat vergroot het oppervlak van **C5**
+aanzienlijk — dat gaat over dezelfde open AP, maar nam aan dat hij alleen tijdens het
+instellen in de lucht is. En de radio deelt zijn tijd met een AP die niemand gebruikt.
+
+Het is geen fout die zich vanzelf laat zien: het apparaat werkt gewoon, en wie niet naar de
+lijst met netwerken kijkt merkt er niets van.
+
+**Fix:** de modus expliciet zetten vóór `esp_wifi_start()`. Station is de ruststand;
+`wifi_prov_start_ap()` schakelt naar AP+station als iemand het portaal opent, en het sluiten
+zet hem terug.
+
+**Verificatie:** koud opstarten met geldige credentials en kijken of er een accesspoint in de
+lucht komt.
+
+> **Opgelost.** `esp_wifi_set_mode(WIFI_MODE_STA)` staat nu in `wifi_prov_init()`, vóór
+> `esp_wifi_start()`, met de reden erbij. Op hardware bevestigd: een koude start met geldige
+> credentials toont alleen nog `STA started`, en het accesspoint komt pas omhoog wanneer onze
+> eigen code erom vraagt. Zie de zesde ronde onder "Bevestigd op hardware".
+
 ### H5 — Credentials liggen leesbaar in flash
 `sdkconfig`: geen `SECURE_FLASH_ENC_ENABLED`, geen `NVS_ENCRYPTION`, geen `SECURE_BOOT`
 
@@ -774,6 +819,25 @@ Twee gevolgen:
 reden die op verkeerde credentials wijst (`WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT`,
 `WIFI_REASON_AUTH_FAIL`). Doorproberen slaat pas aan als er credentials zijn die ooit hebben
 gewerkt.
+
+> **Opgelost** als fase 1 van `docs/PLAN-wifi-slots.md`. De afwijsreden was alleen een
+> logregel; nu gaat hij door een tabel die er één van drie betekenissen van maakt —
+> tijdelijk, netwerk niet hier, of credentials afgewezen. Alleen de derde stuurt het gedrag:
+> de toestandsmachine van de verbinding krijgt er een vijfde toestand `rejected` bij, en het
+> schema springt naar zijn laatste rij.
+>
+> **Niet "nooit meer".** Een 4-way handshake kan op een slechte verbinding ook met het juiste
+> wachtwoord aflopen, en een apparaat dat helemaal stopt is precies waar **C2** over ging. De
+> laatste rij is een hartslag van vijf minuten: stil genoeg om de radio vrij te laten,
+> geduldig genoeg om zichzelf te herstellen.
+>
+> `WIFI_REASON_AUTH_EXPIRE` (2) staat bewust **niet** in de tabel als afwijzing, hoewel hij in
+> de log hierboven vlak na de geweigerde handshake staat. Die reden komt ook voor bij een
+> zwakke verbinding met het juiste wachtwoord, en een goed netwerk ten onrechte fout noemen is
+> de duurdere vergissing: dat zet iemand voor het apparaat die moet typen. Na deze wijziging
+> stopt de geweigerde handshake de reeks al voordat er een reason 2 op kan volgen.
+>
+> Op hardware bevestigd; zie de zesde ronde onder "Bevestigd op hardware".
 
 ### M12 — Het scherm bleef "Instellen" met QR tonen nadat het portaal was gesloten
 `main/src/wifi_provisioning.c`
@@ -1110,6 +1174,71 @@ Drie dingen die deze beproeving en passant liet zien:
 tijdens het schrijven de stroom verliest. Beide horen ongevaarlijk te zijn omdat er in het
 andere slot wordt geschreven, maar aangetoond is dat niet.
 
+### Zesde ronde: een geweigerd wachtwoord, en een accesspoint dat niemand vroeg
+
+**Board:** ESP32-S3-BOX-3 · 16 MB flash · 16 MB octal PSRAM
+**Datum:** 2026-09-02 · **Firmware:** branch `wifi/fase1-afwijsreden`, ESP-IDF v6.1
+**Uitgevoerd:** een fout wachtwoord opgelegd door een NVS-partitie met `nvs_partition_gen.py`
+te maken en met `esptool write-flash 0x012000` op het bord te zetten. Daarna de originele
+partitie teruggezet, die eerst met `read-flash` byte voor byte was bewaard.
+
+| Bevinding | Status | Grondslag |
+| --- | --- | --- |
+| **M10** Afgewezen credentials worden herhaald | **Bevestigd** | Eén poging in plaats van een oplopende reeks; zie de log hieronder |
+| **H11** Accesspoint aan bij elke start | **Bevestigd** | Vóór de fix `Provisioning AP started` op 2,01 s zonder dat onze code erom vroeg; erna alleen `STA started` |
+
+**Het geweigerde wachtwoord.** Het netwerk bestond, het wachtwoord niet:
+
+```
+[ 2.01] wifi_prov: Connecting to SSID: CreateLAB
+[ 6.23] wifi_prov: STA disconnected, reason=15: the password is wrong
+[ 6.23] wifi_prov: The network refused these credentials: the password is wrong
+[ 6.23] wifi_prov: link: connecting --refused--> rejected
+[ 6.23] wifi_prov: Reconnecting in 300000 ms
+[ 6.23] wifi_prov: Starting provisioning AP: SETD_Provisioning
+[ 6.43] status_view: wifi-rejected - the network refused the stored password
+```
+
+Wat daar staat, tegenover wat er stond:
+
+| | Vóór | Nu |
+| --- | --- | --- |
+| Pogingen met hetzelfde foute wachtwoord | 0,5 s, 1 s, 2 s, 5 s, 10 s, 30 s, 60 s, dan elke 5 min | één, dan elke 5 min |
+| Portaal open na | 32 s | 6,2 s |
+| Op het scherm | "Geen verbinding" | "Wachtwoord klopt niet" |
+
+Het portaal opent eerder omdat `wifi_prov_wait_for_connection_timeout()` nu ook op de
+afwijzing wacht en niet de volle dertig seconden uitzit voor credentials die niet kunnen
+werken.
+
+**Het accesspoint.** H11 kwam boven water doordat de eerste opzet van deze proef strandde op
+`Could not set the station config: ESP_ERR_WIFI_MODE`. De gegenereerde NVS bevatte de eigen
+ruimte van de wifi-driver niet, waardoor het apparaat in een andere modus opstartte dan
+verwacht — en dat legde bloot dat de modus helemaal nooit door onze code werd gezet. De
+mislukte proef was dus nuttiger dan de geslaagde.
+
+**Terugzetten.** Na afloop is de bewaarde partitie teruggeschreven. Het apparaat verbindt weer
+in 3,6 s met `CreateLAB`, haalt telemetrie op en toont "Energie over". De API-sleutels stonden
+in dezelfde partitie en zijn ongeschonden meegekomen.
+
+### Zevende ronde: kiezen op basis van een scan
+
+**Board:** ESP32-S3-BOX-3 · 16 MB flash · 16 MB octal PSRAM
+**Datum:** 2026-09-02 · **Firmware:** branch `wifi/fase2-scan-first`, ESP-IDF v6.1
+**Uitgevoerd:** drie slots opgelegd via een gegenereerde NVS-partitie, waarvan er één in de
+lucht was en twee niet. Daarna de bewaarde partitie teruggezet.
+
+| Bevinding | Status | Grondslag |
+| --- | --- | --- |
+| **C2** Reconnect-backoff | **Bevestigd op de BOX-3** | De tabel loopt nu over de ronde als geheel; na een ronde zonder resultaat volgt 500 ms, en na een ronde waarin iets geweigerd werd meteen de rij van vijf minuten |
+
+Dit is de eerste ronde waarin **C2** op dit bord is gezien; tot nu toe stond hij op "bevestigd
+op de XIAO, niet herhaald". Wat er nog steeds niet is beproefd, is een router die tijdens
+bedrijf wegvalt — hier faalde de verbinding vanaf het begin.
+
+Zie fase 2 in `docs/PLAN-wifi-slots.md` voor de volledige log en de twee afwegingen die
+tijdens het beproeven zijn bijgesteld.
+
 ### Vijfde ronde: het merkteken "voorbeeld"
 
 **Board:** ESP32-S3-BOX-3 · 16 MB flash · 16 MB octal PSRAM
@@ -1196,8 +1325,9 @@ H4) nooit op dit bord gezien.
 
 Wat nog niet op de BOX-3 is uitgevoerd, in volgorde van wat het meeste oplevert:
 
-1. **Router vijf minuten uitzetten** (C2). De backoff-tabel is bevestigd op de XIAO en niet op
-   dit bord. In de seriële log hoort het schema zichtbaar op te lopen.
+1. **Router vijf minuten uitzetten terwijl het apparaat online is** (C2). Het schema is op dit
+   bord gezien bij een verbinding die vanaf het begin faalde, maar niet bij een verbinding die
+   wegvalt terwijl hij loopt. Dat tweede geval is wat er bij een bewoner thuis gebeurt.
 2. **Twee keer snel op "Refresh networks"** tijdens provisioning (H3). Moet een nette melding
    geven, geen reboot. Nooit beproefd, op geen enkel bord.
 3. **Een POST-body die groter is dan de buffer** (H1). Beide formulieren zijn verwerkt, en de
@@ -1211,6 +1341,7 @@ Wat nog niet op de BOX-3 is uitgevoerd, in volgorde van wat het meeste oplevert:
    horen ongevaarlijk te zijn omdat er in het andere slot wordt geschreven, maar aangetoond is
    dat niet.
 
-Twee bevindingen zijn bevestigd op de XIAO en daarna niet herhaald op de BOX-3: **C3** (lock op
-de tokenstate; er was geen overlap meer om uit te lokken) en **C2**. Zij bewijzen dat de fix
-zelf werkt, niet dat dit bord hem draait.
+Eén bevinding is bevestigd op de XIAO en daarna niet herhaald op de BOX-3: **C3**, de lock op
+de tokenstate — er was geen overlap meer om uit te lokken. Die bewijst dat de fix zelf werkt,
+niet dat dit bord hem draait. **C2** is sinds de zevende ronde wel op dit bord gezien, zij het
+niet met een router die tijdens bedrijf wegvalt.

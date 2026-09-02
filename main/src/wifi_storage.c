@@ -352,38 +352,9 @@ int wifi_storage_last_ok(void)
 
 
 //  --------------------------------------------------------------------------
-//  Phase 0 keeps the behaviour of one stored network: everything above this
-//  layer works on slot 0. Phase 2 of docs/PLAN-wifi-slots.md replaces these
-//  three with a choice over all the slots.
-
-esp_err_t wifi_storage_load_credentials(
-    char *ssid,
-    size_t ssid_len,
-    char *password,
-    size_t password_len)
-{
-    assert (ssid);                      //  Caller's contract
-    assert (password);
-
-    wifi_slot_t slot;
-
-    esp_err_t err = wifi_storage_load_slot(0, &slot);
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    //  An empty slot used to be ESP_ERR_NVS_NOT_FOUND from nvs_get_str, and
-    //  main () still reads it that way: no credentials means open the portal.
-    if (wifi_slots_is_empty(&slot)) {
-        return ESP_ERR_NVS_NOT_FOUND;
-    }
-
-    snprintf(ssid, ssid_len, "%s", slot.ssid);
-    snprintf(password, password_len, "%s", slot.password);
-
-    return ESP_OK;
-}
-
+//  Credentials somebody typed in the portal. Reading is done per slot now;
+//  only the writing side still assumes slot 0, until phase 3 of
+//  docs/PLAN-wifi-slots.md asks wifi_slots_choose_for () where they belong.
 
 esp_err_t wifi_storage_save_credentials(const char *ssid, const char *password)
 {

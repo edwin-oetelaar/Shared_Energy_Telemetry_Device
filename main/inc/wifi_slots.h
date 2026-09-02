@@ -46,8 +46,41 @@ typedef struct {
     uint32_t ok_seq;
 } wifi_slot_t;
 
+//  One network the radio saw during a scan. Enough of wifi_ap_record_t to
+//  choose by, and no ESP-IDF in the header.
+typedef struct {
+    char ssid [WIFI_SSID_SIZE];
+    int8_t rssi;
+} wifi_seen_t;
+
 //  Whether this slot holds a network.
 bool wifi_slots_is_empty (const wifi_slot_t *slot);
+
+//  Put the slots worth trying in the order to try them, best first, and say
+//  how many there are. Empty slots are left out, so a device with one network
+//  gets a plan of one.
+//
+//  The order, and why:
+//
+//    1. The slot that last worked, if the radio can see it. A device that
+//       stays where it is should not change its mind because a neighbour's
+//       access point is louder.
+//    2. The other slots the radio can see, strongest first. This is the whole
+//       point of scanning: being at the office is one scan, not three
+//       connection timeouts.
+//    3. The filled slots the radio did not see, in slot order. A hidden
+//       network never appears in a scan, so it has to be tried blind or it
+//       could never be used at all.
+//
+//  Pass seen_count 0 for "no scan was possible"; the plan is then every filled
+//  slot in slot order, which is what the device did before it could scan.
+//
+//  `order` must have room for WIFI_SLOT_COUNT entries. `last_ok` is the slot
+//  that last reached an IP address, or -1 for none.
+size_t wifi_slots_plan (const wifi_slot_t *slots,
+                        const wifi_seen_t *seen, size_t seen_count,
+                        int last_ok,
+                        size_t *order);
 
 //  The slot that new credentials for `ssid` belong in. Never fails: with
 //  three slots and three rules there is always an answer, and the caller

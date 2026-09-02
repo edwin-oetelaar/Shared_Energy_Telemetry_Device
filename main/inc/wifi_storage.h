@@ -48,16 +48,9 @@ esp_err_t wifi_storage_note_success(size_t slot);
 int wifi_storage_last_ok(void);
 
 //  --------------------------------------------------------------------------
-//  What the rest of the firmware uses today. Phase 0 keeps the behaviour it
-//  had with one stored network: everything above the storage layer works on
-//  slot 0. Phase 2 of the plan replaces these with a choice over the three.
-
-esp_err_t wifi_storage_load_credentials(
-    char *ssid,
-    size_t ssid_len,
-    char *password,
-    size_t password_len
-);
+//  Credentials somebody typed in the portal. They still land in slot 0; which
+//  slot they belong in is the rule in wifi_slots.h, and phase 3 of
+//  docs/PLAN-wifi-slots.md is where the portal starts asking it.
 
 //  Save credentials that have just been proven to work, and mark their slot
 //  as the one that worked most recently.

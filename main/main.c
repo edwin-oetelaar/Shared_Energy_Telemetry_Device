@@ -148,6 +148,13 @@ static status_view_state_t s_state_to_show(void)
         return STATUS_VIEW_STARTING;
     }
 
+    //  A refused password is not the same as a network that is slow or away.
+    //  One of them ends by waiting, the other only ends when somebody types
+    //  something, and the screen is where they find that out.
+    if (wifi_state == WIFI_PROV_STATE_REJECTED) {
+        return STATUS_VIEW_WIFI_REJECTED;
+    }
+
     if (wifi_state == WIFI_PROV_STATE_CONNECT_FAILED) {
         return STATUS_VIEW_CONNECT_FAILED;
     }
@@ -467,13 +474,12 @@ void app_main(void)
     );
     ESP_ERROR_CHECK(status_task_created == pdPASS ? ESP_OK : ESP_FAIL);
 
-    char ssid[33] = {0};
-    char password[65] = {0};
-
     bool wifi_provisioning_started = false;
 
-    if (wifi_storage_load_credentials(ssid, sizeof(ssid), password, sizeof(password)) == ESP_OK) {
-        s_log_if_failed("connecting to the saved network", wifi_prov_connect(ssid, password));
+    //  The stored networks, in the order worth trying. Which one that is, and
+    //  whether a scan decided it, is wifi_provisioning's business; from here
+    //  it is still "connect with what we know".
+    if (wifi_prov_connect_stored() == ESP_OK) {
 
         if (!wifi_prov_wait_for_connection_timeout(pdMS_TO_TICKS(30000))) {
             ESP_LOGW(TAG, "Saved WiFi failed, starting provisioning");
