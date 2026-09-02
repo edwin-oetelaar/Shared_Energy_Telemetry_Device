@@ -1162,9 +1162,9 @@ Niet als beleefdheid — dit zijn de dingen die niet veranderd moeten worden.
 
 Stappen 1 en 2 zijn afgerond (C1–C4, H1–H3, M1–M4, M6, M8, L1, L3, L9, L10). Wat resteert:
 
-1. **Eerst op hardware.** Zeventien fixes zijn gecompileerd maar nooit uitgevoerd. Een board
-   flashen en de vijf scenario's hieronder doorlopen weegt zwaarder dan welke volgende bevinding
-   ook — zie "Wat niet is gecontroleerd".
+1. **De foutpaden op hardware.** Er zijn vijf testrondes geweest, maar alle vijf liepen langs de
+   goede afloop. Wat er misgaat als de router wegvalt, als een body te groot is of als een update
+   afbreekt, is nooit op dit bord gezien — zie "Wat niet is gecontroleerd".
 2. **Beslissen vóór de eerste serie.** C5 (WPA2 met per-apparaat wachtwoord op het
    provisioning-AP) en H5 (flash encryption, secure boot, NVS-encryptie). Beide raken het
    productieproces, niet alleen de firmware, en H5 is na uitlevering niet meer aan te zetten.
@@ -1180,26 +1180,37 @@ Stappen 1 en 2 zijn afgerond (C1–C4, H1–H3, M1–M4, M6, M8, L1, L3, L9, L10
 
 ## Wat niet is gecontroleerd
 
-De oorspronkelijke review is gedaan zonder buildomgeving. Sinds 2026-08-28 is die er wel
-(ESP-IDF 5.5.5 uit de PlatformIO-installatie, plus een CI-build in de officiële
-`espressif/idf`-container), en **elke fix op deze branch is gecompileerd** — meerdere keren met
-resultaat: L9 bleek een harde buildbreker, en zowel de mbedTLS-instelling bij L3 als een
-ontbrekende main-task stack werden alleen door een echte build gevonden.
+De oorspronkelijke review is gedaan zonder buildomgeving. Sinds 2026-08-28 is die er wel, en
+sinds L1 draait er een CI die bij elke push bouwt, `cppcheck` draait en de host-tests uitvoert.
+Het project bouwt op **ESP-IDF v6.1** (besluit M9), in de CI tegen de vaste tag
+`espressif/idf:v6.1`. Compileren heeft fouten gevonden die geen leesbeurt vond: L9 was een harde
+buildbreker, en zowel de mbedTLS-instelling bij L3 als een ontbrekende main-task stack kwamen
+alleen uit een echte build.
 
-Wat nog steeds ontbreekt: **geen enkele fix is op hardware uitgevoerd.** Compileren bewijst dat
-de code klopt volgens de compiler, niet dat het apparaat doet wat we denken. Met zeventien fixes
-op de teller is dit het zwaarste openstaande punt van deze lijst.
+Er zijn inmiddels vijf testrondes op hardware geweest, waarvan drie op de BOX-3 zelf; zie
+"Bevestigd op hardware". Het zwaarste punt van deze lijst is dus niet meer dat er niets is
+uitgevoerd. Wat er nu staat is dit: **alle vijf de rondes zijn langs de goede afloop gelopen.**
+Provisioning slaagde, de sleutels werden geaccepteerd, de telemetrie kwam binnen en de update
+installeerde. Wat er gebeurt als iets misgaat, is op één na (de opzettelijk kapotte firmware bij
+H4) nooit op dit bord gezien.
 
-De vijf scenario's die het meeste opleveren, in volgorde:
+Wat nog niet op de BOX-3 is uitgevoerd, in volgorde van wat het meeste oplevert:
 
-1. **Wifi-wachtwoord met een spatie erin** (C1). De fix waar de meeste klanten last van hadden.
-2. **Een SSID met een spatie of leesteken kiezen uit de lijst** (M1, plus de verborgen tweede
-   helft van H1: veldbuffers die op de gecodeerde lengte moesten worden gedimensioneerd).
-3. **De API-setup pagina openen**, knop in beide toestanden (C4).
-4. **Router vijf minuten uitzetten** (C2). In de seriële log loopt het backoff-schema zichtbaar op.
-5. **Twee keer snel op "Refresh networks"** tijdens provisioning (H3). Moet een nette melding
-   geven, geen reboot.
+1. **Router vijf minuten uitzetten** (C2). De backoff-tabel is bevestigd op de XIAO en niet op
+   dit bord. In de seriële log hoort het schema zichtbaar op te lopen.
+2. **Twee keer snel op "Refresh networks"** tijdens provisioning (H3). Moet een nette melding
+   geven, geen reboot. Nooit beproefd, op geen enkel bord.
+3. **Een POST-body die groter is dan de buffer** (H1). Beide formulieren zijn verwerkt, en de
+   gecodeerde vorm van een wachtwoord was langer dan de waarde zelf, maar een body die de buffer
+   werkelijk overschrijdt is nooit verstuurd.
+4. **Telemetrie met een ontbrekend veld** (M3). Alleen geldige antwoorden zijn gezien; het
+   foutpad is nooit gelopen.
+5. **Vijftien minuten niets doen tijdens provisioning** (M6). De stilte-timeout is nooit
+   afgelopen — elke ronde was binnen een halve minuut klaar.
+6. **Een update die halverwege afbreekt, en stroomverlies tijdens het schrijven** (H4). Beide
+   horen ongevaarlijk te zijn omdat er in het andere slot wordt geschreven, maar aangetoond is
+   dat niet.
 
-Let op bij het flashen: door L3 is de configuratie nu die van de gebruikte IDF-versie in plaats
-van een gemigreerd bestand van ESP-IDF 6.1.0. Het binaire bestand is daardoor ~40 KB van formaat
-veranderd. Bouw met de versie waarmee je in productie gaat — en leg die vast (M9).
+Twee bevindingen zijn bevestigd op de XIAO en daarna niet herhaald op de BOX-3: **C3** (lock op
+de tokenstate; er was geen overlap meer om uit te lokken) en **C2**. Zij bewijzen dat de fix
+zelf werkt, niet dat dit bord hem draait.
