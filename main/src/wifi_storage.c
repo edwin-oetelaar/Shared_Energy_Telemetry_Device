@@ -356,14 +356,38 @@ int wifi_storage_last_ok(void)
 //  only the writing side still assumes slot 0, until phase 3 of
 //  docs/PLAN-wifi-slots.md asks wifi_slots_choose_for () where they belong.
 
-esp_err_t wifi_storage_save_credentials(const char *ssid, const char *password)
+esp_err_t wifi_storage_save_credentials(const char *ssid, const char *password,
+                                        size_t *slot, const char **why)
 {
-    esp_err_t err = wifi_storage_save_slot(0, ssid, password);
+    assert (ssid);                      //  Caller's contract
+
+    wifi_slot_t slots [WIFI_SLOT_COUNT];
+
+    esp_err_t err = wifi_storage_load_slots(slots);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    const char *reason = NULL;
+    size_t chosen = wifi_slots_choose_for(slots, ssid, &reason);
+
+    ESP_LOGI(TAG, "'%s' goes in slot %u (%s)", ssid, (unsigned) chosen, reason);
+
+    err = wifi_storage_save_slot(chosen, ssid, password);
 
     //  This is only ever called once the network has handed out an IP
     //  address, so the slot has earned its place at the top.
     if (err == ESP_OK) {
-        err = wifi_storage_note_success(0);
+        err = wifi_storage_note_success(chosen);
+    }
+
+    if (err == ESP_OK) {
+        if (slot != NULL) {
+            *slot = chosen;
+        }
+        if (why != NULL) {
+            *why = reason;
+        }
     }
 
     return err;

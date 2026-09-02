@@ -203,6 +203,18 @@ Het apparaat geeft nooit op. Het probeert het opnieuw volgens vaste schema's.
 toont het scherm **Geen verbinding**. Het schema is de tabel `s_retry_schedule` in
 `main/src/wifi_provisioning.c`.
 
+**Drie netwerken.** Het apparaat onthoudt er drie. Bij het opstarten kijkt het welke ervan in
+de lucht zijn en probeert het de sterkste eerst; het netwerk dat de vorige keer werkte gaat
+voor, zolang het te zien is. Een netwerk dat er niet is kost geen wachttijd meer, maar geeft
+meteen door aan het volgende.
+
+Wie een netwerk invoert dat het apparaat al kent, vervangt dat. Anders gaat het in een leeg
+plekje, en zijn alle drie bezet dan maakt het netwerk plaats dat het langst niet heeft gewerkt.
+Het portaal zegt vooraf welke dat is.
+
+Het statusscherm zet achter het netwerk welk van de drie het is, bijvoorbeeld `(2 van 3)`. Bij
+één opgeslagen netwerk staat dat er niet.
+
 **Wachtwoord fout.** Het netwerk kan een wachtwoord weigeren, en dan helpt opnieuw proberen
 niet — alleen een nieuw wachtwoord helpt. Het apparaat herkent dat aan de reden die de router
 teruggeeft, toont **Wachtwoord klopt niet** en opent binnen enkele seconden het portaal in

@@ -539,8 +539,21 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
             wifi_storage_note_success((size_t) s_slot_in_use);
             s_last_ok = s_slot_in_use;
         }
-        else
-            wifi_storage_save_credentials(current_ssid, current_password);
+        else {
+            //  Typed in the portal, and now proven. Which slot it belongs in
+            //  is storage's rule, not ours; we only want to know the answer,
+            //  because the screen says which network the device is using.
+            size_t slot = 0;
+
+            if (wifi_storage_save_credentials(current_ssid, current_password,
+                                              &slot, NULL) == ESP_OK) {
+                s_slot_in_use = (int) slot;
+                s_last_ok = (int) slot;
+
+                //  The cached copy is now behind by one network.
+                wifi_storage_load_slots(s_slots);
+            }
+        }
 
         
         xEventGroupClearBits(s_wifi_event_group, WIFI_FAIL_BIT);
@@ -925,6 +938,40 @@ static void s_plan_and_start(const wifi_seen_t *seen, size_t seen_count)
         return;
     }
 
+    //  Say what was decided and on what grounds. A device that picks the
+    //  "wrong" network is otherwise a mystery, and the answer is nearly always
+    //  in which networks the radio could see and how loud they were.
+    for (size_t row = 0; row < s_plan_count; row++) {
+        size_t slot = s_plan [row];
+        int8_t rssi = 0;
+        bool visible = false;
+
+        for (size_t seen_row = 0; seen_row < seen_count; seen_row++) {
+            if (strcmp(seen [seen_row].ssid, s_slots [slot].ssid) == 0
+            &&  (!visible || seen [seen_row].rssi > rssi)) {
+                rssi = seen [seen_row].rssi;
+                visible = true;
+            }
+        }
+
+        //  Three different things, and saying the wrong one sends somebody
+        //  looking in the wrong place: seen and how loud, scanned for and not
+        //  found, or never scanned for at all.
+        const char *how = seen == NULL ? "no scan was needed"
+                        : visible      ? NULL
+                                       : "not in the scan";
+
+        if (how == NULL) {
+            ESP_LOGI(TAG, "Plan %u: slot %u '%s', %d dBm%s",
+                     (unsigned) (row + 1), (unsigned) slot, s_slots [slot].ssid,
+                     rssi, (int) slot == s_last_ok ? ", worked last time" : "");
+        }
+        else {
+            ESP_LOGI(TAG, "Plan %u: slot %u '%s', %s",
+                     (unsigned) (row + 1), (unsigned) slot, s_slots [slot].ssid, how);
+        }
+    }
+
     s_try_next_in_round();
 }
 
@@ -1149,6 +1196,23 @@ const char *wifi_prov_ap_ssid(void)
 {
     return PROV_AP_SSID;
 }
+
+//  --------------------------------------------------------------------------
+//  Which of the remembered networks is in use, and how many there are. Both
+//  answer from what is already in memory: the screen asks on every paint, and
+//  that is no reason to go to flash.
+
+int wifi_prov_current_slot(void)
+{
+    return s_slot_in_use;
+}
+
+
+size_t wifi_prov_stored_count(void)
+{
+    return s_filled_slots();
+}
+
 
 const char *wifi_prov_current_ssid(void)
 {

@@ -48,13 +48,18 @@ esp_err_t wifi_storage_note_success(size_t slot);
 int wifi_storage_last_ok(void);
 
 //  --------------------------------------------------------------------------
-//  Credentials somebody typed in the portal. They still land in slot 0; which
-//  slot they belong in is the rule in wifi_slots.h, and phase 3 of
-//  docs/PLAN-wifi-slots.md is where the portal starts asking it.
+//  Credentials somebody typed in the portal.
 
-//  Save credentials that have just been proven to work, and mark their slot
-//  as the one that worked most recently.
-esp_err_t wifi_storage_save_credentials(const char *ssid, const char *password);
+//  Save credentials that have just been proven to work, in the slot they
+//  belong in, and mark that slot as the one that worked most recently. The
+//  slot comes from wifi_slots_choose_for (): the same network again replaces
+//  itself, a new one takes an empty slot, and when all three are full the one
+//  that has worked least recently makes way.
+//
+//  Reports which slot it was, and why, for the screen and the log. Both may
+//  be NULL.
+esp_err_t wifi_storage_save_credentials(const char *ssid, const char *password,
+                                        size_t *slot, const char **why);
 
 //  Forget every network. This is the factory reset behind three power cycles
 //  and behind the reset button, so it empties all three slots and not just

@@ -163,9 +163,21 @@ static void s_build_report(void)
     int token_left = energyboxx_api_token_seconds_left();
     int since_data = energyboxx_api_seconds_since_data();
 
-    char wifi_line [72];
+    //  Which of the remembered networks this is. Without it, "why is it on
+    //  the wrong network?" has no answer short of a serial cable. Left off
+    //  when there is only one, because "1 van 1" tells nobody anything.
+    char which [32] = "";
+    int slot = wifi_prov_current_slot();
+    size_t stored = wifi_prov_stored_count();
+
+    if (slot >= 0 && stored > 1) {
+        snprintf(which, sizeof(which), " (%d van %u)", slot + 1, (unsigned) stored);
+    }
+
+    char wifi_line [128];
     if (wifi_prov_get_state() == WIFI_PROV_STATE_CONNECTED && ip [0] != '\0') {
-        snprintf(wifi_line, sizeof(wifi_line), "Wifi      %s\n          %s", network, ip);
+        snprintf(wifi_line, sizeof(wifi_line), "Wifi      %s%s\n          %s",
+                 network, which, ip);
     }
     else {
         snprintf(wifi_line, sizeof(wifi_line), "Wifi      geen verbinding");

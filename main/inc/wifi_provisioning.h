@@ -26,6 +26,13 @@ esp_err_t wifi_prov_connect(const char *ssid, const char *password);
 //  timeout. Returns ESP_ERR_NOT_FOUND when no network is stored, which is
 //  the case for a device nobody has set up yet.
 esp_err_t wifi_prov_connect_stored(void);
+
+//  Which remembered network is in use, counting from zero, or -1 when the
+//  device is not on one of them.
+int wifi_prov_current_slot(void);
+
+//  How many of the slots hold a network.
+size_t wifi_prov_stored_count(void);
 esp_err_t wifi_prov_scan(wifi_ap_record_t *records, uint16_t *count);
 wifi_prov_state_t wifi_prov_get_state(void);
 bool wifi_prov_is_connected(void);
