@@ -326,7 +326,9 @@ Doel: "waarom zit hij op het verkeerde netwerk?" is te beantwoorden zonder seri�
 > **Op hardware bevestigd op 2026-09-02**, nadat de storing van die avond was verholpen. Edwin
 > voerde `OETELX` in als tweede netwerk; het ging naar slot 1 — het eerste lege — precies zoals
 > het portaal vooraf zei. Zie de achtste ronde in `docs/REVIEW.md`. Het apparaat onthoudt nu
-> twee netwerken.
+> twee netwerken, en het statusscherm toont `Wifi OETELX (2 van 2)` — door Edwin gelezen van
+> het scherm zelf. Daarmee is voldaan aan "klaar als": iemand voor het apparaat kan zien welk
+> van de netwerken het gebruikt.
 
 ### Fase 4 — Een slot wissen, later
 

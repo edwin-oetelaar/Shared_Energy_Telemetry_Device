@@ -1345,6 +1345,10 @@ apparaat onthoudt nu twee netwerken. De eerste poging op `OETELX` gaf nog `reaso
 poging 500 ms later kreeg een adres; dat is de radio die net uit AP-modus komt, en het schema
 ving het op zonder dat iemand iets merkte.
 
+Het statusscherm toonde daarna `Wifi OETELX (2 van 2)`, van het scherm zelf gelezen. Dat is het
+laatste stuk van fase 3: welk van de onthouden netwerken in gebruik is, staat nu op het
+apparaat en niet alleen in een seriële log.
+
 ### Vijfde ronde: het merkteken "voorbeeld"
 
 **Board:** ESP32-S3-BOX-3 · 16 MB flash · 16 MB octal PSRAM
