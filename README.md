@@ -81,9 +81,17 @@ Bladeren gaat door zeven beelden: het statusscherm, de About-pagina, de Energy O
 vier energietoestanden. Na vijftien seconden zonder aanraking volgt het apparaat de telemetrie
 weer.
 
-Een beeld waar iemand naartoe gebladerd is en dat niet de actuele toestand is, krijgt
-linksboven het merkteken **voorbeeld**. Zonder dat merkteken is een gekozen beeld niet van
-een meting te onderscheiden.
+Zonder merkteken is een gebladerd beeld niet van een meting te onderscheiden. Het merkteken
+**voorbeeld** linksboven zegt daarom precies één ding: wat u ziet is niet wat het apparaat nu
+meet. Alleen beelden die een meting beweren kunnen het dragen.
+
+| Beeld | Merkteken linksboven |
+| --- | --- |
+| Energie over, Energie inkopen, In balans, Geen gegevens | **voorbeeld**, zolang het niet de actuele toestand is |
+| Statusscherm, About-pagina, Energy Owl | nooit — die gaan over het apparaat zelf en kloppen altijd |
+
+Het merkteken volgt de telemetrie. Wie op "Energie over" blijft staan terwijl de gemeenschap
+overgaat op inkopen, ziet het merkteken alsnog verschijnen.
 
 ### Het statusscherm
 

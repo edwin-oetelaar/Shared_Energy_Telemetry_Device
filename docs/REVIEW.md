@@ -814,6 +814,19 @@ ingevoerd. Dat maakt hem niet minder echt: het apparaat toonde iets dat niet gem
 > **Opgelost.** Elk beeld dat niet de actuele toestand is, krijgt linksboven een merkteken
 > "voorbeeld". Het statusscherm is uitgezonderd, want dat gaat over het apparaat zelf en is
 > nooit een meting.
+>
+> **Bijgesteld op 2026-09-02.** De uitzondering stond als `state != STATUS_VIEW_REPORT` in de
+> bladerfunctie, en noemde dus één beeld bij naam. De About-pagina kreeg daardoor "voorbeeld"
+> in de hoek terwijl er niets aan die pagina een voorbeeld is: hij zegt wie dit gemaakt heeft
+> en welke versie draait, en dat klopt wanneer u ook kijkt. De regel zit nu als kolom
+> `reading` in de tabel `s_view`, naast de kleur en het label van elk beeld. Wie wil weten of
+> een beeld het merkteken kan dragen, leest die kolom; er is geen tweede plek die meebeslist.
+> Alleen de vier energiebeelden staan op `true`. Twee gevolgen naast de gevraagde correctie:
+> de Energy Owl draagt het merkteken niet meer (een logo beweert geen meting), en het
+> merkteken volgt nu de telemetrie — wie op "Energie over" blijft staan terwijl de
+> gemeenschap overgaat op inkopen, ziet het merkteken alsnog verschijnen. Dat laatste was een
+> gat in de oorspronkelijke fix. Gecompileerd voor de ESP32-S3 met ESP-IDF v6.1; nog niet op
+> hardware bevestigd.
 
 ### M9 — De ESP-IDF-versie ligt nergens vast
 `sdkconfig` (t/m commit 08908ec), `.github/workflows/ci.yml`
