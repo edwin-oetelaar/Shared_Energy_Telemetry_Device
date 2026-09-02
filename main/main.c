@@ -148,6 +148,13 @@ static status_view_state_t s_state_to_show(void)
         return STATUS_VIEW_STARTING;
     }
 
+    //  A refused password is not the same as a network that is slow or away.
+    //  One of them ends by waiting, the other only ends when somebody types
+    //  something, and the screen is where they find that out.
+    if (wifi_state == WIFI_PROV_STATE_REJECTED) {
+        return STATUS_VIEW_WIFI_REJECTED;
+    }
+
     if (wifi_state == WIFI_PROV_STATE_CONNECT_FAILED) {
         return STATUS_VIEW_CONNECT_FAILED;
     }

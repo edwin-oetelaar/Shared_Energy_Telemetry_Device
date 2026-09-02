@@ -23,6 +23,11 @@
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 
+//  Separate from WIFI_FAIL_BIT on purpose. "The fast attempts are used up" and
+//  "this password is wrong" call for different answers: the first is worth
+//  waiting out, the second needs somebody to type something.
+#define WIFI_REJECTED_BIT  BIT2
+
 //  How long the device waits for somebody to finish provisioning before it
 //  restarts and tries the stored network again. Without this the wait is
 //  unbounded: a device whose API was briefly unreachable would sit on its
@@ -76,6 +81,7 @@ typedef enum {
     LINK_CONNECTING,    //  Trying, or waiting out a backoff step
     LINK_CONNECTED,     //  On a network, with an address
     LINK_FAILED,        //  Still trying, but the fast attempts are used up
+    LINK_REJECTED,      //  The network refused this password
     LINK_STATE_COUNT
 } link_state_t;
 
@@ -84,6 +90,7 @@ typedef enum {
     LINK_EV_GOT_IP,         //  The network gave us an address
     LINK_EV_LOST,           //  The connection dropped; another try is planned
     LINK_EV_GAVE_UP,        //  The schedule has reached its slow tail
+    LINK_EV_REFUSED,        //  The password was refused, not merely unlucky
     LINK_EV_COUNT
 } link_event_t;
 
@@ -107,11 +114,14 @@ typedef enum {
 //  so no event can leave a machine somewhere undefined.
 
 static const link_state_t s_link_next [LINK_STATE_COUNT][LINK_EV_COUNT] = {
-    /*                     CONNECT          GOT_IP          LOST             GAVE_UP      */
-    [LINK_IDLE]       = { LINK_CONNECTING, LINK_CONNECTED, LINK_IDLE,       LINK_IDLE    },
-    [LINK_CONNECTING] = { LINK_CONNECTING, LINK_CONNECTED, LINK_CONNECTING, LINK_FAILED  },
-    [LINK_CONNECTED]  = { LINK_CONNECTING, LINK_CONNECTED, LINK_CONNECTING, LINK_FAILED  },
-    [LINK_FAILED]     = { LINK_CONNECTING, LINK_CONNECTED, LINK_FAILED,     LINK_FAILED  }
+    /*                     CONNECT          GOT_IP          LOST             GAVE_UP         REFUSED       */
+    [LINK_IDLE]       = { LINK_CONNECTING, LINK_CONNECTED, LINK_IDLE,       LINK_IDLE,      LINK_REJECTED },
+    [LINK_CONNECTING] = { LINK_CONNECTING, LINK_CONNECTED, LINK_CONNECTING, LINK_FAILED,    LINK_REJECTED },
+    [LINK_CONNECTED]  = { LINK_CONNECTING, LINK_CONNECTED, LINK_CONNECTING, LINK_FAILED,    LINK_REJECTED },
+    [LINK_FAILED]     = { LINK_CONNECTING, LINK_CONNECTED, LINK_FAILED,     LINK_FAILED,    LINK_REJECTED },
+    //  Only new credentials, or the password working after all, get out of
+    //  here. Another timeout on the same password changes nothing.
+    [LINK_REJECTED]   = { LINK_CONNECTING, LINK_CONNECTED, LINK_REJECTED,   LINK_REJECTED,  LINK_REJECTED }
 };
 
 static const portal_state_t s_portal_next [PORTAL_STATE_COUNT][PORTAL_EV_COUNT] = {
@@ -121,9 +131,11 @@ static const portal_state_t s_portal_next [PORTAL_STATE_COUNT][PORTAL_EV_COUNT] 
     [PORTAL_CLOSING] = { PORTAL_CLOSING, PORTAL_CLOSING,  PORTAL_CLOSING,  PORTAL_CLOSED,  PORTAL_CLOSED }
 };
 
-static const char *s_link_name [LINK_STATE_COUNT] = { "idle", "connecting", "connected", "failed" };
+static const char *s_link_name [LINK_STATE_COUNT] =
+    { "idle", "connecting", "connected", "failed", "rejected" };
 static const char *s_portal_name [PORTAL_STATE_COUNT] = { "closed", "open", "closing" };
-static const char *s_link_event_name [LINK_EV_COUNT] = { "connect", "got-ip", "lost", "gave-up" };
+static const char *s_link_event_name [LINK_EV_COUNT] =
+    { "connect", "got-ip", "lost", "gave-up", "refused" };
 static const char *s_portal_event_name [PORTAL_EV_COUNT] =
     { "open", "accepted", "done", "silent", "grace-over" };
 
@@ -232,6 +244,58 @@ static const retry_step_t s_retry_schedule [] = {
 
 #define RETRY_SCHEDULE_ROWS  (sizeof (s_retry_schedule) / sizeof (s_retry_schedule [0]))
 
+//  --------------------------------------------------------------------------
+//  What a disconnect means for the credentials we are holding. The radio hands
+//  us a number; this table turns it into one of three answers, and the answer
+//  decides what happens next. Anything not named here is TEMPORARY, which is
+//  the safe default: keep trying.
+//
+//  The numbers come from wifi_err_reason_t in esp_wifi_types_generic.h and are
+//  used by name, so a renumbering in a future ESP-IDF cannot silently point a
+//  row at the wrong meaning.
+//
+//  WIFI_REASON_AUTH_EXPIRE (2) is deliberately NOT rejection, although it shows
+//  up in the log of M10 right after a refused handshake. It also happens on a
+//  weak link with the right password, and calling a good network wrong is the
+//  worse mistake of the two: it puts the device in front of somebody who has to
+//  type. After this change the refused handshake stops the cycle before a
+//  reason 2 ever follows.
+
+typedef enum {
+    DISCONNECT_TEMPORARY = 0,   //  Bad moment, bad luck; try again
+    DISCONNECT_ABSENT,          //  This network is not within reach
+    DISCONNECT_REJECTED         //  These credentials will not work here
+} disconnect_meaning_t;
+
+static const struct {
+    uint8_t reason;
+    disconnect_meaning_t meaning;
+    const char *what;
+} s_disconnect_meaning [] = {
+    { WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT, DISCONNECT_REJECTED,  "the password is wrong" },
+    { WIFI_REASON_HANDSHAKE_TIMEOUT,      DISCONNECT_REJECTED,  "the handshake was refused" },
+    { WIFI_REASON_AUTH_FAIL,              DISCONNECT_REJECTED,  "the network refused our key" },
+    { WIFI_REASON_NO_AP_FOUND,            DISCONNECT_ABSENT,    "the network is not here" }
+};
+
+#define DISCONNECT_MEANING_ROWS \
+    (sizeof (s_disconnect_meaning) / sizeof (s_disconnect_meaning [0]))
+
+static disconnect_meaning_t s_meaning_of(uint8_t reason, const char **what)
+{
+    for (size_t row = 0; row < DISCONNECT_MEANING_ROWS; row++) {
+        if (s_disconnect_meaning [row].reason == reason) {
+            *what = s_disconnect_meaning [row].what;
+            return s_disconnect_meaning [row].meaning;
+        }
+    }
+
+    *what = "reason unknown to us";
+
+    return DISCONNECT_TEMPORARY;
+}
+
+
 static esp_timer_handle_t s_retry_timer = NULL;
 static size_t s_retry_row = 0;
 
@@ -299,6 +363,31 @@ static void
         esp_timer_stop (s_retry_timer);
 }
 
+
+//  --------------------------------------------------------------------------
+//  The network told us the key is wrong. Retrying it quickly cannot work: only
+//  new credentials can, and those come through the portal. So the schedule
+//  jumps straight to its last row instead of climbing through the fast ones,
+//  which leaves the radio free for whoever is standing in the portal - the
+//  second complaint in M10.
+//
+//  Not "never again", though. A handshake can time out on a very poor link
+//  with the right password, and a device that stops trying altogether is
+//  exactly the failure C2 was about. The last row is a five minute heartbeat:
+//  quiet enough to stay out of the way, patient enough to heal by itself.
+
+static void
+    s_refuse_credentials (const char *what)
+{
+    ESP_LOGW (TAG, "The network refused these credentials: %s", what);
+
+    link_handle (LINK_EV_REFUSED);
+    xEventGroupSetBits (s_wifi_event_group, WIFI_REJECTED_BIT);
+
+    s_retry_row = RETRY_SCHEDULE_ROWS - 1;
+    s_schedule_retry ();
+}
+
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     (void) arg;
@@ -310,16 +399,26 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
     else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t *disc = (wifi_event_sta_disconnected_t *)event_data;
 
-        ESP_LOGW(TAG, "STA disconnected, reason=%d", disc->reason);
+        const char *what = NULL;
+        disconnect_meaning_t meaning = s_meaning_of ((uint8_t) disc->reason, &what);
+
+        ESP_LOGW(TAG, "STA disconnected, reason=%d: %s", disc->reason, what);
 
         xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
 
         //  Only chase a network we have credentials for. Without an SSID the
         //  device is waiting to be provisioned, not for the router to return.
-        if (current_ssid [0] != '\0')
-            s_schedule_retry ();
-        else
+        if (current_ssid [0] == '\0')
             link_handle (LINK_EV_LOST);
+        else
+        if (meaning == DISCONNECT_REJECTED)
+            s_refuse_credentials (what);
+        else
+            //  Temporary, and for now a network that is out of reach as well:
+            //  with one slot in use there is nothing else to try. Phase 2 of
+            //  docs/PLAN-wifi-slots.md gives DISCONNECT_ABSENT its own answer,
+            //  which is to move to the next slot rather than to wait.
+            s_schedule_retry ();
     }
 
     else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_START) {
@@ -404,6 +503,20 @@ esp_err_t wifi_prov_init(void)
     };
 
     ESP_ERROR_CHECK(esp_timer_create(&retry_timer_args, &s_retry_timer));
+
+    //  Say what mode we are in instead of inheriting it. With
+    //  CONFIG_ESP_WIFI_NVS_ENABLED the driver keeps the mode and the access
+    //  point configuration in its own NVS namespace, so without this line the
+    //  device comes up in whatever mode it was left in. On any device whose
+    //  portal has ever been open that means an open access point at every
+    //  boot, brought up by the driver rather than by us - visible in the log
+    //  as "Provisioning AP started" without our own "Starting provisioning AP"
+    //  in front of it.
+    //
+    //  Station only is the resting state. wifi_prov_start_ap () switches to
+    //  AP+station when somebody asks for the portal, and closing it comes back
+    //  here.
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
 
     ESP_ERROR_CHECK(esp_wifi_start());
 
@@ -606,7 +719,8 @@ esp_err_t wifi_prov_connect(const char *ssid, const char *password)
     s_reset_retry_schedule ();
     link_handle(LINK_EV_CONNECT);
 
-    xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
+    xEventGroupClearBits(s_wifi_event_group,
+                         WIFI_CONNECTED_BIT | WIFI_FAIL_BIT | WIFI_REJECTED_BIT);
 
     ESP_LOGI(TAG, "Connecting to SSID: %s", ssid);
 
@@ -640,6 +754,7 @@ wifi_prov_state_t wifi_prov_get_state(void)
         case LINK_CONNECTED:  return WIFI_PROV_STATE_CONNECTED;
         case LINK_CONNECTING: return WIFI_PROV_STATE_CONNECTING;
         case LINK_FAILED:     return WIFI_PROV_STATE_CONNECT_FAILED;
+        case LINK_REJECTED:   return WIFI_PROV_STATE_REJECTED;
         default:              return WIFI_PROV_STATE_IDLE;
     }
 }
@@ -762,13 +877,17 @@ void wifi_prov_wait_until_completed(void)
     wifi_prov_close_portal();
 }
 
+//  Waits for the connection, and stops waiting early once the network has
+//  refused the password. Sitting out the full timeout for credentials that
+//  cannot work only delays the portal, which is the one thing that can help.
+
 bool wifi_prov_wait_for_connection_timeout(TickType_t timeout)
 {
     EventBits_t bits = xEventGroupWaitBits(
         s_wifi_event_group,
-        WIFI_CONNECTED_BIT,
+        WIFI_CONNECTED_BIT | WIFI_REJECTED_BIT,
         pdFALSE,
-        pdTRUE,
+        pdFALSE,        //  Either bit ends the wait, not both
         timeout
     );
 

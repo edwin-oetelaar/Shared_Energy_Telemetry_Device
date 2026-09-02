@@ -25,6 +25,7 @@ typedef enum {
     STATUS_VIEW_PROVISIONING,   //  Waiting for someone to fill in the portal
     STATUS_VIEW_CONNECTING,     //  Credentials known, network not up
     STATUS_VIEW_CONNECT_FAILED, //  The network refused us, or is not there yet
+    STATUS_VIEW_WIFI_REJECTED,  //  The network refused the password we hold
     STATUS_VIEW_SURPLUS,        //  The community has energy to share
     STATUS_VIEW_DEFICIT,        //  The community has to buy energy
     STATUS_VIEW_BALANCED,       //  Supply and demand match

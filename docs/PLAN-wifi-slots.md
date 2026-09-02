@@ -211,6 +211,21 @@ Doel: een fout wachtwoord wordt niet eindeloos herhaald.
 minuten, en het portaal open blijft staan voor een tweede kans. Vink **M10** af in
 `docs/REVIEW.md`.
 
+> **Uitgevoerd op 2026-09-02.** De afwijsreden gaat door een tabel met drie betekenissen, en
+> de toestandsmachine van de verbinding heeft er een vijfde toestand `rejected` bij. Een fout
+> wachtwoord kost nu één poging in plaats van een reeks die oploopt tot een uur, het portaal
+> opent na 6,2 s in plaats van 32 s, en het scherm zegt "Wachtwoord klopt niet" in plaats van
+> "Geen verbinding". Zie de zesde ronde in `docs/REVIEW.md`.
+>
+> `DISCONNECT_ABSENT` — het netwerk is er niet — deelt voorlopig de gewone backoff, want met
+> één slot in gebruik is er niets anders om te proberen. Fase 2 geeft die betekenis zijn eigen
+> antwoord.
+>
+> **Onderweg gevonden:** `wifi_prov_init()` zette de wifi-modus nooit, waardoor het apparaat
+> opstartte in de modus die de driver in zijn eigen NVS had onthouden. Op elk bord waarvan het
+> portaal ooit open had gestaan, kwam het open accesspoint dus bij elke start omhoog. Dat is
+> bevinding **H11** en is in dezelfde beurt opgelost.
+
 ### Fase 2 — Kiezen op basis van een scan
 
 Doel: het apparaat vindt zelf het netwerk waar het staat.

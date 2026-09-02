@@ -12,6 +12,7 @@ typedef enum {
     WIFI_PROV_STATE_CONNECTING,
     WIFI_PROV_STATE_CONNECTED,
     WIFI_PROV_STATE_CONNECT_FAILED,
+    WIFI_PROV_STATE_REJECTED,       //  The network refused the password
 } wifi_prov_state_t;
 
 esp_err_t wifi_prov_init(void);

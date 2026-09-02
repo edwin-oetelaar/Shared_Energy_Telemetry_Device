@@ -72,6 +72,8 @@ static const struct {
                                    "Verbinden",         PAINT_COLOUR, 0x334A55 },
     [STATUS_VIEW_CONNECT_FAILED] = { "connect-failed", "the network refused us or is absent",
                                    "Geen verbinding",   PAINT_COLOUR, 0x8A3A2A },
+    [STATUS_VIEW_WIFI_REJECTED] = { "wifi-rejected", "the network refused the stored password",
+                                   "Wachtwoord klopt niet", PAINT_COLOUR, 0x8A3A2A },
     [STATUS_VIEW_SURPLUS]      = { "surplus",      "energy available to share",
                                    "Energie over",      PAINT_COLOUR, 0x1F9E4B, .reading = true },
     [STATUS_VIEW_DEFICIT]      = { "deficit",      "energy has to be bought",
@@ -276,6 +278,7 @@ static const char *s_detail_for(status_view_state_t state)
 
         case STATUS_VIEW_CONNECTING:
         case STATUS_VIEW_CONNECT_FAILED:
+        case STATUS_VIEW_WIFI_REJECTED:
             if (wifi_prov_current_ssid() [0] == '\0') {
                 return NULL;
             }

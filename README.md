@@ -203,6 +203,15 @@ Het apparaat geeft nooit op. Het probeert het opnieuw volgens vaste schema's.
 toont het scherm **Geen verbinding**. Het schema is de tabel `s_retry_schedule` in
 `main/src/wifi_provisioning.c`.
 
+**Wachtwoord fout.** Het netwerk kan een wachtwoord weigeren, en dan helpt opnieuw proberen
+niet — alleen een nieuw wachtwoord helpt. Het apparaat herkent dat aan de reden die de router
+teruggeeft, toont **Wachtwoord klopt niet** en opent binnen enkele seconden het portaal in
+plaats van de hele reeks hierboven af te lopen.
+
+Het blijft het daarnaast elke 5 minuten stil proberen. Een handshake kan namelijk ook op een
+slechte verbinding aflopen terwijl het wachtwoord klopt, en een apparaat dat helemaal stopt
+komt zonder hulp niet meer terug.
+
 **API onbereikbaar.** Een mislukte token- of telemetrieaanvraag stopt de firmware niet. Het
 apparaat toont **Geen gegevens** en probeert het opnieuw. De wachttijd loopt op: 10 s, 20 s,
 40 s, 80 s, 160 s en daarna elke 5 minuten. Het schema is de tabel `s_api_retry_delay_ms` in
