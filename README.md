@@ -215,6 +215,11 @@ Het portaal zegt vooraf welke dat is.
 Het statusscherm zet achter het netwerk welk van de drie het is, bijvoorbeeld `(2 van 3)`. Bij
 één opgeslagen netwerk staat dat er niet.
 
+Een netwerk waar u nooit meer komt, kunt u in het portaal vergeten met de knop **Forget**
+ernaast. De rest blijft staan. Het netwerk dat op dat moment in gebruik is mag ook weg; het
+portaal waarschuwt dan dat de verbinding blijft staan tot het apparaat herstart, en daarna niet
+meer terugkomt.
+
 **Wachtwoord fout.** Het netwerk kan een wachtwoord weigeren, en dan helpt opnieuw proberen
 niet — alleen een nieuw wachtwoord helpt. Het apparaat herkent dat aan de reden die de router
 teruggeeft, toont **Wachtwoord klopt niet** en opent binnen enkele seconden het portaal in

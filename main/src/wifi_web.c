@@ -85,16 +85,8 @@ static esp_err_t favicon_get_handler(httpd_req_t *req)
     return httpd_resp_send(req, NULL, 0);
 }
 
-static esp_err_t root_get_handler(httpd_req_t *req)
+static esp_err_t s_send_wifi_page(httpd_req_t *req)
 {
-    wifi_prov_note_portal_activity();
-
-    if (wifi_prov_is_connected()) {
-        httpd_resp_set_status(req, "303 See Other");
-        httpd_resp_set_hdr(req, "Location", "/api-setup");
-        return httpd_resp_send(req, "Redirecting to API setup", HTTPD_RESP_USE_STRLEN);
-    }
-
     const char *html =
         "<!DOCTYPE html>"
         "<html>"
@@ -114,6 +106,11 @@ static esp_err_t root_get_handler(httpd_req_t *req)
         "#status{margin-top:18px;font-weight:bold;}"
         ".slots{margin-top:12px;padding:12px;background:#eef1f4;border-radius:10px;"
         "font-size:14px;line-height:1.4;}"
+        ".slots .row{display:flex;align-items:center;gap:8px;margin-top:6px;}"
+        ".slots .row span{flex:1;}"
+        ".slots .use{color:#1f7a3d;font-weight:bold;}"
+        ".slots button{width:auto;margin-top:0;padding:6px 12px;font-size:13px;"
+        "background:#8a3a2a;border-radius:8px;}"
         "</style>"
         "</head>"
         "<body>"
@@ -155,7 +152,11 @@ static esp_err_t root_get_handler(httpd_req_t *req)
         "}"
         ""
 
-        //  The device decides where a network goes; this only shows the answer.
+        //  The device decides where a network goes and what it remembers; this
+        //  only shows the answers. Every network name goes in through
+        //  textContent and never through innerHTML: an SSID is chosen by
+        //  whoever owns the access point, and one with a tag in it must not be
+        //  able to write this page.
         "async function slots(){"
         " const sel=document.getElementById('ssid');"
         " const box=document.getElementById('slots');"
@@ -164,14 +165,53 @@ static esp_err_t root_get_handler(httpd_req_t *req)
         "  const r=await fetch('/networks'+q);"
         "  const d=await r.json();"
         "  const named=d.stored.filter(s=>s.length>0);"
-        "  let t=named.length?('This device remembers '+named.length+' of '+d.stored.length"
-        "   +' networks: '+named.join(', ')+'.')"
+        "  box.textContent='';"
+        "  const head=document.createElement('div');"
+        "  head.textContent=named.length"
+        "   ?('This device remembers '+named.length+' of '+d.stored.length+' networks:')"
         "   :'This device remembers no networks yet.';"
+        "  box.appendChild(head);"
+        "  d.stored.forEach((s,i)=>{"
+        "   if(!s)return;"
+        "   const row=document.createElement('div');"
+        "   row.className='row';"
+        "   const name=document.createElement('span');"
+        "   name.textContent=s;"
+        "   row.appendChild(name);"
+        "   if(i===d.in_use){"
+        "    const now=document.createElement('span');"
+        "    now.className='use';"
+        "    now.textContent='in use now';"
+        "    row.appendChild(now);"
+        "   }"
+        "   const btn=document.createElement('button');"
+        "   btn.type='button';"
+        "   btn.textContent='Forget';"
+        "   btn.onclick=()=>forget(s,i===d.in_use);"
+        "   row.appendChild(btn);"
+        "   box.appendChild(row);"
+        "  });"
         "  if(d.why!==undefined){"
-        "   t+=' What you enter now goes in place '+(d.target+1)+' ('+d.why+').';"
+        "   const note=document.createElement('div');"
+        "   note.textContent='What you enter now goes in place '+(d.target+1)+' ('+d.why+').';"
+        "   box.appendChild(note);"
         "  }"
-        "  box.textContent=t;"
         " }catch(e){box.textContent='';}"
+        "}"
+        ""
+
+        "async function forget(ssid,inUse){"
+        " let ask='Forget '+ssid+'?';"
+        " if(inUse){ask+=String.fromCharCode(10,10)"
+        "  +'The device is using this network right now. It stays connected until it restarts,'"
+        "  +' and after that it will not come back to this one.';}"
+        " if(!confirm(ask))return;"
+        " await fetch('/forget',{"
+        "  method:'POST',"
+        "  headers:{'Content-Type':'application/x-www-form-urlencoded'},"
+        "  body:'ssid='+encodeURIComponent(ssid)"
+        " });"
+        " slots();"
         "}"
         ""
         "async function connectWifi(){"
@@ -209,6 +249,37 @@ static esp_err_t root_get_handler(httpd_req_t *req)
     return httpd_resp_send(req, html, HTTPD_RESP_USE_STRLEN);
 }
 
+
+//  --------------------------------------------------------------------------
+//  Somebody who arrives at the door and has no network yet is taken through
+//  the steps in order, and the second step is where they should end up once
+//  the first one is done. Somebody who opened the portal on purpose from the
+//  device's own screen has usually come for the networks, and the device is
+//  online, so the redirect would send them straight past the page they came
+//  for. Hence /wifi, which always shows it, linked from the API page.
+
+static esp_err_t root_get_handler(httpd_req_t *req)
+{
+    wifi_prov_note_portal_activity();
+
+    if (wifi_prov_is_connected()) {
+        httpd_resp_set_status(req, "303 See Other");
+        httpd_resp_set_hdr(req, "Location", "/api-setup");
+        return httpd_resp_send(req, "Redirecting to API setup", HTTPD_RESP_USE_STRLEN);
+    }
+
+    return s_send_wifi_page(req);
+}
+
+
+static esp_err_t wifi_get_handler(httpd_req_t *req)
+{
+    wifi_prov_note_portal_activity();
+
+    return s_send_wifi_page(req);
+}
+
+
 static esp_err_t api_setup_get_handler(httpd_req_t *req)
 {
     wifi_prov_note_portal_activity();
@@ -236,6 +307,11 @@ static esp_err_t api_setup_get_handler(httpd_req_t *req)
         "#status{margin-top:18px;font-weight:bold;}"
         ".slots{margin-top:12px;padding:12px;background:#eef1f4;border-radius:10px;"
         "font-size:14px;line-height:1.4;}"
+        ".slots .row{display:flex;align-items:center;gap:8px;margin-top:6px;}"
+        ".slots .row span{flex:1;}"
+        ".slots .use{color:#1f7a3d;font-weight:bold;}"
+        ".slots button{width:auto;margin-top:0;padding:6px 12px;font-size:13px;"
+        "background:#8a3a2a;border-radius:8px;}"
         "</style></head><body>"
         "<div class='card'>"
         "<h1>SETD API Setup</h1>"
@@ -256,6 +332,7 @@ static esp_err_t api_setup_get_handler(httpd_req_t *req)
     //  decides what the button means when the fields are left empty.
     const char *html_body =
         "</div>"
+        "<p><a href='/wifi'>Networks this device remembers</a></p>"
         "</div>"
 
         "<script>"
@@ -415,6 +492,7 @@ static esp_err_t networks_get_handler(httpd_req_t *req)
     }
 
     cJSON_AddItemToObject(root, "stored", stored);
+    cJSON_AddNumberToObject(root, "in_use", (double) wifi_prov_current_slot());
 
     //  ?ssid=... asks where that network would go. The name arrives
     //  percent-encoded, like every other field the portal sends.
@@ -446,6 +524,50 @@ static esp_err_t networks_get_handler(httpd_req_t *req)
     cJSON_free(text);
 
     return err;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Forget one remembered network. Named by its ssid rather than by a slot
+//  number: the number on a page that was drawn a minute ago can point at
+//  something else by the time somebody presses the button, and a wrong number
+//  here wipes the wrong network.
+
+static esp_err_t forget_post_handler(httpd_req_t *req)
+{
+    wifi_prov_note_portal_activity();
+
+    char body [WIFI_BODY_MAX] = {0};
+    char ssid [WIFI_FIELD_SSID_MAX] = {0};
+
+    if (s_receive_body(req, body, sizeof(body)) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Could not read the form data");
+        return ESP_FAIL;
+    }
+
+    if (httpd_query_key_value(body, "ssid", ssid, sizeof(ssid)) != ESP_OK
+    ||  !uri_decode(ssid)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing or malformed ssid");
+        return ESP_FAIL;
+    }
+
+    esp_err_t err = wifi_prov_forget(ssid);
+
+    if (err == ESP_ERR_NOT_FOUND) {
+        //  Not a fault. The page may be showing a list that has since changed,
+        //  and the outcome the person wanted - this network is not stored - is
+        //  the outcome they have.
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_sendstr(req, "{\"ok\":true,\"known\":false}");
+    }
+
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Could not forget it");
+        return err;
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req, "{\"ok\":true,\"known\":true}");
 }
 
 
@@ -775,6 +897,20 @@ esp_err_t wifi_web_start(void)
         .user_ctx = NULL,
     };
 
+    httpd_uri_t wifi_uri = {
+        .uri = "/wifi",
+        .method = HTTP_GET,
+        .handler = wifi_get_handler,
+        .user_ctx = NULL
+    };
+
+    httpd_uri_t forget_uri = {
+        .uri = "/forget",
+        .method = HTTP_POST,
+        .handler = forget_post_handler,
+        .user_ctx = NULL
+    };
+
     httpd_uri_t networks_uri = {
         .uri = "/networks",
         .method = HTTP_GET,
@@ -848,6 +984,18 @@ esp_err_t wifi_web_start(void)
     err = httpd_register_uri_handler(s_server, &networks_uri);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to register networks URI handler: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    err = httpd_register_uri_handler(s_server, &forget_uri);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register forget URI handler: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    err = httpd_register_uri_handler(s_server, &wifi_uri);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register wifi URI handler: %s", esp_err_to_name(err));
         return err;
     }
 

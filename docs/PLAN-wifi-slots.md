@@ -330,12 +330,64 @@ Doel: "waarom zit hij op het verkeerde netwerk?" is te beantwoorden zonder seri�
 > het scherm zelf. Daarmee is voldaan aan "klaar als": iemand voor het apparaat kan zien welk
 > van de netwerken het gebruikt.
 
-### Fase 4 — Een slot wissen, later
+### Fase 4 — Een slot wissen
 
 Doel: een netwerk waar u nooit meer komt, kan weg zonder alles te wissen.
 
 Dit is bewust de laatste fase. Zonder deze knop is de ergste uitkomst dat een oud slot een
 keer wordt overschreven volgens besluit 3, en dat is geen ramp.
+
+1. Het portaal toont per onthouden netwerk een knop **Forget**, naast de lijst die fase 3 er al
+   zette.
+2. Een netwerk wordt aangewezen met zijn naam, niet met een slotnummer. Een nummer op een
+   pagina die een minuut geleden is getekend, kan intussen naar iets anders wijzen — en een
+   verkeerd nummer wist het verkeerde netwerk.
+3. Het netwerk dat op dit moment in gebruik is, mag ook weg. Het portaal zegt eerst wat dat
+   betekent: de verbinding blijft staan tot het apparaat herstart, en daarna komt het hier niet
+   op terug. Weigeren zou betekenen dat iemand die er speciaal voor is gaan staan het niet kan
+   opruimen.
+4. Wissen gaat door `wifi_prov_forget ()` en niet rechtstreeks naar de opslag, want
+   `wifi_provisioning` houdt een kopie van de slots plus twee antwoorden die eruit volgen: welk
+   slot in gebruik is en welk slot het laatst werkte. Een slot dat achter zijn rug om leeggaat,
+   laat het scherm een netwerk noemen dat er niet meer is.
+
+**Klaar als:** een netwerk uit het portaal verdwijnt, het apparaat het daarna niet meer
+probeert, en de rest blijft staan.
+
+> **Uitgevoerd op 2026-09-02.** Eindpunt `POST /forget`, een knop per netwerk in het portaal, en
+> `wifi_slots_find ()` met vijf host-tests — waaronder de lege naam, die anders een leeg slot
+> zou aanwijzen en dus het verkeerde netwerk zou wissen. `wifi_storage_clear_slot ()` wist nu
+> ook `last_ok` als dat naar het gewiste slot wees.
+>
+> De netwerknaam gaat in de pagina via `textContent` en nooit via `innerHTML`: een SSID wordt
+> gekozen door wie het accesspoint bezit, en één met een tag erin mag deze pagina niet kunnen
+> schrijven. Dat is dezelfde zorg als bij **M1**, nu aan de kant van de browser.
+>
+> **Op hardware bevestigd.** Edwin vergat `CreateLAB`, het netwerk dat niet meer bestond:
+>
+> ```
+> [141.52] wifi_prov:    portal: closed --open--> open
+> [161.76] wifi_prov:    Client connected to AP, AID=1
+> [184.81] wifi_storage: Cleared slot 0
+> [184.81] wifi_prov:    Forgot 'CreateLAB' from slot 0
+> ```
+>
+> Daarna drie starts achter elkaar, alle drie gelijk:
+>
+> ```
+> [2.01] 1 stored network, last success in slot 1
+> [2.01] Plan 1: slot 1 'OETELX', no scan was needed
+> [3.21] Got IP: 192.168.50.145
+> ```
+>
+> | | Twee netwerken | Eén netwerk |
+> | --- | --- | --- |
+> | Scan | ja, 2,4 s | nee |
+> | Tijd tot online | 5,6 s | **3,2 s** |
+>
+> Het gewiste slot was slot 0 en het overgebleven netwerk staat in slot 1. Dat het plan daar
+> gewoon `Plan 1: slot 1` van maakt, laat zien dat lege slots worden overgeslagen ongeacht hun
+> nummer — op de host getest bij fase 2, hier voor het eerst op een apparaat.
 
 ## 6. Risico's
 

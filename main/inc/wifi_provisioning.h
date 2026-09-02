@@ -27,6 +27,11 @@ esp_err_t wifi_prov_connect(const char *ssid, const char *password);
 //  the case for a device nobody has set up yet.
 esp_err_t wifi_prov_connect_stored(void);
 
+//  Forget one remembered network, named by its ssid. Returns ESP_ERR_NOT_FOUND
+//  when the device does not know it, which is an answer rather than a fault:
+//  the page may be showing a list that has since changed.
+esp_err_t wifi_prov_forget(const char *ssid);
+
 //  What the connection itself is doing, with an open portal left out of it.
 //  The screen wants wifi_prov_get_state (); the page inside the portal wants
 //  this one, because it is asking about the connection it just started.

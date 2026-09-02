@@ -56,6 +56,12 @@ typedef struct {
 //  Whether this slot holds a network.
 bool wifi_slots_is_empty (const wifi_slot_t *slot);
 
+//  Which slot holds this network, or -1 for none. Networks are named by their
+//  ssid everywhere a person can see them, so that is what the portal sends
+//  back when somebody asks to forget one - a slot number in a form is a number
+//  that can go stale between drawing the page and pressing the button.
+int wifi_slots_find (const wifi_slot_t *slots, const char *ssid);
+
 //  Put the slots worth trying in the order to try them, best first, and say
 //  how many there are. Empty slots are left out, so a device with one network
 //  gets a plan of one.
