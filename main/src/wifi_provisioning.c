@@ -826,7 +826,6 @@ static esp_err_t s_connect_to(const char *ssid, const char *password)
         snprintf((char *)sta_config.sta.password, sizeof(sta_config.sta.password), "%s", password);
     }
 
-    s_reset_retry_schedule ();
     link_handle(LINK_EV_CONNECT);
 
     xEventGroupClearBits(s_wifi_event_group,
@@ -861,6 +860,14 @@ esp_err_t wifi_prov_connect(const char *ssid, const char *password)
     s_in_round = false;
     s_slot_in_use = -1;
 
+    //  Here, and not in s_connect_to (): the schedule counts how patient the
+    //  device has been, and every network in a round is one attempt at the
+    //  same problem. Resetting it per network meant it could never climb, and
+    //  the device retried for ever every three seconds - which is the radio
+    //  taken away from whoever is standing in the portal, all over again.
+    //  New credentials are a genuinely new start, so this one does reset it.
+    s_reset_retry_schedule ();
+
     return s_connect_to(ssid, password);
 }
 
@@ -878,6 +885,14 @@ static void s_end_round(void)
     //  read. More patience cannot help with that: only somebody typing a
     //  password can. Say so, and step back to the quiet end of the schedule to
     //  leave the radio free for the portal.
+    //  Somebody is in the portal. They came to type a network, and the radio
+    //  is more use to them than to another attempt at one that is not working
+    //  - this is the second half of M10, in the shape phase 2 gave it.
+    if (s_portal != PORTAL_CLOSED) {
+        ESP_LOGI(TAG, "Portal is open; waiting quietly until it closes");
+        s_retry_row = RETRY_SCHEDULE_ROWS - 1;
+    }
+
     if (s_round_refused > 0 && !s_round_uncertain) {
         ESP_LOGW(TAG, "%u of %u stored networks refused our key%s",
                  (unsigned) s_round_refused, (unsigned) s_plan_count,

@@ -267,17 +267,19 @@ static void
 //  either refuses to start; the caller then does not wait for a portal that is
 //  not there, and the reconnect schedule keeps trying the saved network.
 
+//  Through the portal's own state machine, not around it. Bringing the access
+//  point and the web server up by hand did the same two things, but left the
+//  machine believing the portal was closed - so the screen said "no
+//  connection" instead of "Instellen" with the QR to join, the fifteen minute
+//  silence watchdog never ran, and nothing else that asks "is somebody in the
+//  portal?" could get a true answer.
+
 static bool start_provisioning_portal(void)
 {
-    esp_err_t err = wifi_prov_start_ap();
-    if (err != ESP_OK) {
-        s_log_if_failed("starting the provisioning access point", err);
-        return false;
-    }
+    esp_err_t err = wifi_prov_open_portal();
 
-    err = wifi_web_start();
     if (err != ESP_OK) {
-        s_log_if_failed("starting the provisioning portal", err);
+        s_log_if_failed("opening the provisioning portal", err);
         return false;
     }
 

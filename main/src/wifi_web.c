@@ -728,6 +728,14 @@ esp_err_t wifi_web_start(void)
     config.server_port = 80;
     config.stack_size = 16384;
 
+    //  The default is eight, and this portal serves nine addresses. The ninth
+    //  did not fail loudly at the door: the server started, the pages that had
+    //  registered worked, and only "done" and "api-check" were quietly
+    //  missing - so setup could be started but not finished. Counted out here
+    //  with room to spare, because the failure is invisible until somebody is
+    //  standing in front of it.
+    config.max_uri_handlers = 16;
+
     ESP_LOGI(TAG, "Starting HTTP server");
 
     esp_err_t err = httpd_start(&s_server, &config);
