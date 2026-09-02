@@ -4,6 +4,7 @@
 
 #include <assert.h>
 #include <inttypes.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "esp_system.h"
@@ -307,6 +308,62 @@ static wifi_prov_accepted_cb_t s_accepted_cb = NULL;
 static char current_ssid[33] = {0};
 static char current_password[65] = {0};
 
+/*  =========================================================================
+    Rounds
+
+    A round is one pass along the stored networks, best first. The order comes
+    from a scan, because "which of my networks am I standing in?" is one
+    question the radio can answer in two seconds - and answering it by trying
+    each network until one connects costs a timeout apiece.
+
+    Inside a round nothing waits: a network that is not here, or that refuses
+    the password, hands over to the next one at once. Waiting is what happens
+    between rounds, and that is the reconnect schedule doing its old job on
+    the round as a whole.
+
+    Phase 2 of docs/PLAN-wifi-slots.md.
+    =========================================================================
+*/
+
+//  Read once, in the task that starts the device, so that no timer or event
+//  handler has to go to NVS to find out what to try next.
+static wifi_slot_t s_slots [WIFI_SLOT_COUNT];
+static int s_last_ok = -1;
+
+static size_t s_plan [WIFI_SLOT_COUNT];
+static size_t s_plan_count = 0;
+static size_t s_plan_row = 0;
+static int s_slot_in_use = -1;
+
+//  False while the portal is driving: credentials typed by hand are tried as
+//  given, not planned around.
+static bool s_using_slots = false;
+
+//  True between the start of a round and its end. A failure means something
+//  different inside a round (try the next network) than outside one (the
+//  network we are on has dropped).
+static bool s_in_round = false;
+
+//  How this round went, and it is the mix that decides. A network that is not
+//  here says nothing about our passwords, so it neither counts for nor against
+//  the verdict. A failure we cannot read does count against it: concluding
+//  "your password is wrong" from a reason we do not understand would send
+//  somebody looking for a problem that is not there.
+static size_t s_round_refused = 0;
+static bool s_round_uncertain = false;
+
+//  The scan we asked for is ours, not the portal's "Refresh networks".
+static bool s_scan_for_plan = false;
+
+//  The next time the schedule fires, look around again instead of trying the
+//  same network. Set when a round ends, and when the fast attempts on a
+//  network we were connected to are used up.
+static bool s_replan_next = false;
+
+static void s_begin_round (void);
+static void s_try_next_in_round (void);
+static void s_plan_and_start_from_scan (void);
+
 //  --------------------------------------------------------------------------
 //  The backoff delay has passed, so ask Wi-Fi to try again. A refusal here is
 //  not fatal: the disconnect event that follows schedules the next attempt.
@@ -315,6 +372,13 @@ static void
     s_retry_timer_expired (void *argument)
 {
     (void) argument;
+
+    //  A round that came up empty, or a network whose fast attempts are used
+    //  up, deserves a fresh look: the device may be somewhere else now.
+    if (s_using_slots && s_replan_next) {
+        s_begin_round ();
+        return;
+    }
 
     esp_err_t rc = esp_wifi_connect ();
     if (rc != ESP_OK)
@@ -337,8 +401,13 @@ static void
         s_retry_row++;
 
     link_handle (step->event);
-    if (step->event == LINK_EV_GAVE_UP)
+    if (step->event == LINK_EV_GAVE_UP) {
         xEventGroupSetBits (s_wifi_event_group, WIFI_FAIL_BIT);
+
+        //  The fast attempts on this network are spent. Whatever comes next
+        //  starts with a scan, in case we are no longer where we were.
+        s_replan_next = true;
+    }
 
     ESP_LOGW (TAG, "Reconnecting in %" PRIu32 " ms", step->delay_ms);
 
@@ -411,14 +480,32 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         if (current_ssid [0] == '\0')
             link_handle (LINK_EV_LOST);
         else
+        if (s_in_round) {
+            //  Inside a round nothing waits. This network is not here, or will
+            //  not have us; the next one might, and it is a moment away rather
+            //  than the whole schedule.
+            if (meaning == DISCONNECT_REJECTED)
+                s_round_refused++;
+            else
+            if (meaning == DISCONNECT_TEMPORARY)
+                s_round_uncertain = true;
+
+            s_try_next_in_round ();
+        }
+        else
         if (meaning == DISCONNECT_REJECTED)
             s_refuse_credentials (what);
         else
-            //  Temporary, and for now a network that is out of reach as well:
-            //  with one slot in use there is nothing else to try. Phase 2 of
-            //  docs/PLAN-wifi-slots.md gives DISCONNECT_ABSENT its own answer,
-            //  which is to move to the next slot rather than to wait.
             s_schedule_retry ();
+    }
+
+    else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_SCAN_DONE) {
+        //  The portal scans too, for its list of networks. That one is somebody
+        //  else's answer; only take the one we asked for.
+        if (s_scan_for_plan) {
+            s_scan_for_plan = false;
+            s_plan_and_start_from_scan ();
+        }
     }
 
     else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_START) {
@@ -443,7 +530,17 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         s_reset_retry_schedule ();
         link_handle(LINK_EV_GOT_IP);
 
-        wifi_storage_save_credentials(current_ssid, current_password);
+        s_in_round = false;
+        s_replan_next = false;
+
+        if (s_slot_in_use >= 0) {
+            //  This slot worked. Raising it above the others is what makes
+            //  "the one that worked last time" answerable at the next start.
+            wifi_storage_note_success((size_t) s_slot_in_use);
+            s_last_ok = s_slot_in_use;
+        }
+        else
+            wifi_storage_save_credentials(current_ssid, current_password);
 
         
         xEventGroupClearBits(s_wifi_event_group, WIFI_FAIL_BIT);
@@ -702,7 +799,7 @@ esp_err_t wifi_prov_start_ap(void)
     return ESP_OK;
 }
 
-esp_err_t wifi_prov_connect(const char *ssid, const char *password)
+static esp_err_t s_connect_to(const char *ssid, const char *password)
 {
     if (ssid == NULL || ssid[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
@@ -738,6 +835,264 @@ esp_err_t wifi_prov_connect(const char *ssid, const char *password)
     }
 
     return esp_wifi_connect();
+}
+
+
+//  Credentials somebody typed. They are tried as given: no plan, no scan, no
+//  moving on to another network when they turn out to be wrong, because the
+//  person who typed them is standing there waiting to hear about it.
+
+esp_err_t wifi_prov_connect(const char *ssid, const char *password)
+{
+    s_using_slots = false;
+    s_in_round = false;
+    s_slot_in_use = -1;
+
+    return s_connect_to(ssid, password);
+}
+
+
+//  --------------------------------------------------------------------------
+//  Try the next network in this round's plan. When the plan runs out the round
+//  is over, and waiting begins.
+
+static void s_end_round(void)
+{
+    s_in_round = false;
+    s_replan_next = true;       //  Look around again before the next attempt
+
+    //  Something refused our key, and nothing failed in a way we could not
+    //  read. More patience cannot help with that: only somebody typing a
+    //  password can. Say so, and step back to the quiet end of the schedule to
+    //  leave the radio free for the portal.
+    if (s_round_refused > 0 && !s_round_uncertain) {
+        ESP_LOGW(TAG, "%u of %u stored networks refused our key%s",
+                 (unsigned) s_round_refused, (unsigned) s_plan_count,
+                 s_round_refused < s_plan_count ? "; the rest were not here" : "");
+
+        link_handle(LINK_EV_REFUSED);
+        xEventGroupSetBits(s_wifi_event_group, WIFI_REJECTED_BIT);
+        s_retry_row = RETRY_SCHEDULE_ROWS - 1;
+    }
+
+    s_schedule_retry();
+}
+
+
+static void s_try_next_in_round(void)
+{
+    if (s_plan_row >= s_plan_count) {
+        s_end_round();
+        return;
+    }
+
+    size_t slot = s_plan [s_plan_row++];
+
+    ESP_LOGI(TAG, "Round: slot %u, network %u of %u",
+             (unsigned) slot, (unsigned) s_plan_row, (unsigned) s_plan_count);
+
+    s_slot_in_use = (int) slot;
+
+    esp_err_t err = s_connect_to(s_slots [slot].ssid, s_slots [slot].password);
+
+    //  A refusal here is this network's turn wasted, not the round's. The
+    //  disconnect that would have moved us on is never going to arrive, so
+    //  move on from here.
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Could not start on slot %u: %s",
+                 (unsigned) slot, esp_err_to_name(err));
+        s_round_uncertain = true;
+        s_try_next_in_round();
+    }
+}
+
+
+//  Plan a round and start it. The plan comes from a scan when one is possible;
+//  without one it is every stored network in slot order, which is what the
+//  device did before it could scan.
+
+static void s_plan_and_start(const wifi_seen_t *seen, size_t seen_count)
+{
+    s_plan_count = wifi_slots_plan(s_slots, seen, seen_count, s_last_ok, s_plan);
+    s_plan_row = 0;
+    s_round_refused = 0;
+    s_round_uncertain = false;
+    s_in_round = true;
+
+    if (s_plan_count == 0) {
+        ESP_LOGW(TAG, "No stored networks to try");
+        s_in_round = false;
+        return;
+    }
+
+    s_try_next_in_round();
+}
+
+
+//  How many slots hold a network.
+
+static size_t s_filled_slots(void)
+{
+    size_t filled = 0;
+
+    for (size_t slot = 0; slot < WIFI_SLOT_COUNT; slot++) {
+        if (!wifi_slots_is_empty(&s_slots [slot])) {
+            filled++;
+        }
+    }
+
+    return filled;
+}
+
+
+//  What the radio saw, reduced to the little the planner needs: the networks
+//  that are ours. A block of flats can put fifty access points in a scan, and
+//  none of the other forty-seven change anything here. Keeping only ours also
+//  means a crowded place cannot push our network past the end of a buffer.
+//
+//  The records come off the heap. A scan can return dozens of them, and the
+//  event task's stack is not the place for that.
+
+#define SCAN_READ_MAX  40
+#define SEEN_MAX       (WIFI_SLOT_COUNT * 4)
+
+static bool s_is_one_of_ours(const char *ssid)
+{
+    for (size_t slot = 0; slot < WIFI_SLOT_COUNT; slot++) {
+        if (!wifi_slots_is_empty(&s_slots [slot])
+        &&  strcmp(s_slots [slot].ssid, ssid) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+
+static void s_plan_and_start_from_scan(void)
+{
+    uint16_t found = 0;
+
+    if (esp_wifi_scan_get_ap_num(&found) != ESP_OK || found == 0) {
+        ESP_LOGW(TAG, "The scan saw nothing; trying the networks in order");
+        esp_wifi_clear_ap_list();
+        s_plan_and_start(NULL, 0);
+        return;
+    }
+
+    uint16_t wanted = found > SCAN_READ_MAX ? SCAN_READ_MAX : found;
+    wifi_ap_record_t *records = calloc(wanted, sizeof(*records));
+
+    if (records == NULL) {
+        ESP_LOGW(TAG, "No room to read the scan; trying the networks in order");
+        esp_wifi_clear_ap_list();
+        s_plan_and_start(NULL, 0);
+        return;
+    }
+
+    //  Static rather than on the stack, for the same reason as the records.
+    static wifi_seen_t s_seen [SEEN_MAX];
+    size_t seen_count = 0;
+
+    if (esp_wifi_scan_get_ap_records(&wanted, records) == ESP_OK) {
+        for (uint16_t row = 0; row < wanted && seen_count < SEEN_MAX; row++) {
+            const char *ssid = (const char *) records [row].ssid;
+
+            if (!s_is_one_of_ours(ssid)) {
+                continue;
+            }
+
+            snprintf(s_seen [seen_count].ssid, sizeof(s_seen [seen_count].ssid),
+                     "%s", ssid);
+            s_seen [seen_count].rssi = records [row].rssi;
+            seen_count++;
+        }
+    }
+
+    free(records);
+
+    ESP_LOGI(TAG, "Scan saw %u network%s, %u of them ours",
+             (unsigned) found, found == 1 ? "" : "s", (unsigned) seen_count);
+
+    s_plan_and_start(s_seen, seen_count);
+}
+
+
+static void s_begin_round(void)
+{
+    s_replan_next = false;
+
+    //  With one network there is nothing to choose between, and a scan would
+    //  be two seconds of delay for an answer we already have. This is the
+    //  common case: most devices stand in one place and know one network.
+    if (s_filled_slots() <= 1) {
+        s_plan_and_start(NULL, 0);
+        return;
+    }
+
+    //  Not while somebody is standing in the portal: a scan takes the radio
+    //  away from the access point and drops their browser.
+    if (s_portal != PORTAL_CLOSED) {
+        ESP_LOGI(TAG, "Portal is open, planning without a scan");
+        s_plan_and_start(NULL, 0);
+        return;
+    }
+
+    wifi_scan_config_t scan_config = { .show_hidden = false };
+
+    //  Asked for, not waited for: the answer arrives as WIFI_EVENT_SCAN_DONE.
+    //  A blocking scan here would hold up the timer task, or the event task,
+    //  for as long as the radio takes to walk the channels.
+    esp_err_t err = esp_wifi_scan_start(&scan_config, false);
+
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Could not scan (%s); trying the networks in order",
+                 esp_err_to_name(err));
+        s_plan_and_start(NULL, 0);
+        return;
+    }
+
+    s_scan_for_plan = true;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Connect using what the device remembers. The slots are read here, in the
+//  task that starts the device, so that nothing further along has to.
+
+esp_err_t wifi_prov_connect_stored(void)
+{
+    esp_err_t err = wifi_storage_load_slots(s_slots);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    s_last_ok = wifi_storage_last_ok();
+
+    size_t filled = 0;
+
+    for (size_t slot = 0; slot < WIFI_SLOT_COUNT; slot++) {
+        if (!wifi_slots_is_empty(&s_slots [slot])) {
+            filled++;
+        }
+    }
+
+    if (filled == 0) {
+        return ESP_ERR_NOT_FOUND;   //  Nothing stored: this is a new device
+    }
+
+    ESP_LOGI(TAG, "%u stored network%s, last success in slot %d",
+             (unsigned) filled, filled == 1 ? "" : "s", s_last_ok);
+
+    s_using_slots = true;
+
+    xEventGroupClearBits(s_wifi_event_group,
+                         WIFI_CONNECTED_BIT | WIFI_FAIL_BIT | WIFI_REJECTED_BIT);
+
+    s_reset_retry_schedule();
+    s_begin_round();
+
+    return ESP_OK;
 }
 
 //  Derived, never stored. An open portal is what somebody standing in front of

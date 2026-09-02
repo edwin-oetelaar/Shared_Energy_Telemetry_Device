@@ -239,6 +239,50 @@ Doel: het apparaat vindt zelf het netwerk waar het staat.
 **Klaar als:** een apparaat met drie gevulde slots op elk van de drie locaties binnen een
 halve minuut online is, en een uitgezette hotspot geen vertraging kost.
 
+> **Uitgevoerd op 2026-09-02.** Een ronde is één gang langs de opgeslagen netwerken, op
+> volgorde van een scan. Binnen een ronde wacht niets: een netwerk dat er niet is of dat het
+> wachtwoord weigert, geeft meteen door aan het volgende. Wachten gebeurt tússen rondes, en
+> dat is de bestaande backoff-tabel die zijn oude werk doet op de ronde als geheel.
+>
+> Beproefd met drie slots, waarvan alleen slot 2 in de lucht was:
+>
+> ```
+> [ 2.01] wifi_prov: 3 stored networks, last success in slot -1
+> [ 4.42] wifi_prov: Scan saw 31 networks, 1 of them ours
+> [ 4.42] wifi_prov: Round: slot 2, network 1 of 3      <-- de scan zet slot 2 vooraan
+> [ 8.63] wifi_prov: STA disconnected, reason=15: the password is wrong
+> [ 8.63] wifi_prov: Round: slot 0, network 2 of 3
+> [11.03] wifi_prov: STA disconnected, reason=201: the network is not here
+> [11.03] wifi_prov: Round: slot 1, network 3 of 3
+> [13.44] wifi_prov: STA disconnected, reason=201: the network is not here
+> [13.44] wifi_prov: 1 of 3 stored networks refused our key; the rest were not here
+> [13.44] wifi_prov: Starting provisioning AP: SETD_Provisioning
+> ```
+>
+> Slot 2 stond vooraan omdat de scan het zag, niet omdat het slot 2 was. De hele ronde kostte
+> negen seconden.
+>
+> **Twee dingen anders dan het plan zei.**
+>
+> Ten eerste: met één gevuld slot wordt er **niet** gescand. Er valt dan niets te kiezen, en de
+> scan was twee seconden vertraging voor een antwoord dat we al hadden — gemeten: 6,2 s tot
+> online mét scan, 3,8 s zonder. Dat is het gewone geval: de meeste apparaten staan op één plek
+> en kennen één netwerk.
+>
+> Ten tweede: het oordeel aan het eind van een ronde weegt de mengeling. Een netwerk dat er
+> niet is, zegt niets over onze wachtwoorden en telt dus niet mee — niet vóór en niet tegen.
+> Zonder die nuance leverde één geweigerd wachtwoord tussen twee afwezige netwerken "Geen
+> verbinding" op, terwijl er wél iets te doen viel. Nu zegt het scherm "Wachtwoord klopt niet"
+> zodra er iets geweigerd heeft en niets op een manier faalde die we niet kunnen lezen.
+>
+> Van de scan worden alleen de netwerken bewaard die van ons zijn: op de werkbank leverde één
+> scan er 31 op, waarvan 1 de onze. Zo kan een druk flatgebouw ons netwerk niet voorbij het
+> einde van een buffer duwen.
+>
+> **Nog niet aangesloten:** het portaal schrijft nog altijd naar slot 0. De keuzeregels van
+> besluit 3 wachten op fase 3, en tot dan is slot 2 alleen met een gegenereerde NVS te vullen.
+> De README beschrijft daarom nog één netwerk, want meer kan een gebruiker nog niet instellen.
+
 ### Fase 3 — Zichtbaar maken wat het apparaat weet
 
 Doel: "waarom zit hij op het verkeerde netwerk?" is te beantwoorden zonder seriële kabel.

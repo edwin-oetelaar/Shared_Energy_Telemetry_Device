@@ -474,13 +474,12 @@ void app_main(void)
     );
     ESP_ERROR_CHECK(status_task_created == pdPASS ? ESP_OK : ESP_FAIL);
 
-    char ssid[33] = {0};
-    char password[65] = {0};
-
     bool wifi_provisioning_started = false;
 
-    if (wifi_storage_load_credentials(ssid, sizeof(ssid), password, sizeof(password)) == ESP_OK) {
-        s_log_if_failed("connecting to the saved network", wifi_prov_connect(ssid, password));
+    //  The stored networks, in the order worth trying. Which one that is, and
+    //  whether a scan decided it, is wifi_provisioning's business; from here
+    //  it is still "connect with what we know".
+    if (wifi_prov_connect_stored() == ESP_OK) {
 
         if (!wifi_prov_wait_for_connection_timeout(pdMS_TO_TICKS(30000))) {
             ESP_LOGW(TAG, "Saved WiFi failed, starting provisioning");

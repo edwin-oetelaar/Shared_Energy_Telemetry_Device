@@ -4,6 +4,7 @@
 */
 
 #include <assert.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "inc/wifi_slots.h"
@@ -111,4 +112,91 @@ size_t wifi_slots_choose_for (const wifi_slot_t *slots, const char *ssid,
     //  off the end of the table.
     assert (false);
     return 0;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Was this network in the scan, and how strong? Returns the strength, or
+//  INT8_MIN for "not seen at all". An SSID may appear more than once when a
+//  network has several access points; the strongest one is the one we would
+//  associate with anyway.
+
+#define NOT_SEEN  INT8_MIN
+
+static int8_t s_strength_of (const wifi_slot_t *slot,
+                             const wifi_seen_t *seen, size_t seen_count)
+{
+    int8_t strongest = NOT_SEEN;
+
+    for (size_t row = 0; row < seen_count; row++) {
+        if (strcmp (seen [row].ssid, slot->ssid) == 0
+        &&  seen [row].rssi > strongest) {
+            strongest = seen [row].rssi;
+        }
+    }
+
+    return strongest;
+}
+
+
+size_t wifi_slots_plan (const wifi_slot_t *slots,
+                        const wifi_seen_t *seen, size_t seen_count,
+                        int last_ok,
+                        size_t *order)
+{
+    assert (slots);             //  Caller's contract
+    assert (order);
+    assert (seen != NULL || seen_count == 0);
+
+    int8_t strength [WIFI_SLOT_COUNT];
+    bool planned [WIFI_SLOT_COUNT] = {false};
+    size_t count = 0;
+
+    for (size_t slot = 0; slot < WIFI_SLOT_COUNT; slot++) {
+        strength [slot] = wifi_slots_is_empty (&slots [slot])
+                        ? NOT_SEEN
+                        : s_strength_of (&slots [slot], seen, seen_count);
+
+        //  An empty slot is never worth trying, whatever the radio saw.
+        planned [slot] = wifi_slots_is_empty (&slots [slot]);
+    }
+
+    //  1. The one that worked last time, if it is there.
+    if (last_ok >= 0 && last_ok < (int) WIFI_SLOT_COUNT
+    &&  !planned [last_ok] && strength [last_ok] != NOT_SEEN) {
+        order [count++] = (size_t) last_ok;
+        planned [last_ok] = true;
+    }
+
+    //  2. The rest of what the radio saw, strongest first.
+    for (;;) {
+        int strongest = -1;
+
+        for (size_t slot = 0; slot < WIFI_SLOT_COUNT; slot++) {
+            if (planned [slot] || strength [slot] == NOT_SEEN) {
+                continue;
+            }
+            if (strongest < 0 || strength [slot] > strength [strongest]) {
+                strongest = (int) slot;
+            }
+        }
+
+        if (strongest < 0) {
+            break;
+        }
+
+        order [count++] = (size_t) strongest;
+        planned [strongest] = true;
+    }
+
+    //  3. What is left: filled slots the radio did not see. Hidden networks
+    //  live here, and so does everything when no scan was possible.
+    for (size_t slot = 0; slot < WIFI_SLOT_COUNT; slot++) {
+        if (!planned [slot]) {
+            order [count++] = slot;
+            planned [slot] = true;
+        }
+    }
+
+    return count;
 }

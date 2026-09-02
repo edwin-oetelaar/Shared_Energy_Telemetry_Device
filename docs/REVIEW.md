@@ -1221,6 +1221,24 @@ mislukte proef was dus nuttiger dan de geslaagde.
 in 3,6 s met `CreateLAB`, haalt telemetrie op en toont "Energie over". De API-sleutels stonden
 in dezelfde partitie en zijn ongeschonden meegekomen.
 
+### Zevende ronde: kiezen op basis van een scan
+
+**Board:** ESP32-S3-BOX-3 · 16 MB flash · 16 MB octal PSRAM
+**Datum:** 2026-09-02 · **Firmware:** branch `wifi/fase2-scan-first`, ESP-IDF v6.1
+**Uitgevoerd:** drie slots opgelegd via een gegenereerde NVS-partitie, waarvan er één in de
+lucht was en twee niet. Daarna de bewaarde partitie teruggezet.
+
+| Bevinding | Status | Grondslag |
+| --- | --- | --- |
+| **C2** Reconnect-backoff | **Bevestigd op de BOX-3** | De tabel loopt nu over de ronde als geheel; na een ronde zonder resultaat volgt 500 ms, en na een ronde waarin iets geweigerd werd meteen de rij van vijf minuten |
+
+Dit is de eerste ronde waarin **C2** op dit bord is gezien; tot nu toe stond hij op "bevestigd
+op de XIAO, niet herhaald". Wat er nog steeds niet is beproefd, is een router die tijdens
+bedrijf wegvalt — hier faalde de verbinding vanaf het begin.
+
+Zie fase 2 in `docs/PLAN-wifi-slots.md` voor de volledige log en de twee afwegingen die
+tijdens het beproeven zijn bijgesteld.
+
 ### Vijfde ronde: het merkteken "voorbeeld"
 
 **Board:** ESP32-S3-BOX-3 · 16 MB flash · 16 MB octal PSRAM
@@ -1307,8 +1325,9 @@ H4) nooit op dit bord gezien.
 
 Wat nog niet op de BOX-3 is uitgevoerd, in volgorde van wat het meeste oplevert:
 
-1. **Router vijf minuten uitzetten** (C2). De backoff-tabel is bevestigd op de XIAO en niet op
-   dit bord. In de seriële log hoort het schema zichtbaar op te lopen.
+1. **Router vijf minuten uitzetten terwijl het apparaat online is** (C2). Het schema is op dit
+   bord gezien bij een verbinding die vanaf het begin faalde, maar niet bij een verbinding die
+   wegvalt terwijl hij loopt. Dat tweede geval is wat er bij een bewoner thuis gebeurt.
 2. **Twee keer snel op "Refresh networks"** tijdens provisioning (H3). Moet een nette melding
    geven, geen reboot. Nooit beproefd, op geen enkel bord.
 3. **Een POST-body die groter is dan de buffer** (H1). Beide formulieren zijn verwerkt, en de
@@ -1322,6 +1341,7 @@ Wat nog niet op de BOX-3 is uitgevoerd, in volgorde van wat het meeste oplevert:
    horen ongevaarlijk te zijn omdat er in het andere slot wordt geschreven, maar aangetoond is
    dat niet.
 
-Twee bevindingen zijn bevestigd op de XIAO en daarna niet herhaald op de BOX-3: **C3** (lock op
-de tokenstate; er was geen overlap meer om uit te lokken) en **C2**. Zij bewijzen dat de fix
-zelf werkt, niet dat dit bord hem draait.
+Eén bevinding is bevestigd op de XIAO en daarna niet herhaald op de BOX-3: **C3**, de lock op
+de tokenstate — er was geen overlap meer om uit te lokken. Die bewijst dat de fix zelf werkt,
+niet dat dit bord hem draait. **C2** is sinds de zevende ronde wel op dit bord gezien, zij het
+niet met een router die tijdens bedrijf wegvalt.
