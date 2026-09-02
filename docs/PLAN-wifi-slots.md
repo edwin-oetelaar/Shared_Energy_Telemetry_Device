@@ -76,14 +76,16 @@ statusscherm onleesbaar, zonder dat iemand een vierde locatie noemt.
 `ok_seq` is er voor besluit 3: het zegt welk slot het langst niet is gelukt, zonder dat er
 een klok bij hoeft te komen.
 
-**Migratie.** De vijf apparaten die er zijn, halen deze versie over de lucht op. Bij de
-eerste start met de nieuwe firmware leest `wifi_storage_init()` de oude sleutels `ssid` en
-`password`, schrijft ze naar slot 0, en wist de oude sleutels pas ná een geslaagde commit.
-Gaat dat mis, dan staan de oude sleutels er nog en probeert het de volgende start opnieuw.
+**Migratie.** Bij de eerste start met de nieuwe firmware leest `wifi_storage_init()` de oude
+sleutels `ssid` en `password`, schrijft ze naar slot 0, en wist de oude sleutels pas ná een
+geslaagde commit. Gaat dat mis, dan staan de oude sleutels er nog en probeert het de volgende
+start opnieuw.
 
-Dit is het gevaarlijkste stuk van het hele plan. Een apparaat op een vensterbank dat zijn
-credentials verliest, moet iemand met een telefoon opnieuw instellen. Fase 0 gaat hier
-daarom alleen over, en wordt op hardware beproefd vóór de rest.
+Er staat op dit moment geen apparaat bij een bewoner — alles ligt op de werkbank, en een bord
+dat zijn credentials kwijtraakt is hier een minuut werk. De volgorde hierboven staat er dus
+niet omdat het nu spannend is, maar omdat dezelfde code straks draait op apparaten waar
+niemand bij kan. Fase 0 gaat er alleen over, zodat ze één keer goed staat voordat de rest
+erop bouwt.
 
 #### Besluit 3 — Welk slot het portaal overschrijft
 
@@ -155,6 +157,48 @@ Doel: de opslag kan drie paren aan, en een bestaand apparaat merkt er niets van.
 **Klaar als:** een apparaat dat `v0.2.1` draaide en over de lucht bijwerkt, verbindt na de
 update met hetzelfde netwerk, zonder dat iemand iets doet.
 
+> **Uitgevoerd op 2026-09-02.** De opslag houdt drie slots, en een bord dat al was ingesteld
+> merkt er niets van. De migratie is niet uit de log afgelezen maar uit de NVS-partitie zelf,
+> die met `esptool read-flash 0x012000 0x6000` van het bord is gehaald en met
+> `nvs_tool.py` uit ESP-IDF is uitgelezen:
+>
+> ```
+> 093. Erased , ... | ssid:     Size=7,  CRC32=7892034c
+> 095. Erased , ... | password: Size=11, CRC32=963caac7
+> 047. Written, ... | ssid0:    Size=7,  CRC32=7892034c
+> 049. Written, ... | pw0:      Size=11, CRC32=963caac7
+> 051. Written, ... | seq0:     1
+> 052. Written, ... | last_ok:  0
+> ```
+>
+> De CRC's van `ssid0` en `pw0` zijn gelijk aan die van de oude `ssid` en `password`, dus de
+> waarden zijn byte voor byte overgenomen; de oude sleutels staan op *Erased*. Dat is
+> sterker bewijs dan de logregel, want het toont de inhoud en niet ons eigen verslag ervan.
+>
+> **De schrijfkant, dezelfde dag.** Het eerste bord kwam na de migratie niet online omdat het
+> netwerk `OETELX` niet in de lucht was (`reason=201`, no AP found) — precies de klacht waar
+> dit plan uit voortkomt. Na het instellen van `CreateLAB` via het portaal:
+>
+> ```
+> [ 2.01] wifi_prov: Connecting to SSID: CreateLAB
+> [ 3.82] wifi_prov: Got IP: 192.168.1.253
+> [ 3.82] wifi_storage: Saved 'CreateLAB' in slot 0
+> [ 6.23] energyboxx_api: Status = 200
+> ```
+>
+> In de NVS staat de oude `ssid0` (`OETELX`, 7 bytes) op *Erased* en de nieuwe (`CreateLAB`,
+> 10 bytes) op *Written*. `seq0` bleef 1 en `last_ok` bleef 0: slot 0 was al het laatst
+> geslaagde slot, dus `wifi_storage_note_success()` schreef niets. Dat is de bedoeling —
+> een apparaat dat de hele dag opnieuw verbindt, hoort niet de hele dag naar flash te
+> schrijven.
+>
+> Tussen twee starts staat er ook maar één `ssid0` met deze waarde in de partitie, terwijl
+> het opslaan bij elke `Got IP` gebeurt. NVS slaat een schrijfactie met dezelfde inhoud dus
+> zelf over. Dat is gemeten, niet aangenomen.
+>
+> De regels van besluit 3 zijn met tien gevallen op de host getest (`test/test_wifi_slots.c`)
+> en nog niet aangesloten; dat is fase 3.
+
 ### Fase 1 — De afwijsreden gaat iets betekenen (M10)
 
 Doel: een fout wachtwoord wordt niet eindeloos herhaald.
@@ -201,7 +245,7 @@ keer wordt overschreven volgens besluit 3, en dat is geen ramp.
 
 | Risico | Weging |
 | --- | --- |
-| De migratie in fase 0 verliest de bestaande credentials | Het zwaarste punt. De oude sleutels blijven staan tot de nieuwe zijn vastgelegd, en fase 0 wordt op hardware beproefd met een apparaat dat al ingesteld is |
+| De migratie in fase 0 verliest de bestaande credentials | Nu goedkoop — alles ligt op de werkbank — maar dezelfde code draait straks buiten bereik. De oude sleutels blijven staan tot de nieuwe zijn vastgelegd, en fase 0 is op hardware beproefd met een apparaat dat al ingesteld was |
 | Een scan kost tijd bij elke koude start | Ongeveer twee seconden, en alleen als het laatst geslaagde netwerk er niet is |
 | Een verborgen netwerk komt niet in de scan | Daarom loopt stap 3 van de keuze de gevulde slots alsnog langs |
 | Een scan tijdens provisioning verbreekt het portaal | Fase 2, punt 4: niet scannen zolang het portaal open is |
