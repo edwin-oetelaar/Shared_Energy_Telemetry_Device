@@ -462,6 +462,7 @@ assets/energy-owl-bringup.bin Het opstartbeeld zoals het scherm het tekent
 partitions-box3.csv           Partitie-indeling van de 16 MB flash
 docs/REVIEW.md                Review vóór productie, met werklijst
 docs/PLAN-box3.md             De overstap naar de ESP32-S3-BOX-3, in fasen
+docs/PLAN-wifi-slots.md       Drie onthouden wifi-netwerken in plaats van één, in fasen
 docs/OTA.md                   Bijwerken over de lucht, en een versie uitgeven
 docs/energiegemeenschap-wilhelminaweg.md   Het project waar dit apparaat bij hoort
 test/                         Host-tests voor de modules zonder ESP-IDF
