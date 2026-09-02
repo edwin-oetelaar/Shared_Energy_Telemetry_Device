@@ -175,10 +175,26 @@ update met hetzelfde netwerk, zonder dat iemand iets doet.
 > waarden zijn byte voor byte overgenomen; de oude sleutels staan op *Erased*. Dat is
 > sterker bewijs dan de logregel, want het toont de inhoud en niet ons eigen verslag ervan.
 >
-> Wat de proef **niet** toont: het apparaat kwam daarna niet online, omdat het netwerk
-> `OETELX` niet in de lucht was (`reason=201`, no AP found). Dat het opgeslagen netwerk weer
-> wordt geprobeerd is wél te zien — `Connecting to SSID: OETELX` — maar de verbinding zelf is
-> nog niet opnieuw aangetoond.
+> **De schrijfkant, dezelfde dag.** Het eerste bord kwam na de migratie niet online omdat het
+> netwerk `OETELX` niet in de lucht was (`reason=201`, no AP found) — precies de klacht waar
+> dit plan uit voortkomt. Na het instellen van `CreateLAB` via het portaal:
+>
+> ```
+> [ 2.01] wifi_prov: Connecting to SSID: CreateLAB
+> [ 3.82] wifi_prov: Got IP: 192.168.1.253
+> [ 3.82] wifi_storage: Saved 'CreateLAB' in slot 0
+> [ 6.23] energyboxx_api: Status = 200
+> ```
+>
+> In de NVS staat de oude `ssid0` (`OETELX`, 7 bytes) op *Erased* en de nieuwe (`CreateLAB`,
+> 10 bytes) op *Written*. `seq0` bleef 1 en `last_ok` bleef 0: slot 0 was al het laatst
+> geslaagde slot, dus `wifi_storage_note_success()` schreef niets. Dat is de bedoeling —
+> een apparaat dat de hele dag opnieuw verbindt, hoort niet de hele dag naar flash te
+> schrijven.
+>
+> Tussen twee starts staat er ook maar één `ssid0` met deze waarde in de partitie, terwijl
+> het opslaan bij elke `Got IP` gebeurt. NVS slaat een schrijfactie met dezelfde inhoud dus
+> zelf over. Dat is gemeten, niet aangenomen.
 >
 > De regels van besluit 3 zijn met tien gevallen op de host getest (`test/test_wifi_slots.c`)
 > en nog niet aangesloten; dat is fase 3.
