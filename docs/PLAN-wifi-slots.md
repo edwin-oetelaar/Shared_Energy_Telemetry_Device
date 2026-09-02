@@ -1,0 +1,223 @@
+# Drie wifi-netwerken in plaats van één
+
+## 1. Doel
+
+Het apparaat onthoudt nu één wifi-netwerk. Wie het meeneemt — naar een andere locatie, naar
+de buren, naar het bureau op het werk — moet het opnieuw instellen via het portaal.
+
+Dit document beschrijft de weg naar **drie onthouden netwerken**, waarbij het apparaat bij
+het opstarten zelf uitzoekt op welk van de drie het staat.
+
+De aanleiding is het ontwikkelwerk: het apparaat verhuist tussen thuis, kantoor en een
+telefoon-hotspot. Maar het is ook voor de bewoners nuttig. Wie zijn router vervangt, houdt
+het oude netwerk in een tweede slot staan totdat het nieuwe bewezen werkt.
+
+Elke fase hieronder eindigt met een apparaat dat werkt en dat u kunt aanzetten.
+
+## 2. Wat er nu staat
+
+| Onderdeel | Nu | Bestand |
+| --- | --- | --- |
+| Opslag | één paar, `ssid` en `password` in de NVS-ruimte `wifi_creds` | `main/src/wifi_storage.c` |
+| Laden bij het opstarten | één keer laden, één keer verbinden | `main/main.c:475` |
+| Verbinden | één `wifi_config_t`, daarna `esp_wifi_connect()` | `main/src/wifi_provisioning.c:592` |
+| Opnieuw proberen | acht rijen, van 0,5 s tot 5 minuten, laatste rij herhaalt | `main/src/wifi_provisioning.c:222` |
+| Scannen | bestaat al, voor de netwerklijst in het portaal | `main/src/wifi_provisioning.c:647` |
+| Afwijsreden | wordt gelogd, maar er wordt niets mee gedaan | `main/src/wifi_provisioning.c:313` |
+
+Die laatste regel is bevinding **M10** in `docs/REVIEW.md`, en die staat nog open. Ze is
+hier geen bijzaak — zie besluit 4.
+
+## 3. Het ontwerp in één gedachte
+
+De verleiding is om een lus om het bestaande schema te leggen: probeer slot 0, mislukt,
+probeer slot 1, mislukt, probeer slot 2. Dat wordt traag. Het schema loopt op tot 5 minuten
+per stap, en elke mislukte poging kost een verbindingstime-out. Drie slots maal acht rijen
+is een apparaat dat er twintig minuten over doet om te ontdekken dat het op uw bureau staat.
+
+De uitweg is dat er **twee verschillende vragen** in het spel zijn, en dat die niet in
+dezelfde tabel horen:
+
+| Vraag | Wordt beantwoord door | Kost |
+| --- | --- | --- |
+| Welk van mijn netwerken is hier? | één scan | ongeveer twee seconden, één keer |
+| Hoe geduldig ben ik als er geen enkel netwerk is? | de bestaande backoff-tabel, ongewijzigd | zoals nu |
+
+Scannen is wat wifi al doet, en het apparaat kan het al. Een telefoon-hotspot die uit staat,
+is dan simpelweg geen kandidaat — in plaats van een time-out die u elke start opnieuw betaalt.
+
+De keuze wordt daarmee:
+
+1. Staat het laatst geslaagde netwerk in de scan? Neem dat. Een apparaat dat blijft staan,
+   verandert dus niets aan zijn gedrag.
+2. Anders: van de netwerken die zichtbaar zijn **en** in een slot staan, de sterkste.
+3. Staat er geen enkele in de scan? Loop de gevulde slots één keer langs — een verborgen
+   netwerk zendt zijn naam niet uit en komt nooit in een scan. Daarna de backoff-tabel voor
+   de hele ronde.
+
+## 4. Beslissingen
+
+#### Besluit 1 — Drie slots, niet meer en niet minder
+
+Twee is te weinig voor thuis, kantoor en hotspot. Meer dan drie kost NVS-ruimte en maakt het
+statusscherm onleesbaar, zonder dat iemand een vierde locatie noemt.
+
+**Voorstel:** drie. Het aantal staat als één `#define` in `wifi_storage.h`, zodat het later
+één cijfer is en geen verbouwing.
+
+#### Besluit 2 — Wat er in NVS komt, en hoe bestaande apparaten meekomen
+
+| Sleutel | Inhoud |
+| --- | --- |
+| `ssid0`, `pw0` … `ssid2`, `pw2` | de drie paren; een leeg `ssidN` betekent een leeg slot |
+| `last_ok` | het slot dat het laatst een IP-adres opleverde |
+| `ok_seq0` … `ok_seq2` | een oplopend nummer per slot, gezet bij elke geslaagde verbinding |
+
+`ok_seq` is er voor besluit 3: het zegt welk slot het langst niet is gelukt, zonder dat er
+een klok bij hoeft te komen.
+
+**Migratie.** De vijf apparaten die er zijn, halen deze versie over de lucht op. Bij de
+eerste start met de nieuwe firmware leest `wifi_storage_init()` de oude sleutels `ssid` en
+`password`, schrijft ze naar slot 0, en wist de oude sleutels pas ná een geslaagde commit.
+Gaat dat mis, dan staan de oude sleutels er nog en probeert het de volgende start opnieuw.
+
+Dit is het gevaarlijkste stuk van het hele plan. Een apparaat op een vensterbank dat zijn
+credentials verliest, moet iemand met een telefoon opnieuw instellen. Fase 0 gaat hier
+daarom alleen over, en wordt op hardware beproefd vóór de rest.
+
+#### Besluit 3 — Welk slot het portaal overschrijft
+
+Het portaal vraagt om een netwerk en een wachtwoord. Het vraagt **niet** om een slotnummer:
+dit is een apparaat op een vensterbank, niet een router-configuratiescherm.
+
+De regel, in volgorde:
+
+| Situatie | Waar het naartoe gaat |
+| --- | --- |
+| Er is een slot met dezelfde SSID | dat slot, overschreven |
+| Er is een leeg slot | het eerste lege slot |
+| Alle drie gevuld, geen match | het slot met het laagste `ok_seq` — het langst niet gelukt |
+
+**Voorstel:** deze drie regels, in deze volgorde, als tabel in de code.
+
+#### Besluit 4 — M10 hoort hierbij, niet erna
+
+M10 zegt: bij een 4-way handshake timeout weten we dat het wachtwoord fout is, en blijft het
+schema het toch proberen. Met één slot is dat verspilling. Met drie slots is het erger — een
+fout slot houdt de andere twee tegen.
+
+De afwijsreden wordt daarmee de stuurknop voor de slotkeuze. Wat er nu alleen gelogd wordt,
+gaat in een tabel:
+
+| Reden | Betekenis | Wat het slot doet |
+| --- | --- | --- |
+| 4-way handshake timeout, auth expired, auth fail | het wachtwoord klopt niet | slot afkeuren voor deze ronde, meteen door naar het volgende |
+| no AP found | het netwerk is hier niet | slot overslaan voor deze ronde |
+| assoc fail, assoc leave, en de rest | tijdelijk of onbekend | zelfde slot, via de backoff-tabel |
+
+De getallen achter deze redenen staan in `esp_wifi_types.h`. Ze worden bij het bouwen tegen
+v6.1 gecontroleerd en niet uit het hoofd overgenomen.
+
+**Voorstel:** M10 als fase 1 van dit plan afwerken, vóór er een tweede slot in gebruik komt.
+
+#### Besluit 5 — Geen netwerk in de firmware
+
+Overwogen en afgewezen: één netwerk hardcoded in de code, alleen voor ontwikkeling.
+
+De repository is publiek en de updater haalt firmware van GitHub Releases
+(`main/src/updater.c:30`). Elke release is dus een publieke download, en een SSID met
+wachtwoord staat daar als leesbare tekst in. Het geheim wordt niet onderschept — het wordt
+gepubliceerd. Dat TLS het verkeer versleutelt doet daar niets aan, want dit geheim reist niet.
+
+Daar komt bij dat het niet om het netwerk van een klant zou gaan maar om dat van ons, en dat
+een SSID via wardriving-databases aan een adres te koppelen is. En het is een sleutel die
+niemand meer kan roteren: zodra hij in uitgeleverde firmware zit, betekent dat wachtwoord
+veranderen dat die apparaten hun terugval kwijt zijn.
+
+Met drie slots is het ook niet nodig. Een testbord wordt één keer door het portaal gehaald —
+wat voor de API-sleutels toch al moet — en kent daarna thuis, kantoor en hotspot.
+
+**Voorstel:** geen netwerk in de firmware. Moet het er ooit toch in, dan achter een
+Kconfig-optie die standaard uit staat, plus een CI-stap die de gebouwde `.bin` op die SSID
+doorzoekt en de build laat falen. Een controle, geen belofte.
+
+## 5. De fasen
+
+### Fase 0 — Drie slots in de opslag, gedrag ongewijzigd
+
+Doel: de opslag kan drie paren aan, en een bestaand apparaat merkt er niets van.
+
+1. `wifi_storage` krijgt een slotnummer in zijn interface, en `WIFI_SLOT_COUNT` in de header.
+2. De migratie van besluit 2, met de oude sleutels die pas na een geslaagde commit weg gaan.
+3. Alles daarboven blijft slot 0 gebruiken; er verandert niets aan het verbinden.
+4. Host-tests voor de migratie en voor de keuzeregel van besluit 3.
+
+**Klaar als:** een apparaat dat `v0.2.1` draaide en over de lucht bijwerkt, verbindt na de
+update met hetzelfde netwerk, zonder dat iemand iets doet.
+
+### Fase 1 — De afwijsreden gaat iets betekenen (M10)
+
+Doel: een fout wachtwoord wordt niet eindeloos herhaald.
+
+1. De tabel van besluit 4 in `wifi_provisioning.c`.
+2. Een afgekeurd slot stopt het backoff-schema in plaats van het te voeden.
+3. Het statusscherm zegt dat het wachtwoord is afgewezen, zodat er iets te doen valt.
+
+**Klaar als:** provisioning met een fout wachtwoord één poging kost, geen serie van vijf
+minuten, en het portaal open blijft staan voor een tweede kans. Vink **M10** af in
+`docs/REVIEW.md`.
+
+### Fase 2 — Kiezen op basis van een scan
+
+Doel: het apparaat vindt zelf het netwerk waar het staat.
+
+1. Een scan vóór de eerste verbindingspoging, en na elke ronde waarin geen slot werkte.
+2. De keuzeregels uit hoofdstuk 3, als tabel.
+3. `last_ok` en `ok_seq` bijhouden, en alleen schrijven als ze veranderen — NVS slijt.
+4. Niet scannen terwijl er iemand in het portaal staat: een scan verbreekt hun verbinding
+   met het accesspoint van het apparaat.
+
+**Klaar als:** een apparaat met drie gevulde slots op elk van de drie locaties binnen een
+halve minuut online is, en een uitgezette hotspot geen vertraging kost.
+
+### Fase 3 — Zichtbaar maken wat het apparaat weet
+
+Doel: "waarom zit hij op het verkeerde netwerk?" is te beantwoorden zonder seriële kabel.
+
+1. Het statusscherm toont welk slot in gebruik is: `Wifi  <ssid>  (2 van 3)`.
+2. Het portaal toont de drie slots en welk slot een nieuwe invoer zou overschrijven.
+3. De log zegt bij elke keuze waarom: gekozen slot, reden, sterkte.
+
+**Klaar als:** iemand voor het apparaat kan zien welk van de drie netwerken het gebruikt.
+
+### Fase 4 — Een slot wissen, later
+
+Doel: een netwerk waar u nooit meer komt, kan weg zonder alles te wissen.
+
+Dit is bewust de laatste fase. Zonder deze knop is de ergste uitkomst dat een oud slot een
+keer wordt overschreven volgens besluit 3, en dat is geen ramp.
+
+## 6. Risico's
+
+| Risico | Weging |
+| --- | --- |
+| De migratie in fase 0 verliest de bestaande credentials | Het zwaarste punt. De oude sleutels blijven staan tot de nieuwe zijn vastgelegd, en fase 0 wordt op hardware beproefd met een apparaat dat al ingesteld is |
+| Een scan kost tijd bij elke koude start | Ongeveer twee seconden, en alleen als het laatst geslaagde netwerk er niet is |
+| Een verborgen netwerk komt niet in de scan | Daarom loopt stap 3 van de keuze de gevulde slots alsnog langs |
+| Een scan tijdens provisioning verbreekt het portaal | Fase 2, punt 4: niet scannen zolang het portaal open is |
+| Drie netwerken in platte tekst in NVS in plaats van één | Verzwaart **H5** een beetje. Geen reden om het niet te doen, wel iets om te weten zolang H5 uitstaat |
+
+## 7. Samenhang met de review
+
+| Bevinding | Verband |
+| --- | --- |
+| **M10** | Wordt in fase 1 opgelost; dit plan bouwt erop verder |
+| **H10** | Een afgekeurde sleutel mag geen werkend apparaat zonder credentials achterlaten. Met drie slots geldt dat per slot, en dat is meegenomen in besluit 3 |
+| **H5** | Drie netwerken in plaats van één maken flash-encryptie iets waardevoller |
+| **C5** | Niet geraakt. Het portaal blijft wat het is |
+
+## 8. Volgorde van beslissen
+
+Besluit 1 tot en met 5 kunnen nu. Alleen besluit 2 is later moeilijk terug te draaien: de
+sleutelnamen in NVS staan straks op apparaten die bij mensen thuis hangen, en een tweede
+migratie is een tweede kans om credentials kwijt te raken.
