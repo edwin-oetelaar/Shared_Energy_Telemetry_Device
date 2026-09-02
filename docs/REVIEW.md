@@ -825,8 +825,8 @@ ingevoerd. Dat maakt hem niet minder echt: het apparaat toonde iets dat niet gem
 > de Energy Owl draagt het merkteken niet meer (een logo beweert geen meting), en het
 > merkteken volgt nu de telemetrie — wie op "Energie over" blijft staan terwijl de
 > gemeenschap overgaat op inkopen, ziet het merkteken alsnog verschijnen. Dat laatste was een
-> gat in de oorspronkelijke fix. Gecompileerd voor de ESP32-S3 met ESP-IDF v6.1; nog niet op
-> hardware bevestigd.
+> gat in de oorspronkelijke fix. Gecompileerd voor de ESP32-S3 met ESP-IDF v6.1 en **op
+> hardware bevestigd** op 2026-09-02; zie de vijfde ronde onder "Bevestigd op hardware".
 
 ### M9 — De ESP-IDF-versie ligt nergens vast
 `sdkconfig` (t/m commit 08908ec), `.github/workflows/ci.yml`
@@ -1109,6 +1109,34 @@ Drie dingen die deze beproeving en passant liet zien:
 **Wat hiermee niet is beproefd:** een download die halverwege afbreekt, en een apparaat dat
 tijdens het schrijven de stroom verliest. Beide horen ongevaarlijk te zijn omdat er in het
 andere slot wordt geschreven, maar aangetoond is dat niet.
+
+### Vijfde ronde: het merkteken "voorbeeld"
+
+**Board:** ESP32-S3-BOX-3 · 16 MB flash · 16 MB octal PSRAM
+**Datum:** 2026-09-02 · **Firmware:** branch `box3/preview-marker`, ESP-IDF v6.1
+**Uitgevoerd:** met de hand langs alle zeven beelden van de bladerlijst, en daarna de time-out
+afgewacht.
+
+| Bevinding | Status | Grondslag |
+| --- | --- | --- |
+| **M11** Merkteken op een voorbeeld | **Bevestigd** | Edwin heeft alle beelden doorlopen: het merkteken staat alleen op de energiebeelden die niet de actuele toestand zijn, en op de About-pagina staat het niet meer |
+
+De log van de ronde toont de hele bladerlijst en de terugkeer:
+
+```
+[ 16.96] status_view: deficit - energy has to be bought
+[ 18.16] status_view: balanced - supply and demand match
+[ 18.76] status_view: no-data - no fresh telemetry
+[ 19.56] status_view: report - what the device knows about itself
+[ 22.77] status_view: about - who made this and which build it is
+[ 29.58] status_view: starting - powered on
+[ 43.41] status_view: Browsing timed out, following the telemetry again
+[ 43.41] status_view: surplus - energy available to share
+```
+
+Het merkteken zelf staat sindsdien ook in de log (`Preview mark up` / `down`). Zonder die regel
+is een merkteken in een hoek alleen met iemands ogen te controleren, en "ik zie het niet in de
+log" is bij dit project al drie keer verward met "het gebeurt niet".
 
 ---
 

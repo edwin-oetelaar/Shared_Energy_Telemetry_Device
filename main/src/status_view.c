@@ -446,6 +446,11 @@ static void s_mark_preview(status_view_state_t state)
 
     if (display_show_preview_marker(preview) == ESP_OK) {
         s_preview_marked = preview;
+
+        //  In the log as well as on the screen, so that a hardware test can
+        //  say what the corner did instead of relying on somebody's memory of
+        //  what they saw.
+        ESP_LOGI(TAG, "Preview mark %s", preview ? "up" : "down");
     }
 }
 
