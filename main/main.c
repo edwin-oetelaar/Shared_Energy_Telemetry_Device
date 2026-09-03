@@ -193,6 +193,12 @@ static void status_view_task(void *pvParameters)
 
     while (true) {
         s_log_if_failed("showing the status", status_view_show(s_state_to_show()));
+
+        //  Whatever the last connection taught Wi-Fi about itself gets written
+        //  to flash here, in a task that may block, rather than in the event
+        //  loop where it used to happen. See M5 in docs/REVIEW.md.
+        wifi_prov_tick();
+
         vTaskDelay(pdMS_TO_TICKS(500));
     }
 }

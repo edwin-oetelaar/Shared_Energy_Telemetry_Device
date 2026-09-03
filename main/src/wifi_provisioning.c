@@ -1,6 +1,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
+#include "freertos/task.h"
 
 #include <assert.h>
 #include <inttypes.h>
@@ -385,6 +386,42 @@ static bool s_scan_for_plan = false;
 static int64_t s_attempt_started_us = 0;
 static bool s_attempt_retried = false;
 
+/*  =========================================================================
+    What a connection taught us, waiting for a task that may block
+
+    Reaching an IP address is the moment a network proves itself, so it is the
+    moment the device learns something worth keeping: which slot works, or that
+    the credentials somebody just typed are good. But that moment arrives in
+    the event loop task, and going to flash there stops every other event -
+    Wi-Fi, IP, HTTP - for as long as the write takes. That is finding M5.
+
+    So the handler only writes down what it learned, and wifi_prov_tick ()
+    carries it to flash from an ordinary task. The delay is half a second at
+    most, and nothing depends on the write having happened by then.
+
+    The two flags are set in the event task and cleared in the task that calls
+    the tick. A short critical section guards the copy, because a half-copied
+    ssid is a network name nobody can connect to. Doing the work twice, if two
+    connections land around one tick, costs nothing: both writes say the same
+    thing.
+    =========================================================================
+*/
+
+static portMUX_TYPE s_learned_mux = portMUX_INITIALIZER_UNLOCKED;
+
+_Static_assert (sizeof (current_ssid) == WIFI_SSID_SIZE,
+                "the learned copy and the live one must be the same size");
+_Static_assert (sizeof (current_password) == WIFI_PASSWORD_SIZE,
+                "the learned copy and the live one must be the same size");
+
+//  A slot that just reached an IP address, or -1.
+static int s_learned_slot = -1;
+
+//  Credentials typed in the portal that have now been proven.
+static bool s_learned_typed = false;
+static char s_learned_ssid [WIFI_SSID_SIZE] = {0};
+static char s_learned_password [WIFI_PASSWORD_SIZE] = {0};
+
 //  The next time the schedule fires, look around again instead of trying the
 //  same network. Set when a round ends, and when the fast attempts on a
 //  network we were connected to are used up.
@@ -581,27 +618,29 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         s_in_round = false;
         s_replan_next = false;
 
+        //  Write down what this connection taught us. No flash from here; the
+        //  tick does that. See M5 and the note above the flags.
+        taskENTER_CRITICAL (&s_learned_mux);
+
         if (s_slot_in_use >= 0) {
             //  This slot worked. Raising it above the others is what makes
             //  "the one that worked last time" answerable at the next start.
-            wifi_storage_note_success((size_t) s_slot_in_use);
-            s_last_ok = s_slot_in_use;
+            s_learned_slot = s_slot_in_use;
+            s_last_ok = s_slot_in_use;      //  In memory, so the screen is right at once
         }
         else {
             //  Typed in the portal, and now proven. Which slot it belongs in
-            //  is storage's rule, not ours; we only want to know the answer,
-            //  because the screen says which network the device is using.
-            size_t slot = 0;
-
-            if (wifi_storage_save_credentials(current_ssid, current_password,
-                                              &slot, NULL) == ESP_OK) {
-                s_slot_in_use = (int) slot;
-                s_last_ok = (int) slot;
-
-                //  The cached copy is now behind by one network.
-                wifi_storage_load_slots(s_slots);
-            }
+            //  is storage's rule, and asking it means reading flash, so that
+            //  waits for the tick as well.
+            //  memcpy and not snprintf: this runs with interrupts off, and
+            //  the buffers are the same fixed sizes on both sides, so there is
+            //  nothing to format and nothing to bound.
+            memcpy (s_learned_ssid, current_ssid, sizeof (s_learned_ssid));
+            memcpy (s_learned_password, current_password, sizeof (s_learned_password));
+            s_learned_typed = true;
         }
+
+        taskEXIT_CRITICAL (&s_learned_mux);
 
         
         xEventGroupClearBits(s_wifi_event_group, WIFI_FAIL_BIT);
@@ -1278,6 +1317,73 @@ const char *wifi_prov_ap_ssid(void)
 {
     return PROV_AP_SSID;
 }
+
+//  --------------------------------------------------------------------------
+//  Carry what the last connection taught us to flash. Called from an ordinary
+//  task, often, and does nothing at all on the passes where there is nothing
+//  to write - which is nearly all of them.
+//
+//  Each flag is taken and cleared before the work starts, so a connection that
+//  lands while we are writing sets it again and is not lost.
+
+void wifi_prov_tick(void)
+{
+    char ssid [WIFI_SSID_SIZE];
+    char password [WIFI_PASSWORD_SIZE];
+    bool typed;
+    int slot;
+
+    taskENTER_CRITICAL (&s_learned_mux);
+
+    typed = s_learned_typed;
+    slot = s_learned_slot;
+
+    if (typed) {
+        memcpy (ssid, s_learned_ssid, sizeof (ssid));
+        memcpy (password, s_learned_password, sizeof (password));
+        s_learned_typed = false;
+    }
+
+    s_learned_slot = -1;
+
+    taskEXIT_CRITICAL (&s_learned_mux);
+
+    if (typed) {
+        size_t chosen = 0;
+        esp_err_t err = wifi_storage_save_credentials(ssid, password, &chosen, NULL);
+
+        if (err == ESP_OK) {
+            s_slot_in_use = (int) chosen;
+            s_last_ok = (int) chosen;
+
+            //  The cached copy is now behind by one network.
+            wifi_storage_load_slots(s_slots);
+        }
+        else {
+            //  Worth saying out loud. Here, unlike in the event handler, there
+            //  is somebody to say it to: the device will come up without this
+            //  network after the next restart, and the log is the only place
+            //  that explains why.
+            ESP_LOGE(TAG, "Could not store the network we just connected to: %s",
+                     esp_err_to_name(err));
+        }
+    }
+
+    if (slot >= 0) {
+        //  One line per connection, on purpose. Without it the whole deferral
+        //  is invisible, and "I cannot see it in the log" would again be
+        //  mistaken for "it does not happen".
+        ESP_LOGI(TAG, "Noting that slot %d worked", slot);
+
+        esp_err_t err = wifi_storage_note_success((size_t) slot);
+
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "Could not mark slot %d as the one that worked: %s",
+                     slot, esp_err_to_name(err));
+        }
+    }
+}
+
 
 //  --------------------------------------------------------------------------
 //  Forget one remembered network.
