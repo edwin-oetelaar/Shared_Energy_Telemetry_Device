@@ -77,7 +77,7 @@ te repareren.
 - [x] **M3** Foutdetectie via `strstr` op de ruwe body — opgelost, structureel i.p.v. tekstueel
 - [x] **M4** Vaste retry van 10 seconden, oneindig lang — opgelost, backoff met jitter
 - [x] **M13** Een storing die te snel komt kost een goed netwerk zijn beurt — opgelost
-- [ ] **M5** NVS-schrijfactie in de event handler
+- [x] **M5** NVS-schrijfactie in de event handler — opgelost, uitgesteld naar `wifi_prov_tick()`
 - [x] **M6** `app_main` kan oneindig blijven wachten — opgelost, stilte-timeout
 - [x] **M7** "Ring uit" betekent twee verschillende dingen — opgelost op het scherm van de BOX-3
 - [x] **M10** Tijdens provisioning blijft het schema afgewezen credentials proberen — opgelost, afwijsreden-tabel
@@ -698,6 +698,35 @@ waardes overslaat, maar het is de verkeerde plek — en de returncode wordt gene
 
 **Fix:** alleen opslaan op het pad waar nieuwe credentials binnenkomen, vanuit de taak die ze
 ontving.
+
+> **Bijgesteld op 2026-09-03.** Die fix kon niet meer, en dat is maar goed ook. Credentials
+> worden pas opgeslagen *nadat ze bewezen werken* — een van de dingen die deze review als goed
+> aanmerkt — en dat bewijs komt binnen op `GOT_IP`. Hetzelfde geldt voor `note_success()`: een
+> slot verdient zijn plaats juist op dat moment. Het moment kan dus niet verhuizen; het werk
+> wel.
+>
+> **En het was groter geworden.** Fase 2 en 3 van `docs/PLAN-wifi-slots.md` hebben er die dag
+> ongemerkt bij gezet:
+>
+> | Pad | Wat de event loop deed |
+> | --- | --- |
+> | Herverbinden met een bekend slot | `note_success()`: 2× NVS openen, ~10 leesacties |
+> | Netwerk uit het portaal, net bewezen | `save_credentials()`: 3× alle slots lezen, 2 commits, plus een herlezing voor de cache |
+>
+> **Opgelost.** De event handler schrijft alleen op wát hij geleerd heeft — welk slot zich
+> bewees, of een kopie van de net getypte gegevens — onder een korte kritieke sectie, want een
+> half gekopieerde ssid is een netwerknaam waar niemand mee kan verbinden. `wifi_prov_tick()`
+> draagt het naar flash, aangeroepen uit de statuslus in `main.c` die er toch al is. Geen
+> nieuwe taak, geen extra stack.
+>
+> Op hardware bevestigd: `Got IP` op 5,21 s, `Noting that slot 1 worked` op 5,41 s. Die 200 ms
+> is precies het uitstel. De NVS erna: `seq0: 3`, `seq1: 4`, `last_ok: 1` — de tellers lopen op,
+> dus het schrijven landt werkelijk.
+>
+> **Wat dit kost.** Tussen `GOT_IP` en de tick zit een halve seconde waarin een stroomonderbreking
+> de notitie wist. Het gevolg is dat `last_ok` naar het vorige slot blijft wijzen, waarna het
+> apparaat bij de volgende start dat slot eerst probeert en er zelf overheen loopt. Dat herstelt
+> zichzelf en is de prijs waard: een event loop die op flash wacht, laat álles wachten.
 
 ### M6 — `app_main` kan oneindig blijven wachten
 `main/src/wifi_provisioning.c:262-268`
@@ -1425,6 +1454,36 @@ de API-pagina zodra er een verbinding is, en daarmee was de netwerkpagina onbere
 het portaal met opzet opende om netwerken te beheren. Die pagina was tot fase 3 alleen een
 eerste-keer-pagina; met de lijst en de Forget-knoppen erop is ze een beheerpagina geworden. Er
 is nu `/wifi`, die haar altijd toont, met een link vanaf de API-pagina.
+
+### Tiende ronde: het schrijven uit de event loop
+
+**Board:** ESP32-S3-BOX-3 · 16 MB flash · 16 MB octal PSRAM
+**Datum:** 2026-09-03 · **Firmware:** branch `fix/m5-nvs-uit-de-event-loop`, ESP-IDF v6.1
+**Uitgevoerd:** gewoon opstarten, en daarna de NVS-partitie uitgelezen.
+
+| Bevinding | Status | Grondslag |
+| --- | --- | --- |
+| **M5** NVS-schrijfactie in de event handler | **Bevestigd** | `Got IP` op 5,21 s, `Noting that slot 1 worked` op 5,41 s — het werk gebeurt 200 ms later, in de statuslus |
+
+```
+[ 1.80] wifi_prov: 2 stored networks, last success in slot 1
+[ 5.21] wifi_prov: Got IP: 192.168.50.145
+[ 5.41] wifi_prov: Noting that slot 1 worked
+```
+
+En de partitie erna, met `nvs_tool.py`:
+
+```
+054. Written | seq0: 3
+072. Written | seq1: 4
+073. Written | last_ok: 1
+```
+
+De tellers zijn in de loop van de dag opgelopen — `seq1` staat boven `seq0` en `last_ok` wijst
+naar 1 — dus het uitgestelde schrijven landt werkelijk in flash en niet alleen in het geheugen.
+Dat het merkteken in de log staat is met opzet: zonder die regel zou de hele uitstelling
+onzichtbaar zijn, en "ik zie het niet in de log" is bij dit project al drie keer verward met
+"het gebeurt niet".
 
 ### Vijfde ronde: het merkteken "voorbeeld"
 

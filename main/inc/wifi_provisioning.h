@@ -27,6 +27,16 @@ esp_err_t wifi_prov_connect(const char *ssid, const char *password);
 //  the case for a device nobody has set up yet.
 esp_err_t wifi_prov_connect_stored(void);
 
+//  Carry what the last connection taught us to flash: which slot worked, or
+//  the credentials somebody typed and that have since proven themselves. Call
+//  it from an ordinary task, as often as is convenient; it does nothing on the
+//  passes where there is nothing to write.
+//
+//  It exists because the moment a network proves itself arrives in the event
+//  loop, and going to flash there stops every other event for as long as the
+//  write takes. See M5 in docs/REVIEW.md.
+void wifi_prov_tick(void);
+
 //  Forget one remembered network, named by its ssid. Returns ESP_ERR_NOT_FOUND
 //  when the device does not know it, which is an answer rather than a fault:
 //  the page may be showing a list that has since changed.
