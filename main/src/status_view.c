@@ -258,11 +258,14 @@ static void s_build_about(void)
     uint8_t mac [6] = {0};
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
 
+    //  Zes regels, en dat is wat er past. Het versienummer van een
+    //  ontwikkelbuild - "v0.2.1-12-g3d2b3da-dirty" - loopt over twee regels,
+    //  en met acht regels schoof de tekst onder de pijlenstrip. Het jaartal en
+    //  het webadres staan in de QR-code ernaast, dus die twee regels kostten
+    //  ruimte zonder iets te vertellen wat er niet al stond.
     snprintf(s_about, sizeof(s_about),
              "Paddy, Job en Edwin\n"
-             "(c) 2026\n"
              "Dolphin Solutions\n"
-             "dolphinsolutions.nl\n"
              "Versie    %s\n"
              "Gebouwd   %s\n"
              "Apparaat  %02X%02X%02X\n"
