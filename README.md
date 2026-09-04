@@ -172,6 +172,15 @@ Als de sleutels worden goedgekeurd toont het scherm zes seconden **Klaar, we zij
 Drie seconden later sluit het portaal zichzelf en schakelt het apparaat over naar wifi in
 alleen station-modus.
 
+**Het portaal sluit niet zodra de wifi werkt.** Dat is met opzet: u bent dan halverwege, en een
+accesspoint dat onder uw browser vandaan verdwijnt laat u nergens. Het sluit als u zegt dat u
+klaar bent, of na vijftien minuten zonder dat iemand het gebruikt.
+
+Komt u alleen netwerken beheren op een apparaat dat al werkt, dan staat er onderaan de
+wifipagina een knop **Klaar**. Die verschijnt pas als het apparaat op een van zijn eigen
+netwerken zit — is dat niet zo, dan valt er niets af te sluiten en zou de knop u met lege handen
+achterlaten.
+
 ### Ontbrekende sleutels
 
 Werkt de wifi wel maar ontbreken de API-sleutels, dan blijft het apparaat niet wachten. Het

@@ -111,6 +111,7 @@ static esp_err_t s_send_wifi_page(httpd_req_t *req)
         ".slots .use{color:#1f7a3d;font-weight:bold;}"
         ".slots button{width:auto;margin-top:0;padding:6px 12px;font-size:13px;"
         "background:#8a3a2a;border-radius:8px;}"
+        "#doneBtn{background:#5a5a5a;margin-top:12px;}"
         "</style>"
         "</head>"
         "<body>"
@@ -130,6 +131,13 @@ static esp_err_t s_send_wifi_page(httpd_req_t *req)
         "<input id='password' type='password' placeholder='WiFi password'>"
 
         "<button id='connectBtn' onclick='connectWifi()'>Connect</button>"
+
+        //  Alleen zichtbaar als er iets is om mee op te houden - zie slots ().
+        //  Deze pagina wordt sinds fase 3 en 4 ook gebruikt om netwerken te
+        //  beheren op een apparaat dat allang werkt, en dan is de API-pagina
+        //  een omweg naar een knop die alleen nog "sluit dit venster"
+        //  betekent. Dit is dezelfde /done, zonder die omweg.
+        "<button id='doneBtn' type='button' onclick='finish()' hidden>Klaar</button>"
         "<div id='status'>Status: Ready</div>"
         "</div>"
 
@@ -196,7 +204,21 @@ static esp_err_t s_send_wifi_page(httpd_req_t *req)
         "   note.textContent='What you enter now goes in place '+(d.target+1)+' ('+d.why+').';"
         "   box.appendChild(note);"
         "  }"
+        //  Er valt pas iets af te sluiten als het apparaat ergens op zit. Wie
+        //  hier voor het eerst staat heeft nog geen netwerk, en een knop die
+        //  het portaal sluit zou hem dan met lege handen achterlaten.
+        "  document.getElementById('doneBtn').hidden = !(d.in_use >= 0);"
         " }catch(e){box.textContent='';}"
+        "}"
+        ""
+
+        "async function finish(){"
+        " const status=document.getElementById('status');"
+        " document.getElementById('doneBtn').disabled=true;"
+        " document.getElementById('connectBtn').disabled=true;"
+        " try{ await fetch('/done',{method:'POST'}); }catch(e){}"
+        " status.textContent='Done. The device is going back to its own screen,'"
+        "  +' and this network will disappear in a moment. You can close this page.';"
         "}"
         ""
 
@@ -327,6 +349,7 @@ static esp_err_t api_setup_get_handler(httpd_req_t *req)
         ".slots .use{color:#1f7a3d;font-weight:bold;}"
         ".slots button{width:auto;margin-top:0;padding:6px 12px;font-size:13px;"
         "background:#8a3a2a;border-radius:8px;}"
+        "#doneBtn{background:#5a5a5a;margin-top:12px;}"
         "</style></head><body>"
         "<div class='card'>"
         "<h1>SETD API Setup</h1>"
