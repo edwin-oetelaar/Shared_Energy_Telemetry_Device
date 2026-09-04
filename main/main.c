@@ -191,6 +191,12 @@ static void status_view_task(void *pvParameters)
 {
     (void) pvParameters;
 
+    //  Na twintig ronden is alles wat deze taak doet minstens een keer
+    //  langsgekomen. Wat er dan vrij is, is de marge waar we het mee doen -
+    //  een getal om te kennen, niet om te volgen, dus het wordt een keer
+    //  gemeld en daarna niet meer.
+    int rounds = 0;
+
     while (true) {
         s_log_if_failed("showing the status", status_view_show(s_state_to_show()));
 
@@ -198,6 +204,14 @@ static void status_view_task(void *pvParameters)
         //  to flash here, in a task that may block, rather than in the event
         //  loop where it used to happen. See M5 in docs/REVIEW.md.
         wifi_prov_tick();
+
+        if (++rounds == 20) {
+            //  ESP-IDF geeft dit in bytes terug, anders dan het gewone
+            //  FreeRTOS dat in woorden telt. Niet vermenigvuldigen dus - dat
+            //  maakte van negentien bytes marge een geruststellende 76.
+            ESP_LOGI(TAG, "Status task stack: %u bytes still free",
+                     (unsigned) uxTaskGetStackHighWaterMark(NULL));
+        }
 
         vTaskDelay(pdMS_TO_TICKS(500));
     }
@@ -472,10 +486,19 @@ void app_main(void)
     //  timer, and the first check is minutes away.
     s_log_if_failed("arming the update checks", updater_init());
 
+    //  Acht kilobyte, en niet twee. Het tekenen zelf was al bijna alles: met
+    //  twee kilobyte bleven er negentien bytes over, en de QR-code is daarvan
+    //  de grootste gebruiker. Sinds M5 schrijft deze taak er ook nog NVS bij -
+    //  wifi_storage_save_credentials () zet een wifi_slot_t [3] op de stack,
+    //  ruim driehonderd bytes, en wifi_storage_note_success () legt er nog zo
+    //  een bij. Dat was de druppel: het derde netwerk werd opgeslagen en
+    //  daarna liep de taak over, met een coredump en een herstart tot gevolg.
+    //  De taak meldt hieronder wat er werkelijk vrij blijft, zodat dit getal
+    //  gemeten is en niet geraden.
     BaseType_t status_task_created = xTaskCreate(
         status_view_task,
         "status_view_task",
-        2048,
+        8192,
         NULL,
         5,
         NULL

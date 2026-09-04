@@ -69,6 +69,10 @@ te repareren.
 - [x] **H11** Het apparaat zet bij elke start zijn accesspoint aan — opgelost, de modus wordt
   nu expliciet gezet
 - [x] **H12** De opstartweg naar het portaal ging om de toestandsmachine heen — opgelost
+- [x] **H13** De statustaak loopt over zodra hij ook naar flash schrijft — opgelost, stack
+  verruimd en de marge gemeten
+- [x] **H14** Verbinden lukt niet zolang het apparaat al verbonden is — opgelost, eerst
+  weggaan en dan aankomen
 - [ ] **H5** Credentials liggen leesbaar in flash
 
 ### Middel
@@ -593,6 +597,79 @@ scherm gebruikte.
 >
 > Er is nu een `wifi_prov_link_state()` voor de tweede vraag. Zie de achtste ronde onder
 > "Bevestigd op hardware".
+
+### H14 — Verbinden lukt niet zolang het apparaat al verbonden is
+`main/src/wifi_provisioning.c` (`s_connect_to`), `main/src/wifi_web.c` (de portalpagina)
+
+Gevonden op 2026-09-04. Wie via het portaal een netwerk toevoegt terwijl het apparaat al online
+is — en dat is het gewone geval, want het portaal draait op het accesspoint en de stationkant
+blijft gewoon staan — kreeg dit:
+
+```
+[170.46] wifi_prov: Connecting to SSID: Free spot
+[170.46] wifi:      sta is connected, disconnect before connecting to new ap
+```
+
+De radio gaat niet naar een ander netwerk zolang hij op één zit. `esp_wifi_connect ()` weigert.
+En daarna liep alles dood, in vier lagen die elkaar precies verborgen:
+
+1. De toestand stond al op `connecting`, gezet vóórdat er iets kon mislukken.
+2. De poging begon nooit, dus er kwam geen disconnect en er werd geen timer gezet.
+3. Niets kon die toestand nog veranderen — de portalpagina pollde er eeuwig op, met een
+   uitgeschakelde knop.
+4. Het apparaat antwoordde netjes met 500, en de pagina gooide dat weg.
+
+**Fix:** eerst weggaan, dan aankomen. Staat de verbinding er al, dan vraagt het apparaat om weg
+te gaan en verbindt het pas als die disconnect binnen is — niet allebei achter elkaar, want tot
+die gebeurtenis er is zit de radio nog op het oude netwerk. Een start die niet begint zet de
+toestand op `failed`, zodat niemand wacht op iets wat nooit komt. En de pagina kijkt naar het
+antwoord.
+
+> **Opgelost en op hardware bevestigd.** `Leaving the current network first` →
+> `Left the old network; now joining 'Free spot '` → `Got IP: 192.168.43.12` →
+> `'Free spot ' goes in slot 2 (empty slot)`.
+>
+> **De eerste reparatie was dode code**, en dat is het leerzame deel. De check stond ná
+> `link_handle (LINK_EV_CONNECT)`, die de toestand op `connecting` zet — dus de vraag "waren we
+> verbonden?" beantwoordde zichzelf met nee, altijd. Hij heeft geen enkele keer gedraaid, en op
+> het bord was daar niets van te zien: het gedrag bleef exact hetzelfde. Alleen het uitblijven
+> van de logregel `Leaving the current network first` verraadde het.
+
+### H13 — De statustaak loopt over zodra hij ook naar flash schrijft
+`main/main.c` (`status_view_task`)
+
+Gevonden op 2026-09-04, toen Edwin een derde netwerk toevoegde. Het netwerk werd opgeslagen en
+het apparaat herstartte meteen daarna:
+
+```
+[114.89] wifi_prov:    Got IP: 192.168.43.12
+[114.89] wifi_storage: 'Free spot ' goes in slot 2 (empty slot)
+[114.89] ***ERROR*** A stack overflow in task status_view_tas has been detected.
+[115.09] esp_core_dump_flash: Core dump has been saved to flash.
+[115.09] Rebooting...
+```
+
+De taak had 2048 bytes. Het tekenen alleen al gebruikte daar bijna alles van — gemeten met
+`uxTaskGetStackHighWaterMark ()` bleven er **negentien bytes** over, en de QR-code is daarvan de
+grootste gebruiker. De taak stond dus al op de rand voordat er iets bij kwam.
+
+Wat erbij kwam was de oplossing van **M5**. Die verplaatste het schrijven naar NVS uit de event
+loop naar deze taak, en dat kost `wifi_storage_save_credentials ()` een `wifi_slot_t [3]` op de
+stack — ruim driehonderd bytes — waarna `wifi_storage_note_success ()` er nog zo een bij legt.
+Dat paste niet meer.
+
+Twee dingen zijn hier fout gegaan, en het tweede is het ergere. Het eerste: bij M5 is werk naar
+een taak verplaatst zonder te kijken of het daar past. Het tweede: er was geen manier om te
+zien hoe krap het zat. Negentien bytes marge en tweehonderd bytes marge zien er in een draaiend
+apparaat precies hetzelfde uit.
+
+**Fix:** de stack op 8192, en de taak meldt na twintig ronden zelf hoeveel er vrij is. Dat maakt
+van een geraden getal een gemeten getal.
+
+> **Opgelost en op hardware bevestigd.** `Status task stack: 6220 bytes still free`. Bij het
+> meten kwam nog een eigen fout boven water: `uxTaskGetStackHighWaterMark ()` geeft in ESP-IDF
+> **bytes** terug, anders dan in het gewone FreeRTOS waar het woorden zijn. De eerste meting
+> vermenigvuldigde met vier en maakte van negentien bytes een geruststellende 76.
 
 ### H5 — Credentials liggen leesbaar in flash
 `sdkconfig`: geen `SECURE_FLASH_ENC_ENABLED`, geen `NVS_ENCRYPTION`, geen `SECURE_BOOT`
@@ -1484,6 +1561,30 @@ naar 1 — dus het uitgestelde schrijven landt werkelijk in flash en niet alleen
 Dat het merkteken in de log staat is met opzet: zonder die regel zou de hele uitstelling
 onzichtbaar zijn, en "ik zie het niet in de log" is bij dit project al drie keer verward met
 "het gebeurt niet".
+
+### Tiende ronde: een derde netwerk toevoegen
+
+**Board:** ESP32-S3-BOX-3 · 16 MB flash · 16 MB octal PSRAM
+**Datum:** 2026-09-04 · **Firmware:** branch `fix/stack-status-taak`, ESP-IDF v6.1
+**Uitgevoerd:** met de hand een derde netwerk toevoegen via het portaal, terwijl het apparaat
+al op zijn tweede netwerk zat.
+
+| Bevinding | Status | Grondslag |
+| --- | --- | --- |
+| **H14** Verbinden terwijl je verbonden bent | **Bevestigd** | `Leaving the current network first`, gevolgd door `Left the old network; now joining` en een adres |
+| **H13** Stack van de statustaak | **Bevestigd** | `Status task stack: 6220 bytes still free`, waar het er negentien waren |
+
+Deze ronde kostte drie pogingen, en elke poging leerde iets dat de vorige verborg:
+
+1. Het apparaat weigerde te verbinden — `sta is connected, disconnect before connecting to new
+   ap` — en liet de verbinding in "connecting" hangen omdat er geen gebeurtenis meer kwam.
+2. De reparatie daarvoor was dode code: de toestandsmachine kreeg te horen dat er verbonden
+   werd vóórdat gevraagd werd of er al verbinding was. Het antwoord is dan altijd nee.
+3. Met die volgorde recht liep alles goed — en meteen daarna crashte het apparaat op een volle
+   stack, wat op een spontane herstart leek.
+
+Het derde netwerk werd wél opgeslagen en overleefde de herstart (`3 stored networks`,
+`Plan 3: slot 2 'Free spot '`). Alleen zag niemand dat, want het portaal was weg.
 
 ### Vijfde ronde: het merkteken "voorbeeld"
 

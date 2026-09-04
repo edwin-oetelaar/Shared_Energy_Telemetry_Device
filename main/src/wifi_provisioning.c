@@ -368,6 +368,12 @@ static bool s_round_uncertain = false;
 //  The scan we asked for is ours, not the portal's "Refresh networks".
 static bool s_scan_for_plan = false;
 
+//  Set when we asked the radio to leave the network it is on, so that it can
+//  join another one. The disconnect that follows is our own doing and says
+//  nothing about either network; the connection we want starts when it
+//  arrives.
+static bool s_connect_after_leaving = false;
+
 //  When the attempt that is running now was asked for, and whether it has
 //  already been given a second chance.
 //
@@ -543,6 +549,27 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         ESP_LOGW(TAG, "STA disconnected, reason=%d: %s", disc->reason, what);
 
         xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+
+        //  We asked for this one. The config already holds the network we are
+        //  moving to, so this is the moment to go.
+        if (s_connect_after_leaving) {
+            s_connect_after_leaving = false;
+
+            ESP_LOGI (TAG, "Left the old network; now joining '%s'", current_ssid);
+
+            s_attempt_started_us = esp_timer_get_time ();
+            s_attempt_retried = false;
+
+            esp_err_t rc = esp_wifi_connect ();
+
+            if (rc != ESP_OK) {
+                ESP_LOGE (TAG, "Could not join after leaving: %s", esp_err_to_name (rc));
+                link_handle (LINK_EV_GAVE_UP);
+                xEventGroupSetBits (s_wifi_event_group, WIFI_FAIL_BIT);
+            }
+
+            return;
+        }
 
         //  Only chase a network we have credentials for. Without an SSID the
         //  device is waiting to be provisioned, not for the router to return.
@@ -913,6 +940,12 @@ static esp_err_t s_connect_to(const char *ssid, const char *password)
         snprintf((char *)sta_config.sta.password, sizeof(sta_config.sta.password), "%s", password);
     }
 
+    //  Asked before the state machine is told anything, because telling it
+    //  makes this CONNECTING - and then the question "were we on a network?"
+    //  answers itself with no, always. That is how the previous attempt at
+    //  this fix came to be dead code that never ran once.
+    bool was_connected = (s_link == LINK_CONNECTED);
+
     link_handle(LINK_EV_CONNECT);
 
     xEventGroupClearBits(s_wifi_event_group,
@@ -931,6 +964,30 @@ static esp_err_t s_connect_to(const char *ssid, const char *password)
     strncpy(current_ssid, ssid, sizeof(current_ssid) - 1);
     if (password != NULL) {
         strncpy(current_password, password, sizeof(current_password) - 1);
+    }
+
+    //  The radio will not move to another network while it is on one. It says
+    //  so - "sta is connected, disconnect before connecting to new ap" - and
+    //  refuses. That is exactly what happens when somebody adds a third
+    //  network from the portal while the device is happily on its second: the
+    //  portal is reachable over the access point, so the station side is still
+    //  up.
+    //
+    //  So leave first, and connect when the leaving is done. Doing both in a
+    //  row would race: the disconnect is delivered as an event, and until it
+    //  arrives the radio is still on the old network.
+    if (was_connected) {
+        ESP_LOGI(TAG, "Leaving the current network first");
+        s_connect_after_leaving = true;
+
+        esp_err_t leave_err = esp_wifi_disconnect();
+
+        if (leave_err != ESP_OK) {
+            s_connect_after_leaving = false;
+            return leave_err;
+        }
+
+        return ESP_OK;
     }
 
     return esp_wifi_connect();
@@ -955,7 +1012,22 @@ esp_err_t wifi_prov_connect(const char *ssid, const char *password)
     //  New credentials are a genuinely new start, so this one does reset it.
     s_reset_retry_schedule ();
 
-    return s_connect_to(ssid, password);
+    esp_err_t err = s_connect_to(ssid, password);
+
+    if (err != ESP_OK) {
+        //  An attempt that never began cannot report itself later: no
+        //  disconnect is coming, because nothing was tried, and no timer was
+        //  armed. Without this the link would sit in "connecting" for ever -
+        //  and the portal page, which polls exactly that, would wait with its
+        //  button disabled and nothing to tell the person in front of it.
+        ESP_LOGE(TAG, "Could not start connecting to '%s': %s",
+                 ssid, esp_err_to_name(err));
+
+        link_handle(LINK_EV_GAVE_UP);
+        xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+    }
+
+    return err;
 }
 
 
