@@ -115,16 +115,18 @@ Het tweede beeld noemt de makers en de herkomst, en zegt welke build er draait:
 Energy Owl
 
 Paddy, Job en Edwin        [QR]
-(c) 2026
 Dolphin Solutions
-dolphinsolutions.nl
-Versie    v0.1.0
-Gebouwd   Sep  1 2026
+Versie    v0.2.1
+Gebouwd   Sep  2 2026
 Apparaat  CB8B90
 Update    niets te doen
 
      [ Nu bijwerken ]
 ```
+
+Zes regels, en dat is wat er past. Het versienummer van een ontwikkelbuild loopt over twee
+regels; met meer tekst erboven schoof de rest onder de pijlenstrip. Het jaartal en het webadres
+stonden er eerst ook, maar die staan al in de QR-code ernaast.
 
 De QR-code opent
 [dolphinsolutions.nl/gestuurde-energie-gemeenschap](https://www.dolphinsolutions.nl/gestuurde-energie-gemeenschap/).
