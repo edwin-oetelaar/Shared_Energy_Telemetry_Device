@@ -152,7 +152,12 @@ static char s_qr [96];
 //  front of it. Every line answers a question that until now could only be
 //  answered by reading a serial log.
 
-static char s_report [256];
+//  Zes regels sinds de meting er met vermogen bij staat, en die moeten er
+//  allemaal in passen; wat niet past wordt stil afgekapt.
+static char s_report [384];
+
+//  Verderop gedefinieerd, bij de andere getallen op het scherm.
+static void s_dutch_decimals(char *text);
 
 static void s_build_report(void)
 {
@@ -194,9 +199,22 @@ static void s_build_report(void)
         snprintf(keys_line, sizeof(keys_line), "Sleutels  goed, nog %d min", token_left / 60);
     }
 
-    char data_line [48];
+    char data_line [128];
+    energyboxx_data_t data;
+
     if (since_data < 0) {
         snprintf(data_line, sizeof(data_line), "Meting    nog geen");
+    }
+    else if (energyboxx_api_last_data(&data)) {
+        //  Hier alle drie, met teken. Dit beeld gaat over het apparaat en wie
+        //  ernaar kijkt wil weten waar het getal vandaan komt: netto is invoer
+        //  min uitvoer, en dat hoort te kloppen.
+        snprintf(data_line, sizeof(data_line),
+                 "Meting    %d s geleden\n          %+.1f kW netto\n"
+                 "          %.1f in, %.1f uit",
+                 since_data, data.community_power_result_kw,
+                 data.community_power_import_kw, data.community_power_export_kw);
+        s_dutch_decimals(data_line);
     }
     else {
         snprintf(data_line, sizeof(data_line), "Meting    %d s geleden", since_data);
@@ -277,6 +295,42 @@ static void s_build_about(void)
 
 
 //  --------------------------------------------------------------------------
+//  Nederland schrijft 4,1 waar C 4.1 afdrukt. Eén doorloop is genoeg; deze
+//  getallen zijn klein en er staat er hooguit een handvol in een regel.
+
+static void s_dutch_decimals(char *text)
+{
+    for (char *at = text; *at != '\0'; at++) {
+        if (*at == '.') {
+            *at = ',';
+        }
+    }
+}
+
+
+//  --------------------------------------------------------------------------
+//  Hoeveel het is. De titel zegt welke kant het op gaat - "Energie over" of
+//  "Energie inkopen" - dus hier hoort alleen de hoeveelheid, zonder teken. Een
+//  min voor een getal onder het woord "inkopen" leest als twee ontkenningen.
+
+static const char *s_power_line(void)
+{
+    energyboxx_data_t data;
+
+    if (!energyboxx_api_last_data(&data)) {
+        return NULL;            //  Nog nooit een meting gezien
+    }
+
+    float kw = data.community_power_result_kw;
+
+    snprintf(s_detail, sizeof(s_detail), "%.1f kW", kw < 0 ? -kw : kw);
+    s_dutch_decimals(s_detail);
+
+    return s_detail;
+}
+
+
+//  --------------------------------------------------------------------------
 //  The line under the title. Only two states have something worth saying
 //  there, and both of them name a network.
 
@@ -290,6 +344,13 @@ static const char *s_detail_for(status_view_state_t state)
         case STATUS_VIEW_UPDATING:
             snprintf(s_detail, sizeof(s_detail), "%s", s_update_status());
             return s_detail;
+
+        //  De drie beelden die over de gemeenschap gaan, en niet over het
+        //  apparaat. Daar hoort het getal bij dat de toestand bepaalde.
+        case STATUS_VIEW_SURPLUS:
+        case STATUS_VIEW_DEFICIT:
+        case STATUS_VIEW_BALANCED:
+            return s_power_line();
 
         case STATUS_VIEW_CONNECTING:
         case STATUS_VIEW_CONNECT_FAILED:

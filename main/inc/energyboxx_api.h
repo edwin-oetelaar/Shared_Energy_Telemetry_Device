@@ -46,6 +46,14 @@ int energyboxx_api_token_seconds_left(void);
 //  How long ago the last successful telemetry arrived, in seconds. Negative
 //  when none has ever arrived, so callers can tell "never" from "just now".
 int energyboxx_api_seconds_since_data(void);
+
+//  The last measurement that arrived, without asking the network for a new
+//  one. The screen redraws several times a second and must never turn that
+//  into an HTTP request; energyboxx_api_get_data () fetches, this one
+//  remembers.
+//
+//  Returns false when nothing has ever arrived, and leaves `out` untouched.
+bool energyboxx_api_last_data(energyboxx_data_t *out);
 bool energyboxx_api_is_valid_credentials(void);
 void energyboxx_data_print(const energyboxx_data_t *data);
 void energyboxx_api_set_renew_token(bool renew);

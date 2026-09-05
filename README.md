@@ -25,6 +25,16 @@ Het apparaat vraagt elke minuut de telemetrie op. Het stuurt het scherm aan op h
 | Tussen `-0,05` en `+0,05 kW` | In balans | Donkergroen |
 | Geen actuele meting | Geen gegevens | Grijs |
 
+Onder die woorden staat hoeveel het is, in kW, met een Nederlandse komma:
+
+```text
+   Energie over
+      0,3 kW
+```
+
+Zonder teken, want de titel zegt al welke kant het op gaat. Een min voor een getal onder het
+woord "inkopen" leest als twee ontkenningen.
+
 Het scherm kent nog vier toestanden die over het apparaat zelf gaan: **Instellen** tijdens
 provisioning, **Verbinden** terwijl het een netwerk zoekt, **Sleutels nodig** als er geen
 API-gegevens zijn, en **Bijwerken** terwijl het nieuwe firmware ophaalt.
@@ -98,12 +108,18 @@ overgaat op inkopen, ziet het merkteken alsnog verschijnen.
 Het eerste beeld in de bladerlijst toont wat het apparaat over zichzelf weet:
 
 ```text
-Wifi      OETELX
+Wifi      OETELX (2 van 3)
           192.168.50.145
 Sleutels  goed, nog 119 min
 Meting    42 s geleden
+          +0,3 kW netto
+          4,1 in, 4,4 uit
 Portaal   dicht
 ```
+
+Hier staat het teken er wél bij, en staan alle drie de getallen. Dit beeld gaat over het
+apparaat, en wie ernaar kijkt wil kunnen zien waar het getal vandaan komt: netto is invoer min
+uitvoer, en dat hoort te kloppen.
 
 Onderaan staat de knop **Sleutels invoeren**. Zie "Sleutels opnieuw invoeren".
 
