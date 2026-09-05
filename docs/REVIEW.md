@@ -246,6 +246,9 @@ Er zit ook geen enkele authenticatie op de endpoints. Een buitenstaander die op 
 inlogt kan `/scan` draaien, via `POST /connect` het apparaat aan zíjn access point koppelen, of
 via `/api-check` eigen credentials laten opslaan.
 
+> **Voor het gesprek met de klant:** [BESLUIT-c5-h5.md](BESLUIT-c5-h5.md) zet C5 en H5 naast
+> elkaar met de kosten van nu doen tegenover de kosten van later willen.
+
 **Fix:** WPA2 op het provisioning-AP met een per-apparaat wachtwoord op de behuizing of een
 QR-sticker. Dat lost afluisteren én ongeautoriseerde toegang in één keer op. ESP-IDF's eigen
 `wifi_provisioning`-component doet dit met een versleuteld kanaal (X25519 + AES) — het overwegen
@@ -800,6 +803,11 @@ encryption én secure boot v2 — de SOC-vlaggen staan aan in `sdkconfig`, de fe
 **Fix:** voor productie flash encryption in release mode + NVS encryption, en secure boot v2 als
 je de firmware wilt afschermen. **Beslis dit vóór de eerste serie** — achteraf inschakelen op
 reeds uitgeleverde apparaten kan niet meer.
+
+> **Voor het gesprek met de klant:** [BESLUIT-c5-h5.md](BESLUIT-c5-h5.md). Kern van dat stuk: de
+> zwaarste kostenpost is niet de ontwikkeltijd maar het sleutelbeheer, en er is een middenweg —
+> flash encryption en NVS-encryptie zonder secure boot beschermen de gegevens van de bewoner
+> zonder dat er een ondertekensleutel ontstaat die de levensduur van het product moet halen.
 
 ---
 
