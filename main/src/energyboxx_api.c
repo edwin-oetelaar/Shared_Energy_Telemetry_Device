@@ -395,9 +395,16 @@ static esp_err_t s_get_data_locked(energyboxx_data_t* data)
         //  de plek waar je het zoekt.
         for (size_t row = 0; row < OPTIONAL_FIELD_ROWS; row++) {
             cJSON *item = cJSON_GetObjectItemCaseSensitive(root, s_optional_field [row].name);
-            float *field = (float *) ((char *) data + s_optional_field [row].offset);
+            float value = cJSON_IsNumber(item) ? (float) item->valuedouble : 0.0f;
 
-            *field = cJSON_IsNumber(item) ? (float) item->valuedouble : 0.0f;
+            //  Met memcpy en niet met een cast naar float *. Een char * die
+            //  tot float * wordt gemaakt gaat voorbij aan de uitlijning die
+            //  een float nodig heeft, en cppcheck zegt dat ook met zoveel
+            //  woorden. Hier klopt het toevallig - het is een veld in een
+            //  struct - maar toevallig kloppen is geen reden om het zo op te
+            //  schrijven.
+            memcpy((char *) data + s_optional_field [row].offset,
+                   &value, sizeof (value));
         }
 
         //  The one field the device actually acts on, so it is required rather

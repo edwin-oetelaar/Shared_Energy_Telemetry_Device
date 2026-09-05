@@ -96,7 +96,7 @@ te repareren.
 - [x] **L1** Geen tests, geen CI, geen static analysis — opgezet
 - [x] **L2** Compilerwaarschuwingen staan op de standaard — opgelost, twaalf meldingen opgeruimd
 - [x] **L3** `sdkconfig` én `sdkconfig.old` ingecheckt — opgelost, `sdkconfig.defaults`
-- [ ] **L4** Geen LICENSE-bestand
+- [x] **L4** Geen LICENSE-bestand — opgelost, alle rechten voorbehouden
 - [x] **L5** HTML/CSS/JS als C-stringliteral — opgelost, `main/web/` plus `EMBED_TXTFILES`
 - [x] **L6** Zeven keer hetzelfde JSON-parseerblok — opgelost, tabel van naam en offset
 - [x] **L7** Dode code — opgelost, `energyboxx_api_get_token()` weg; de led_ring-functies waren al met de bordwissel verdwenen
@@ -1035,6 +1035,10 @@ Geen van deze breekt iets, samen bepalen ze wel hoe het project over een jaar aa
   en daarna vanaf nul te bouwen.
 - **L4 — Geen LICENSE-bestand.** `main/src/dns_server.c` is keurig overgenomen mét Espressif's
   CC0-header, maar het project zelf heeft geen licentie — juridisch "alle rechten voorbehouden".
+  **Opgelost op 2026-09-05.** Dat wat juridisch al gold staat er nu ook, in het Nederlands en het
+  Engels, met een verwijzing naar Dolphin Solutions voor de voorwaarden en de prijzen. Het bestand
+  zondert `main/src/dns_server.c` uit, dat van Espressif is en zijn eigen licentie houdt — een
+  onvoorwaardelijke "alle rechten voorbehouden" zou daar een aanspraak op leggen die niet klopt.
 - **L5 — HTML, CSS en JavaScript als C-stringliteral.** Onhandig te bewerken, geen syntax
   highlighting, en de directe oorzaak van C4. ESP-IDF's `EMBED_FILES` lost dit netjes op.
   **Opgelost op 2026-09-05.** De twee pagina's staan in `main/web/` en worden ingebed met
