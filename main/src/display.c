@@ -503,6 +503,94 @@ static lv_color_t s_readable_text_colour(uint32_t background_rgb)
 }
 
 
+//  --------------------------------------------------------------------------
+//  Een meting. Deelt de objecten met display_show_status (), maar zet het
+//  getal in een groter lettertype en hangt er een pijl naast.
+//
+//  De pijl staat aan de kant waar hij heen wijst: omhoog rechts, omlaag
+//  links. Zo is de richting ook in een ooghoek te zien, zonder de kleur te
+//  hoeven onderscheiden.
+
+esp_err_t display_show_reading(const char *title,
+                               const char *value,
+                               display_arrow_t arrow,
+                               uint32_t background_rgb)
+{
+    assert (title);             //  Caller's contract
+    assert (value);
+
+    if (!s_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!bsp_display_lock(1000)) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    lv_color_t ink = s_readable_text_colour(background_rgb);
+
+    lv_obj_add_flag(s_image, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_version, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_qr, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_body, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_action, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(background_rgb), LV_PART_MAIN);
+
+    lv_obj_set_style_text_color(s_title, ink, LV_PART_MAIN);
+    lv_label_set_text(s_title, title);
+    lv_obj_remove_flag(s_title, LV_OBJ_FLAG_HIDDEN);
+
+    char line [80];
+
+    switch (arrow) {
+        case DISPLAY_ARROW_UP:
+            snprintf(line, sizeof(line), "%s  " LV_SYMBOL_UP, value);
+            break;
+
+        case DISPLAY_ARROW_DOWN:
+            snprintf(line, sizeof(line), LV_SYMBOL_DOWN "  %s", value);
+            break;
+
+        default:
+            snprintf(line, sizeof(line), "%s", value);
+            break;
+    }
+
+    lv_obj_set_style_text_font(s_detail, &lv_font_montserrat_36, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_detail, ink, LV_PART_MAIN);
+    lv_label_set_text(s_detail, line);
+    lv_obj_remove_flag(s_detail, LV_OBJ_FLAG_HIDDEN);
+
+    //  Bovenaan en niet gecentreerd. De onderste zestig pixels horen bij de
+    //  pijlenstrip, dus wat "in het midden" staat hangt in werkelijkheid te
+    //  laag - en de ruimte die overblijft zit onder het getal, waar niemand
+    //  iets aan heeft.
+    lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, 14);
+
+    //  Onder de titel en niet op een vaste hoogte: de titel is één regel of
+    //  twee, afhankelijk van hoe lang hij is.
+    //
+    //  De tussenruimte is ruim, en dat is met opzet - zo hangt het getal in
+    //  het onderste deel van het beeld in plaats van tegen de woorden aan.
+    //  De rekensom, met de werkelijke regelhoogtes van LVGL: Montserrat 28 is
+    //  30 pixels hoog, Montserrat 36 is 40, en de pijlenstrip begint op 180.
+    //
+    //      titel van twee regels   14 .. 74
+    //      + 54 tussenruimte       getal 128 .. 168
+    //      pijlenstrip begint op   180        -> 12 pixels over
+    //
+    //  Twee regels is het langste dat voorkomt: "Energie inkopen voor groep"
+    //  is 26 tekens, en er passen er ongeveer 18 op een regel van 288 pixels.
+    lv_obj_update_layout(s_title);
+    lv_obj_align_to(s_detail, s_title, LV_ALIGN_OUT_BOTTOM_MID, 0, 54);
+
+    bsp_display_unlock();
+
+    return ESP_OK;
+}
+
+
 esp_err_t display_show_status(const char *title,
                               const char *detail,
                               const char *qr_text,
@@ -531,6 +619,9 @@ esp_err_t display_show_status(const char *title,
     lv_obj_remove_flag(s_title, LV_OBJ_FLAG_HIDDEN);
 
     if (detail != NULL && detail [0] != '\0') {
+        //  Terug naar de kleine maat: display_show_reading () zet hem groot,
+        //  en dit is hetzelfde object.
+        lv_obj_set_style_text_font(s_detail, &lv_font_montserrat_14, LV_PART_MAIN);
         lv_obj_set_style_text_color(s_detail, ink, LV_PART_MAIN);
         lv_label_set_text(s_detail, detail);
         lv_obj_remove_flag(s_detail, LV_OBJ_FLAG_HIDDEN);

@@ -24,6 +24,26 @@ esp_err_t display_init(void);
 //  Show the bring-up image, full screen.
 esp_err_t display_show_bringup(void);
 
+//  Welke kant de energie op gaat, als pijl naast het getal.
+//
+//  Het is de tweede manier om hetzelfde te zeggen. Groen en geel zijn de
+//  eerste, en die werken niet voor iedereen: rood-groen kleurenblindheid komt
+//  bij ongeveer één op de twaalf mannen voor, en dan is de kleur het enige
+//  verschil tussen "over" en "inkopen". Een pijl is dat niet.
+typedef enum {
+    DISPLAY_ARROW_NONE = 0,
+    DISPLAY_ARROW_UP,       //  Rechts van het getal: de groep heeft over
+    DISPLAY_ARROW_DOWN      //  Links van het getal: de groep koopt in
+} display_arrow_t;
+
+//  Een meting: wat de groep doet, hoeveel, en welke kant het op gaat. Het
+//  getal staat in een groter lettertype dan de regel onder een gewoon beeld,
+//  want dit is het getal waar iemand voor blijft staan.
+esp_err_t display_show_reading(const char *title,
+                               const char *value,
+                               display_arrow_t arrow,
+                               uint32_t background_rgb);
+
 //  Show a screen with a title, an optional line under it, and an optional QR
 //  code. Pass NULL for detail or qr_text to leave that part out.
 //

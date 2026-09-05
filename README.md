@@ -63,15 +63,27 @@ Het apparaat vraagt elke minuut de telemetrie op. Het stuurt het scherm aan op h
 | Tussen `-0,05` en `+0,05 kW` | In balans | Donkergroen |
 | Geen actuele meting | Geen gegevens | Grijs |
 
-Onder die woorden staat hoeveel het is, in kW, met een Nederlandse komma:
+Onder die woorden staat hoeveel het is, in kW, met een Nederlandse komma en een pijl:
 
 ```text
   Energie over in de groep
-         0,3 kW
+        0,3 kW  ↑
 ```
 
-Zonder teken, want de titel zegt al welke kant het op gaat. Een min voor een getal onder het
-woord "inkopen" leest als twee ontkenningen.
+```text
+ Energie inkopen voor groep
+      ↓  13,4 kW
+```
+
+Het getal staat zonder teken: de titel zegt al welke kant het op gaat, en een min onder het woord
+"inkopen" leest als twee ontkenningen. De pijl staat aan de kant waar hij heen wijst — omhoog
+rechts, omlaag links.
+
+**Waarom een pijl naast de kleur.** Groen tegenover geel is het enige verschil tussen "over" en
+"inkopen" zolang je de woorden niet leest, en bij rood-groen kleurenblindheid — ongeveer één op
+de twaalf mannen — is dat verschil er niet. Een pijl is dat wel. Het getal staat in een groter
+lettertype dan de regels op de andere beelden, want dit is het getal waar iemand voor blijft
+staan.
 
 Het scherm kent nog vier toestanden die over het apparaat zelf gaan: **Instellen** tijdens
 provisioning, **Verbinden** terwijl het een netwerk zoekt, **Sleutels nodig** als er geen

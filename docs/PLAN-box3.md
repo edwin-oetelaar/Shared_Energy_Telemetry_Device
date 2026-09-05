@@ -479,6 +479,11 @@ log staat.
 
 **Klaar als:** de waarden uit de telemetrie leesbaar op het scherm staan.
 
+> **Afgerond op 2026-09-05**, op de prijzen na. Het vermogen staat er, in Montserrat 24 met een
+> pijl ernaast: omhoog rechts bij een overschot, omlaag links bij een tekort. Die pijl is de
+> tweede manier om te zeggen welke kant het op gaat; kleur is de eerste, en die werkt niet bij
+> rood-groen kleurenblindheid.
+>
 > **Half uitgevoerd op 2026-09-05.** Het vermogen staat er. Onder "Energie over" en "Energie
 > inkopen" staat nu hoeveel het is — `0,3 kW` — en het statusscherm toont de meting met alle
 > drie de getallen: netto, in en uit. Nederlandse komma's.

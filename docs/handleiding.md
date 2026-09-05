@@ -26,12 +26,21 @@ Het scherm toont één van deze vier beelden, met daaronder hoeveel het is.
 | **In balans** | donkergroen | Vraag en aanbod zijn ongeveer gelijk. |
 | **Geen gegevens** | grijs | Het apparaat heeft geen actuele meting. Zie hoofdstuk 7. |
 
-Onder het woord staat de hoeveelheid:
+Onder het woord staat de hoeveelheid, met een pijl ernaast:
 
 ```text
   Energie over in de groep
-         0,3 kW
+        0,3 kW  ↑
 ```
+
+```text
+ Energie inkopen voor groep
+      ↓  13,4 kW
+```
+
+De pijl wijst omhoog als de groep energie over heeft, en omlaag als de groep inkoopt. Hij staat
+aan de kant waar hij heen wijst, zodat u het ook vanuit een ooghoek ziet — en ook als u het
+verschil tussen groen en geel niet ziet.
 
 Het getal staat er zonder plus of min. Het woord erboven zegt al welke kant het op gaat.
 
