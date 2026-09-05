@@ -17,10 +17,15 @@ gegevens staan dus niet in de firmware.
 [docs/handleiding.md](docs/handleiding.md) genoeg: wat de beelden betekenen, hoe u het instelt,
 hoe u meer dan één netwerk toevoegt, en wat u doet als er iets niet goed gaat.
 
-## Versie v0.3.0 — de basis
+## Versie v0.3.1 — de basis
 
-`v0.3.0` is de eerste versie die doet wat de klant als eerste vroeg, en daarmee het punt waar
-alles vanaf nu tegen afgezet wordt.
+`v0.3.x` is de eerste reeks die doet wat de klant als eerste vroeg, en daarmee het punt waar
+alles vanaf nu tegen afgezet wordt. Gebruik **v0.3.1** of hoger.
+
+> **v0.3.0 niet gebruiken.** Die versie wist bij het bijwerken de wifisleutels van de oude
+> indeling. Ging de nieuwe versie daarna door de proeftijd heen, dan was er niets aan de hand —
+> maar zakte hij, dan viel het apparaat terug op firmware die zijn netwerk niet meer kon vinden.
+> Zie **H15** in [docs/REVIEW.md](docs/REVIEW.md).
 
 Wat er in zit:
 

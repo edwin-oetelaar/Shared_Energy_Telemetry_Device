@@ -17,8 +17,23 @@ static const char *TAG = "[wifi_storage]";
 
 #define WIFI_NAMESPACE  "wifi_creds"
 
-//  The keys of the firmware that stored one network. They are read once, by
-//  the migration below, and then removed.
+//  The keys of the firmware that stored one network - v0.2.x and earlier.
+//
+//  They are NOT removed, and that is on purpose. A device that takes the
+//  update over the air keeps the old firmware in its other slot, and the
+//  update can still be rolled back: an image that fails its probation sends
+//  the bootloader back to the version before it. That version looks for these
+//  keys. Erasing them means a rollback lands on a device with no network at
+//  all - the portal comes up and somebody has to walk over with a telephone.
+//  The rollback exists to save a device, not to strand it.
+//
+//  So they stay, and they are kept current: whichever network last worked is
+//  mirrored here, so that older firmware finds something that worked recently
+//  rather than something from months ago.
+//
+//  This bridge can go once no device has a v0.2.x image in its other slot.
+//  Until then it costs two strings in NVS and a write on a path that only
+//  runs when the network a device uses changes.
 #define KEY_OLD_SSID      "ssid"
 #define KEY_OLD_PASSWORD  "password"
 
@@ -26,6 +41,15 @@ static const char *TAG = "[wifi_storage]";
 //  per key, so this stays well inside the limit for any slot count that would
 //  fit on the screen.
 #define KEY_LAST_OK  "last_ok"
+
+//  Which layout this device is on. Needed the moment the old keys stopped
+//  being erased: their presence used to mean "not migrated yet", and now it
+//  means nothing at all. Without this marker the copy below runs on every
+//  single start and writes the bridge over slot 0 - whatever the owner had
+//  put there. Seen on the bench: slot 0 held one network at boot and the
+//  bridge's network a second later.
+#define KEY_LAYOUT     "layout"
+#define LAYOUT_SLOTS   1
 
 static void s_key_for(char *key, size_t size, const char *stem, size_t slot)
 {
@@ -89,20 +113,42 @@ static esp_err_t s_read_slot(nvs_handle_t handle, size_t slot, wifi_slot_t *cred
 //  layout and one more chance at the next start. Losing this pair means
 //  somebody has to walk up to the device with a telephone.
 
+//  Say that this device is on the slotted layout, so the copy above runs once
+//  and not once per start.
+
+static void s_mark_layout(nvs_handle_t handle)
+{
+    if (nvs_set_u8(handle, KEY_LAYOUT, LAYOUT_SLOTS) == ESP_OK) {
+        nvs_commit(handle);
+    }
+}
+
+
 static esp_err_t s_migrate_single_network(nvs_handle_t handle)
 {
+    uint8_t layout = 0;
+
+    if (nvs_get_u8(handle, KEY_LAYOUT, &layout) == ESP_OK && layout >= LAYOUT_SLOTS) {
+        return ESP_OK;              //  Already on the slotted layout
+    }
+
     char ssid [WIFI_SSID_SIZE] = {0};
     size_t length = sizeof(ssid);
 
     if (nvs_get_str(handle, KEY_OLD_SSID, ssid, &length) != ESP_OK) {
-        return ESP_OK;              //  Nothing from an older firmware
+        //  Nothing from an older firmware. Mark the layout anyway: this device
+        //  is on it, and the first network it stores will put something under
+        //  the old keys as a bridge. Without the marker that bridge would look
+        //  like something to migrate at the next start.
+        s_mark_layout(handle);
+        return ESP_OK;
     }
 
     char password [WIFI_PASSWORD_SIZE] = {0};
     length = sizeof(password);
     nvs_get_str(handle, KEY_OLD_PASSWORD, password, &length);
 
-    ESP_LOGW(TAG, "Moving the stored network '%s' to slot 0", ssid);
+    ESP_LOGW(TAG, "Copying the stored network '%s' to slot 0", ssid);
 
     esp_err_t err = nvs_set_str(handle, "ssid0", ssid);
 
@@ -125,12 +171,12 @@ static esp_err_t s_migrate_single_network(nvs_handle_t handle)
         return err;
     }
 
-    nvs_erase_key(handle, KEY_OLD_SSID);
-    nvs_erase_key(handle, KEY_OLD_PASSWORD);
+    //  The old keys stay where they are; see the comment above them. What was
+    //  a migration is therefore a copy, and a device can go back to older
+    //  firmware without losing its network.
+    s_mark_layout(handle);
 
-    err = nvs_commit(handle);
-
-    ESP_LOGI(TAG, "Slot 0 now holds '%s'; the old keys are gone", ssid);
+    ESP_LOGI(TAG, "Slot 0 now holds '%s'; the old keys stay for a rollback", ssid);
 
     return err;
 }
@@ -261,7 +307,22 @@ esp_err_t wifi_storage_clear_slot(size_t slot)
         return err;
     }
 
+    //  Read the name before erasing it: if the bridge for older firmware
+    //  points at this network, it has to go too. Somebody who forgets a
+    //  network means forgotten, not "forgotten unless you roll back".
+    char going [WIFI_SSID_SIZE] = {0};
+    char bridged [WIFI_SSID_SIZE] = {0};
+
     s_key_for(key, sizeof(key), "ssid", slot);
+    s_get_str(handle, key, going, sizeof(going));
+
+    if (going [0] != '\0'
+    &&  s_get_str(handle, KEY_OLD_SSID, bridged, sizeof(bridged)) == ESP_OK
+    &&  strcmp(going, bridged) == 0) {
+        nvs_erase_key(handle, KEY_OLD_SSID);
+        nvs_erase_key(handle, KEY_OLD_PASSWORD);
+    }
+
     nvs_erase_key(handle, key);
     s_key_for(key, sizeof(key), "pw", slot);
     nvs_erase_key(handle, key);
@@ -288,6 +349,47 @@ esp_err_t wifi_storage_clear_slot(size_t slot)
 }
 
 
+//  --------------------------------------------------------------------------
+//  Keep the bridge for older firmware pointing at a network that works. Writes
+//  only when the value would change: this runs on every reconnect, and NVS
+//  wears out.
+
+static void s_mirror_for_older_firmware(const wifi_slot_t *slot)
+{
+    nvs_handle_t handle;
+
+    if (nvs_open(WIFI_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) {
+        return;                 //  Not worth failing a good connection over
+    }
+
+    char ssid [WIFI_SSID_SIZE] = {0};
+
+    if (s_get_str(handle, KEY_OLD_SSID, ssid, sizeof(ssid)) == ESP_OK
+    &&  strcmp(ssid, slot->ssid) == 0) {
+        nvs_close(handle);      //  Already this network
+        return;
+    }
+
+    esp_err_t err = nvs_set_str(handle, KEY_OLD_SSID, slot->ssid);
+
+    if (err == ESP_OK) {
+        err = nvs_set_str(handle, KEY_OLD_PASSWORD, slot->password);
+    }
+    if (err == ESP_OK) {
+        err = nvs_commit(handle);
+    }
+
+    nvs_close(handle);
+
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Older firmware would now find '%s'", slot->ssid);
+    }
+    else {
+        ESP_LOGW(TAG, "Could not update the rollback keys: %s", esp_err_to_name(err));
+    }
+}
+
+
 esp_err_t wifi_storage_note_success(size_t slot)
 {
     assert (slot < WIFI_SLOT_COUNT);    //  Caller's contract
@@ -298,6 +400,11 @@ esp_err_t wifi_storage_note_success(size_t slot)
     if (err != ESP_OK) {
         return err;
     }
+
+    //  Before the early return below: a slot can be the most recent one
+    //  already - straight after the copy from an older layout, for instance -
+    //  and the bridge still has to point at it.
+    s_mirror_for_older_firmware(&slots [slot]);
 
     uint32_t highest = 0;
 
@@ -420,6 +527,14 @@ esp_err_t wifi_storage_clear_credentials(void)
 
     if (nvs_open(WIFI_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
         nvs_erase_key(handle, KEY_LAST_OK);
+
+        //  And the bridge for older firmware. Somebody who wipes a device
+        //  means all of it; leaving a working network behind for one firmware
+        //  version and not the other is the kind of surprise that costs an
+        //  afternoon.
+        nvs_erase_key(handle, KEY_OLD_SSID);
+        nvs_erase_key(handle, KEY_OLD_PASSWORD);
+
         nvs_commit(handle);
         nvs_close(handle);
     }
