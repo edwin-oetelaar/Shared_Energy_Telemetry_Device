@@ -367,7 +367,10 @@ static const char *s_detail_for(status_view_state_t state)
 {
     switch (state) {
         case STATUS_VIEW_PROVISIONING:
-            snprintf(s_detail, sizeof(s_detail), "Wifi: %s", wifi_prov_ap_ssid());
+            //  Naam én wachtwoord: wie de QR-code niet kan scannen moet het
+            //  van het scherm kunnen overnemen.
+            snprintf(s_detail, sizeof(s_detail), "%s\n%s",
+                     wifi_prov_ap_ssid(), wifi_prov_ap_password());
             return s_detail;
 
         case STATUS_VIEW_UPDATING:
@@ -391,8 +394,11 @@ static const char *s_detail_for(status_view_state_t state)
 
 //  --------------------------------------------------------------------------
 //  A QR code only helps in one place: joining the device's own access point.
-//  The WIFI: form is what phone cameras understand; T:nopass says the network
-//  is open, which is what wifi_prov_start_ap () sets up.
+//  The WIFI: form is what phone cameras understand.
+//
+//  De code draagt het wachtwoord mee, dus het netwerk kan met WPA2 dicht
+//  zonder dat iemand iets hoeft te typen. Dat is de kern van de oplossing van
+//  C5: beveiligd én niet omslachtiger dan het open netwerk dat het verving.
 
 static const char *s_qr_for(status_view_state_t state)
 {
@@ -400,7 +406,8 @@ static const char *s_qr_for(status_view_state_t state)
         return NULL;
     }
 
-    snprintf(s_qr, sizeof(s_qr), "WIFI:S:%s;T:nopass;;", wifi_prov_ap_ssid());
+    snprintf(s_qr, sizeof(s_qr), "WIFI:S:%s;T:WPA;P:%s;;",
+             wifi_prov_ap_ssid(), wifi_prov_ap_password());
 
     return s_qr;
 }

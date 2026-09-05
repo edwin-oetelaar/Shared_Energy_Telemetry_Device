@@ -215,15 +215,26 @@ Het apparaat probeert bij het opstarten eerst de opgeslagen credentials. Het sta
 accesspoint zodra er geen wifigegevens zijn opgeslagen, of het opgeslagen netwerk niet binnen
 30 seconden antwoordt.
 
-Het accesspoint heeft deze gegevens:
+Naam en wachtwoord verschillen **per apparaat** en staan op het scherm:
 
 ```text
-SSID: SETD_Provisioning
-Wachtwoord: geen
+SETD-CB8B90
+K7RQ4MZP
 ```
 
-Op het scherm staat een **QR-code**. Richt daar een telefooncamera op: de telefoon biedt aan
-het netwerk te joinen. Wie liever handmatig zoekt, vindt het netwerk onder de naam hierboven.
+De naam draagt de laatste drie bytes van het MAC-adres, dezelfde die op de About-pagina onder
+**Apparaat** staan. Het wachtwoord wordt bij het eerste gebruik gemaakt, blijft daarna hetzelfde,
+en overleeft een fabrieksreset — zo blijft kloppen wat er ooit op een sticker of in een
+administratie is beland.
+
+Het netwerk is beveiligd met **WPA2**. Tot v0.3.3 stond het open, en gingen het wifi-wachtwoord
+van de bewoner en de API-sleutels onversleuteld door de lucht. Zie **C5** in
+[docs/REVIEW.md](docs/REVIEW.md).
+
+Op het scherm staat een **QR-code**, en die draagt het wachtwoord mee. Richt daar een
+telefooncamera op: de telefoon biedt aan het netwerk te joinen, zonder dat er iets getypt hoeft
+te worden. Wie liever handmatig zoekt, vindt het netwerk onder de naam hierboven en typt het
+wachtwoord over.
 Het portaal opent daarna meestal vanzelf; anders is het `http://192.168.4.1`.
 
 Het portaal vraagt twee dingen, in deze volgorde:

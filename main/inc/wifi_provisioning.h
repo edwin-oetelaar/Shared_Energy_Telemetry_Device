@@ -67,6 +67,11 @@ void wifi_prov_note_portal_activity(void);
 //  screen shows it, so it must come from the same place the radio uses.
 const char *wifi_prov_ap_ssid(void);
 
+//  Het wachtwoord van dat netwerk. Per apparaat, één keer gemaakt en daarna
+//  bewaard. Hoort op het scherm te staan en in de QR-code, want anders komt
+//  niemand erop. Zie C5 in docs/REVIEW.md.
+const char *wifi_prov_ap_password(void);
+
 //  The network the device is trying to join, or an empty string when there is
 //  none. Never NULL.
 const char *wifi_prov_current_ssid(void);
