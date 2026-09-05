@@ -109,7 +109,7 @@ Hier zit meer aan vast dan werk.
 | Kostenpost | Wat het inhoudt |
 | --- | --- |
 | **Onomkeerbaar** | Het wordt in de chip gebrand. Terugdraaien kan niet, en **aanzetten kan niet over de lucht** — het moet met een kabel, in de fabriek, vóór uitlevering |
-| **Sleutelbeheer** | Er komt een ondertekensleutel die de hele levensduur van het product moet blijven bestaan. Kwijt betekent: nooit meer een update. Uitgelekt betekent: secure boot is waardeloos |
+| **Sleutelbeheer** | Er komt een ondertekensleutel die de hele levensduur van het product moet blijven bestaan. Kwijt betekent: nooit meer een update. Uitgelekt betekent: secure boot is waardeloos. Alleen voor secure boot — flash encryption en NVS-encryptie maken hun sleutel op het apparaat zelf. Zie [SLEUTELS.md](SLEUTELS.md) |
 | **De bouwstraat** | Die sleutel moet in de bouwomgeving staan om releases te ondertekenen. Dat is een nieuwe plek waar een geheim ligt |
 | **Onderhoud** | Een apparaat dat terugkomt is lastiger te onderzoeken: opnieuw flashen via de kabel gaat in de strengste stand niet meer |
 | **Ontwikkeltijd** | Enkele dagen, inclusief het beproeven — en beproeven betekent hier dat een fout een bord onherstelbaar kan maken |
@@ -170,7 +170,7 @@ nog — dus dit is geen besluit dat vastloopt.
 **H5: nu beslissen, ook als de uitkomst "niet doen" is.** En als het besluit "wel doen" wordt,
 dan in deze volgorde, want de kosten liggen niet waar men ze verwacht:
 
-1. **Eerst het sleutelbeheer regelen.** Waar staat de sleutel, wie kan erbij, wat gebeurt er als
+1. **Eerst het sleutelbeheer regelen.** De werkwijze staat in [SLEUTELS.md](SLEUTELS.md). Waar staat de sleutel, wie kan erbij, wat gebeurt er als
    die persoon er niet meer is, en hoe wordt hij bewaard buiten één laptop. Zonder antwoord op
    die vragen is de rest zinloos.
 2. **Dan flash encryption en NVS encryption.** Die beschermen de gegevens van de bewoner en
@@ -188,7 +188,107 @@ serie gaat is het dat op den duur niet.
 
 ---
 
-## 7. Wat dit stuk niet beslist
+## 7. Het besluit, genomen op 2026-09-05
+
+**C5 is gedaan.** Het instelnetwerk staat op WPA2 met een wachtwoord per apparaat, dat op het
+scherm staat en in de QR-code zit. Het kost de gebruiker niets: wie scant komt er zonder typen
+op, net als bij het open netwerk dat het verving.
+
+**H5 wordt niet gedaan.** Geen flash encryption, geen secure boot. De reden is niet gemak maar een
+uitgangspunt: **de apparaten moeten na de pilot volledig herbruikbaar zijn.**
+
+### Waarom dat uitgangspunt hier de doorslag geeft
+
+De apparaten komen na de pilot terug voor volgende experimenten. Een apparaat dat daarna niet
+meer met een kabel te herprogrammeren is, is elektronisch afval — en dat weegt zwaarder dan het
+risico dat hier wordt afgedekt.
+
+Dat is geen aanname maar staat in de documentatie van ESP-IDF:
+
+> *In release mode, UART bootloader cannot perform flash encryption operations. New plaintext
+> images can ONLY be downloaded using the over-the-air (OTA) scheme.*
+
+| | Nog met een kabel te herprogrammeren? | Sleutels te bewaren |
+| --- | --- | --- |
+| Niets doen | ja | geen |
+| Flash encryption, development mode | ja, een beperkt aantal keer | geen |
+| **Flash encryption, release mode** | **nee** | geen |
+| Release mode met een eigen sleutel per apparaat | ja | **één per apparaat, voor altijd** |
+| Secure boot | ja, mits ondertekend met de eigen sleutel | één, voor altijd |
+
+De ontsnapping in de vierde rij bestaat wel, maar ruilt het ene probleem in voor het andere: een
+sleutel per apparaat die de levensduur moet halen. Dat is de last uit
+[SLEUTELS.md](SLEUTELS.md), vermenigvuldigd met het aantal apparaten.
+
+Secure boot brickt op zichzelf niets: zolang de sleutel er is, blijft het apparaat te
+programmeren met alles wat ermee is ondertekend. Maar raakt die sleutel kwijt, dan is het
+apparaat alsnog onbruikbaar — en dan is de uitkomst dezelfde als hierboven, alleen later en per
+ongeluk.
+
+### Wat er tegenover staat, eerlijk opgeschreven
+
+Het argument "onze energiegegevens zijn niet geheim" klopt. Maar wat er in de flash ligt is niet
+die data: het is het **wifi-wachtwoord van de bewoner**. Dat is niet van ons om weg te wuiven, en
+het hoort in dit besluit genoemd te worden in plaats van eromheen.
+
+Wat het risico klein houdt: de apparaten gaan naar bekende deelnemers en komen bij ons terug. Het
+gaat dus om een apparaat dat tijdens de pilot wordt gestolen of kwijtraakt.
+
+### Wat we in plaats daarvan doen
+
+- **Wissen bij terugkomst.** Een apparaat dat terugkomt wordt gewist voordat het ergens anders
+  heen gaat: drie keer de stroom eraf binnen tien seconden wist de wifigegevens en de
+  API-sleutels. Dat kost niets en het brickt niets.
+- **Zeggen wat het apparaat bewaart.** Een deelnemer hoort te weten dat er een wifi-wachtwoord in
+  staat.
+
+### Wat dit besluit níet afsluit
+
+Dit besluit gaat over de weg via de hardware: flash encryption en secure boot. Het zegt **niet**
+dat wachtwoorden voor altijd als leesbare tekst in de flash moeten blijven staan. Een oplossing in
+de firmware die geen eFuses brandt en niets onomkeerbaar maakt, valt buiten dit besluit en mag
+gewoon worden overwogen.
+
+**Geparkeerd op 2026-09-05: verhullen in de firmware.** Het idee is om het wachtwoord niet als
+leesbare tekst weg te schrijven maar het te verhullen met iets dat het apparaat zelf kent, zoals
+zijn MAC-adres. Bewust nog niet gedaan, en met lage prioriteit voor deze pilot, tot de klant erover
+heeft meegedacht.
+
+Wat het zou opleveren en wat niet, zodat dat niet opnieuw uitgezocht hoeft te worden:
+
+- **Het stopt `strings`.** Wie een flashdump doorkijkt ziet geen wachtwoord meer. Dat is de
+  realistische situatie bij een pilot: een dump in een bugrapport, een apparaat dat wordt
+  doorgegeven, iemand die uit nieuwsgierigheid kijkt.
+- **Het stopt niemand die het probeert.** De MAC is geen geheim. Hij staat op de About-pagina, hij
+  staat sinds v0.3.4 in de naam van het instelnetwerk, hij zit in elk wifi-frame, en de broncode
+  staat publiek. Wie de flash kan uitlezen heeft het apparaat, en dan heeft hij de sleutel erbij.
+- Noem het daarom **verhulling en geen versleuteling**. Met de eFuse-route van tafel is verhulling
+  het plafond: zonder geheim in de hardware is er niets waar een sleutel uit kan komen die de
+  bezitter van het apparaat niet ook heeft.
+- Als het gebeurt: een SHA-256 over MAC plus een vaste waarde en dáármee XOR-en kost even veel
+  werk als een kale XOR met de MAC, en haalt het herhalende patroon van zes bytes eruit.
+
+En twee dingen die eerst moeten:
+
+1. **De brug voor v0.2.x moet weg.** Die houdt het netwerk dat het laatst werkte leesbaar onder de
+   oude sleutels `ssid`/`password`, zodat een terugval nog een netwerk vindt. Zolang die er is,
+   staat het wachtwoord er alsnog leesbaar en levert verhullen niets op. De brug mag weg zodra
+   geen apparaat meer een v0.2.x-image in zijn andere slot heeft.
+2. **De terugval moet meegedacht worden.** Slaat een nieuwe versie verhulde wachtwoorden op en
+   zakt zij door haar proeftijd, dan leest de oudere versie die bytes als het wachtwoord en komt
+   het apparaat niet online. Dat is H15 opnieuw. Op te lossen met een verhoging van `layout` en de
+   regels uit [NVS.md](NVS.md), maar niet in een uurtje.
+
+### Wat het besluit zou veranderen
+
+- Een eis van de klant, van Liander of vanuit de ACM-ontheffing. Dan is het geen afweging meer.
+- Apparaten die niet meer terugkomen, bijvoorbeeld bij verkoop in plaats van een pilot. Dan
+  vervalt het uitgangspunt waarop dit besluit rust.
+- Een serie die groot genoeg is dat één gestolen apparaat niet meer het hele risico is.
+
+---
+
+## 8. Wat dit stuk niet beslist
 
 De schattingen zijn schattingen. Wat er in dit stuk **niet** staat, omdat het niet met zekerheid
 te zeggen is:

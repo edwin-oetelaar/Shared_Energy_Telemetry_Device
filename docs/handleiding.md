@@ -94,10 +94,16 @@ Onderaan staat de knop **Sleutels invoeren**. Zie hoofdstuk 6.
 Een nieuw apparaat kent nog geen netwerk. Het zet dan zijn eigen wifinetwerk aan en toont een
 QR-code.
 
-1. Scan de QR-code met uw telefoon, of zoek in de wifilijst het netwerk **SETD_Provisioning**.
-2. Uw telefoon opent vanzelf een pagina. Gebeurt dat niet, ga dan naar `http://192.168.4.1`.
-3. Kies uw eigen wifinetwerk en vul het wachtwoord in. Druk op **Connect**.
-4. Vul daarna de client ID en het client secret van Energyboxx in. Druk op **Klaar**.
+1. Scan de QR-code met uw telefoon. De telefoon biedt aan het netwerk te joinen; u hoeft niets
+   te typen, want de code draagt het wachtwoord mee.
+2. Lukt scannen niet, zoek dan in de wifilijst het netwerk waarvan de naam op het scherm staat —
+   bijvoorbeeld **SETD-CB8B90** — en typ het wachtwoord over dat eronder staat.
+3. Uw telefoon opent vanzelf een pagina. Gebeurt dat niet, ga dan naar `http://192.168.4.1`.
+4. Kies uw eigen wifinetwerk en vul het wachtwoord in. Druk op **Connect**.
+5. Vul daarna de client ID en het client secret van Energyboxx in. Druk op **Klaar**.
+
+Naam en wachtwoord van dat instelnetwerk horen bij dít apparaat en veranderen niet. Ook niet als
+u alles wist.
 
 Het apparaat bewaart gegevens pas als het ze heeft beproefd. Uw wifiwachtwoord wordt opgeslagen
 zodra de verbinding lukt, en de sleutels zodra de server ze accepteert.
@@ -116,8 +122,7 @@ sterkste. Het netwerk dat de vorige keer werkte gaat voor. Een netwerk dat er ni
 wachttijd.
 
 **Een netwerk toevoegen.** Druk op **Sleutels invoeren** op het statusscherm. Het apparaat zet
-zijn eigen netwerk aan terwijl het gewoon online blijft. Volg daarna stap 1 tot 3 van hoofdstuk
-5. De pagina zegt vooraf waar het nieuwe netwerk terechtkomt.
+zijn eigen netwerk aan terwijl het gewoon online blijft. Volg daarna stap 1 tot 4 van hoofdstuk 5. De pagina zegt vooraf waar het nieuwe netwerk terechtkomt.
 
 **Een netwerk vergeten.** Op dezelfde pagina staat achter elk onthouden netwerk een knop
 **Forget**. De andere netwerken blijven staan.

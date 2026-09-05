@@ -14,6 +14,9 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_mac.h"
+#include "esp_random.h"
+#include "nvs.h"
 
 #include "inc/wifi_provisioning.h"
 #include "inc/wifi_web.h"
@@ -48,7 +51,22 @@
 //  retry only exists to recover from an API that was down at boot.
 #define API_RETRY_WHILE_PROVISIONING_MS  30000
 
-#define PROV_AP_SSID       "SETD_Provisioning"
+//  De naam draagt de laatste drie bytes van het MAC-adres, zodat er in een
+//  huis met twee apparaten geen twijfel is welk apparaat u instelt. Diezelfde
+//  drie bytes staan op de About-pagina onder "Apparaat".
+#define PROV_AP_NAME       "SETD-%02X%02X%02X"
+
+//  Waar het wachtwoord van dat netwerk ligt. Een eigen namespace, en niet bij
+//  de wifigegevens: dit is geen geheim van de bewoner maar een eigenschap van
+//  het apparaat, en het overleeft daarom een fabrieksreset. Zo blijft wat er
+//  op het scherm staat kloppen, ook nadat iemand alles heeft gewist.
+#define PROV_AP_NAMESPACE  "prov_ap"
+#define PROV_AP_KEY        "password"
+
+//  Acht tekens uit een alfabet zonder dubbelzinnigheden: geen 0 naast O, geen
+//  1 naast l en I. WPA2 vraagt er minstens acht. Wie de QR-code scant typt
+//  niets, maar wie dat niet kan moet het van een scherm kunnen overnemen.
+#define PROV_AP_PASSWORD_LEN  8
 #define PROV_AP_PASSWORD   ""
 #define PROV_AP_CHANNEL    1
 #define PROV_AP_MAX_CONN   4
@@ -886,16 +904,24 @@ esp_err_t wifi_prov_start_ap(void)
 {
     wifi_config_t ap_config = {
         .ap = {
-            .ssid = PROV_AP_SSID,
-            .ssid_len = strlen(PROV_AP_SSID),
+            .ssid_len = 0,      //  Hieronder gevuld: de naam is per apparaat
             .channel = PROV_AP_CHANNEL,
             .password = PROV_AP_PASSWORD,
             .max_connection = PROV_AP_MAX_CONN,
-            .authmode = WIFI_AUTH_OPEN,
+            .authmode = WIFI_AUTH_WPA2_PSK,
         },
     };
 
-    ESP_LOGI(TAG, "Starting provisioning AP: %s", PROV_AP_SSID);
+    //  Naam en wachtwoord horen bij dit apparaat en staan niet in de code, dus
+    //  ze worden hier ingevuld.
+    snprintf((char *) ap_config.ap.ssid, sizeof(ap_config.ap.ssid),
+             "%s", wifi_prov_ap_ssid());
+    ap_config.ap.ssid_len = strlen(wifi_prov_ap_ssid());
+
+    snprintf((char *) ap_config.ap.password, sizeof(ap_config.ap.password),
+             "%s", wifi_prov_ap_password());
+
+    ESP_LOGI(TAG, "Starting provisioning AP: %s (WPA2)", wifi_prov_ap_ssid());
 
     //  No ESP_ERROR_CHECK here. This used to run once at start-up, where an
     //  abort was survivable; since the portal can be opened again from the
@@ -1387,7 +1413,79 @@ bool wifi_prov_is_connected(void)
 
 const char *wifi_prov_ap_ssid(void)
 {
-    return PROV_AP_SSID;
+    static char ssid [24] = {0};
+
+    if (ssid [0] == '\0') {
+        uint8_t mac [6] = {0};
+
+        esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP);
+        snprintf(ssid, sizeof(ssid), PROV_AP_NAME, mac [3], mac [4], mac [5]);
+    }
+
+    return ssid;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Het wachtwoord van het instelnetwerk. Eén keer gemaakt en daarna bewaard,
+//  zodat het blijft kloppen met wat er ooit op een sticker of in een
+//  administratie is beland.
+//
+//  Waarom het er is: zonder wachtwoord gaan het wifi-wachtwoord van de bewoner
+//  en de API-sleutels onversleuteld door de lucht, af te luisteren door
+//  iedereen binnen bereik. Dat is bevinding C5. Het wachtwoord staat op het
+//  scherm en in de QR-code, dus "u moet bij het apparaat staan" wordt de
+//  drempel - en dat is voor het instellen van een apparaat aan de muur precies
+//  de goede drempel.
+
+const char *wifi_prov_ap_password(void)
+{
+    static char password [PROV_AP_PASSWORD_LEN + 1] = {0};
+
+    if (password [0] != '\0') {
+        return password;
+    }
+
+    nvs_handle_t handle;
+
+    if (nvs_open(PROV_AP_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
+        size_t length = sizeof(password);
+
+        if (nvs_get_str(handle, PROV_AP_KEY, password, &length) == ESP_OK
+        &&  password [0] != '\0') {
+            nvs_close(handle);
+            return password;
+        }
+
+        //  Nog geen wachtwoord: maak er een en leg het vast.
+        static const char alphabet [] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+        for (size_t at = 0; at < PROV_AP_PASSWORD_LEN; at++) {
+            password [at] = alphabet [esp_random() % (sizeof(alphabet) - 1)];
+        }
+        password [PROV_AP_PASSWORD_LEN] = '\0';
+
+        if (nvs_set_str(handle, PROV_AP_KEY, password) == ESP_OK) {
+            nvs_commit(handle);
+            ESP_LOGI(TAG, "Made a password for the setup network");
+        }
+
+        nvs_close(handle);
+        return password;
+    }
+
+    //  Zonder opslag toch een wachtwoord, want een open netwerk is de fout die
+    //  we hier juist weghalen. Het verandert dan wel bij elke start.
+    ESP_LOGW(TAG, "Could not store the setup password; it changes on every start");
+
+    static const char fallback [] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+    for (size_t at = 0; at < PROV_AP_PASSWORD_LEN; at++) {
+        password [at] = fallback [esp_random() % (sizeof(fallback) - 1)];
+    }
+    password [PROV_AP_PASSWORD_LEN] = '\0';
+
+    return password;
 }
 
 //  --------------------------------------------------------------------------

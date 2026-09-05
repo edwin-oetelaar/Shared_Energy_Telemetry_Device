@@ -60,6 +60,10 @@ static bool s_ready = false;
 //  the About page. This is the rule that stops it happening a third time.
 #define ARROW_STRIP_HEIGHT  60
 
+//  De QR-code op het instelbeeld. Kleiner dan hij was (116), zodat de naam en
+//  het wachtwoord eronder passen zonder erdoorheen te lopen.
+#define STATUS_QR_SIZE  108
+
 //  The About page in two columns: text on the left, QR on the right. The
 //  numbers are kept together so the gutter between them stays visible. Screen
 //  is 320 wide; the QR carries a 4 px border on each side.
@@ -631,6 +635,10 @@ esp_err_t display_show_status(const char *title,
     }
 
     if (qr_text != NULL && qr_text [0] != '\0') {
+        //  Hier gezet en niet aangenomen: display_show_about () zet hem op 92,
+        //  en wie eerst die pagina bekeek en daarna deze kreeg die maat mee.
+        lv_qrcode_set_size(s_qr, STATUS_QR_SIZE);
+
         //  A QR needs a light background of its own to stay scannable, whatever
         //  colour the screen is.
         lv_qrcode_set_dark_color(s_qr, lv_color_hex(0x101410));
@@ -650,10 +658,18 @@ esp_err_t display_show_status(const char *title,
     bool has_detail = detail != NULL && detail [0] != '\0';
 
     if (has_qr) {
-        lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, 8);
-        lv_obj_align(s_qr, LV_ALIGN_TOP_MID, 0, 48);
-        //  Just above the arrow strip; the arrows may appear over this screen.
-        lv_obj_align(s_detail, LV_ALIGN_BOTTOM_MID, 0, -ARROW_STRIP_HEIGHT + 4);
+        //  Alle drie op een vaste plek van bovenaf, en dat is de reparatie:
+        //  de regel eronder stond aan de ONDERkant vastgezet en groeide dus
+        //  naar boven. Zodra er een wachtwoord bij de naam kwam werd het twee
+        //  regels, en die liepen dwars door de QR-code heen.
+        //
+        //      titel      6 ..  36   (Montserrat 28, regelhoogte 30)
+        //      QR        40 .. 156   (108 plus 4 pixels rand rondom)
+        //      regel    162 .. 178   (Montserrat 14, regelhoogte 16)
+        //      pijlenstrip vanaf 180 -> 2 pixels over
+        lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, 6);
+        lv_obj_align(s_qr, LV_ALIGN_TOP_MID, 0, 40);
+        lv_obj_align(s_detail, LV_ALIGN_TOP_MID, 0, 162);
     }
     else if (has_detail) {
         lv_obj_align(s_title, LV_ALIGN_CENTER, 0, -18);

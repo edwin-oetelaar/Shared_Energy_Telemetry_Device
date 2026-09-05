@@ -37,7 +37,7 @@ te repareren.
 | --- | --- | --- | --- |
 | Correctheid | **Zakt** | Goed | C1–C4 opgelost: decoding, format string, datarace, body-lezen |
 | Betrouwbaarheid in het veld | **Zakt** | Goed | Backoff zonder bovengrens, geen aborts meer op externe input |
-| Security | **Zwak** | Zwak | C5, H5 open: open AP + plain HTTP, plaintext NVS, geen flash encryption |
+| Security | **Zwak** | Redelijk | C5 opgelost: WPA2 op het instelnetwerk. H5 open: plaintext NVS, geen flash encryption |
 | Onderhoudbaarheid | Matig | Goed | L4–L8, L11 en L12 opgelost: HTML in eigen bestanden, JSON via een tabel, dode code weg |
 | Updatebaarheid | **Zakt** | Goed | H4 opgelost en op hardware bevestigd: bijwerken én terugvallen |
 | Testbaarheid | **Zakt** | Redelijk | CI met host-tests, cppcheck en firmwarebuild; nog geen hardwaretest |
@@ -53,7 +53,7 @@ te repareren.
 - [x] **C2** Na vijf mislukte reconnects is het apparaat permanent dood — opgelost, backoff-tabel
 - [x] **C3** Twee taken doen tegelijk een tokenrequest, zonder lock — opgelost, module-lock
 - [x] **C4** API-setup pagina gaat door een kapotte format string — opgelost, chunked
-- [ ] **C5** Secrets gaan open door de lucht tijdens provisioning
+- [x] **C5** Secrets gaan open door de lucht tijdens provisioning — opgelost, WPA2 met een wachtwoord per apparaat
 
 ### Hoog
 - [x] **H1** POST-body wordt in één keer gelezen in een te kleine buffer — opgelost
@@ -76,7 +76,7 @@ te repareren.
 - [x] **H15** De migratie wist de sleutels die een terugval nodig heeft — opgelost in v0.3.1
 - [x] **H16** Een kapotte uitgave kan een apparaat in een updatelus zetten die een
   fabrieksreset niet doorbreekt — opgelost, een versie die niet blijft staan wordt geweigerd
-- [ ] **H5** Credentials liggen leesbaar in flash
+- [~] **H5** Credentials liggen leesbaar in flash — bewust niet opgelost; hergebruik weegt zwaarder, zie [BESLUIT-c5-h5.md](BESLUIT-c5-h5.md)
 
 ### Middel
 - [x] **M1** SSID's worden ongeëscaped in JSON geplakt — opgelost, cJSON
@@ -253,6 +253,28 @@ via `/api-check` eigen credentials laten opslaan.
 QR-sticker. Dat lost afluisteren én ongeautoriseerde toegang in één keer op. ESP-IDF's eigen
 `wifi_provisioning`-component doet dit met een versleuteld kanaal (X25519 + AES) — het overwegen
 waard.
+
+> **Opgelost op 2026-09-05.** Het instelnetwerk staat op WPA2 met een wachtwoord van acht tekens
+> dat per apparaat verschilt. Het wordt bij het eerste gebruik gemaakt uit `esp_random ()` en
+> bewaard in een eigen namespace `prov_ap` — niet bij de wifigegevens, want het is geen geheim
+> van de bewoner maar een eigenschap van het apparaat, en het hoort een fabrieksreset te
+> overleven zodat wat er op een sticker staat blijft kloppen.
+>
+> **Het kost de gebruiker niets.** De QR-code op het scherm draagt het wachtwoord mee
+> (`WIFI:S:naam;T:WPA;P:wachtwoord;;` in plaats van `T:nopass`), dus wie scant komt er zonder
+> typen op — precies zoals bij het open netwerk dat het verving. Wie niet kan scannen leest naam
+> en wachtwoord van het scherm.
+>
+> Het alfabet laat 0/O en 1/l/I weg: acht tekens die van een scherm moeten worden overgenomen
+> mogen niet dubbelzinnig zijn.
+>
+> Ook de naam verschilt nu per apparaat — `SETD-CB8B90`, de laatste drie bytes van het MAC-adres,
+> dezelfde die op de About-pagina staan. In een huis met twee apparaten is er zo geen twijfel
+> welk apparaat u instelt.
+>
+> Dit lost het afluisteren op. De endpoints van het portaal hebben nog steeds geen eigen
+> authenticatie, maar wie op het netwerk zit heeft het wachtwoord van het scherm gelezen en staat
+> dus bij het apparaat. Voor een apparaat aan de muur is fysieke nabijheid de juiste drempel.
 
 ---
 
@@ -804,6 +826,13 @@ encryption én secure boot v2 — de SOC-vlaggen staan aan in `sdkconfig`, de fe
 je de firmware wilt afschermen. **Beslis dit vóór de eerste serie** — achteraf inschakelen op
 reeds uitgeleverde apparaten kan niet meer.
 
+> **Besloten op 2026-09-05: niet doen.** Niet uit gemak, maar omdat de apparaten na de pilot
+> terugkomen en volledig herbruikbaar moeten zijn. Flash encryption in release mode maakt een
+> apparaat blijvend onherprogrammeerbaar via de kabel — dat staat met zoveel woorden in de
+> ESP-IDF-documentatie — en dat is elektronisch afval. Het besluit sluit de weg via de hardware
+> af, niet de vraag zelf: een oplossing in de firmware die niets onomkeerbaar maakt, mag gewoon
+> worden overwogen. De volledige afweging staat in [BESLUIT-c5-h5.md](BESLUIT-c5-h5.md).
+>
 > **Voor het gesprek met de klant:** [BESLUIT-c5-h5.md](BESLUIT-c5-h5.md). Kern van dat stuk: de
 > zwaarste kostenpost is niet de ontwikkeltijd maar het sleutelbeheer, en er is een middenweg —
 > flash encryption en NVS-encryptie zonder secure boot beschermen de gegevens van de bewoner
