@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <inttypes.h>
 
@@ -19,6 +20,28 @@
 #include "inc/api_storage.h"
 
 #define ENERGYBOXX_TOKEN_URL "https://energyboxx.grexx.today/oauth/access_token"
+
+//  De velden die de server stuurt en die mogen ontbreken. Zeven keer dezelfde
+//  twintig regels stonden hier eerst; nu staat elk veld één keer, met de naam
+//  waaronder het binnenkomt naast de plek waar het heen gaat.
+//
+//  community_power_result_kw staat er met opzet niet in: dat veld mag niet
+//  ontbreken. Zie M3 - een foutmelding is ook geldige JSON, en dat veld stil
+//  op nul lezen levert een zelfverzekerd antwoord op dat nergens op slaat.
+
+static const struct {
+    const char *name;
+    size_t offset;
+} s_optional_field [] = {
+    { "community_power_import_kw",         offsetof(energyboxx_data_t, community_power_import_kw) },
+    { "community_power_export_kw",         offsetof(energyboxx_data_t, community_power_export_kw) },
+    { "community_import_price_eur",        offsetof(energyboxx_data_t, community_import_price_eur) },
+    { "community_export_price_eur",        offsetof(energyboxx_data_t, community_export_price_eur) },
+    { "community_shared_import_price_eur", offsetof(energyboxx_data_t, community_shared_import_price_eur) },
+    { "community_shared_export_price_eur", offsetof(energyboxx_data_t, community_shared_export_price_eur) }
+};
+
+#define OPTIONAL_FIELD_ROWS  (sizeof (s_optional_field) / sizeof (s_optional_field [0]))
 
 #define ENERGYBOXX_DATA_URL "https://energyboxx.grexx.today/api/v1/form/1:10173:112860/1:10310:6276618"
 
@@ -121,8 +144,6 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt)
     case HTTP_EVENT_ON_DATA:
         if (evt->user_data != NULL)
         {
-            // printf("%.*s", evt->data_len, (char *)evt->data);
-            // printf("\n");
             char *buf = (char *)evt->user_data;
             size_t used = strlen(buf); //This works because its a string buffer initialized wiht 0's
             size_t remaining = RESPONSE_BUFFER_SIZE - used - 1;
@@ -132,9 +153,14 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt)
         }
         else
         {
-            printf("%.*s", evt->data_len, (char *)evt->data);
+            //  Niemand vangt dit antwoord op. Vroeger ging het naar printf,
+            //  buiten het logsysteem om: zonder tag, zonder niveau, en met een
+            //  losse regelovergang per stuk - drie lege regels vóór elk
+            //  antwoord in de seriële log. Nu één regel op debugniveau, die
+            //  zegt hoeveel er kwam in plaats van wat.
+            ESP_LOGD(TAG, "Discarding %d bytes: nobody is collecting this body",
+                     evt->data_len);
         }
-        printf("\n");
         break;
 
     case HTTP_EVENT_ON_FINISH:
@@ -177,7 +203,7 @@ static esp_err_t s_fetch_token_locked(void)
     char response_buffer[RESPONSE_BUFFER_SIZE] = {0};
 
     esp_http_client_config_t config = {
-        .url = "https://energyboxx.grexx.today/oauth/access_token",
+        .url = ENERGYBOXX_TOKEN_URL,
         .crt_bundle_attach = esp_crt_bundle_attach,
         .timeout_ms = 10000,
         .user_data = response_buffer,
@@ -266,10 +292,6 @@ esp_err_t energyboxx_api_fetch_token(void)
     return err;
 }
 
-const char *energyboxx_api_get_token(void)
-{
-    return access_token;
-}
 
 static esp_err_t s_get_data_locked(energyboxx_data_t* data)
 {
@@ -367,31 +389,23 @@ static esp_err_t s_get_data_locked(energyboxx_data_t* data)
             return ESP_FAIL;
         }
 
-        cJSON *import_kw = cJSON_GetObjectItemCaseSensitive(root, "community_power_import_kw");
-        if (cJSON_IsNumber(import_kw))
-        {
-            data->community_power_import_kw = (float)import_kw->valuedouble;
-        }
-        else
-        {
-            data->community_power_import_kw = 0.0f;
+        //  Zes velden die mogen ontbreken, en één die dat niet mag. De zes
+        //  gaan door de tabel hierboven: staat het veld er niet of is het geen
+        //  getal, dan is het nul. Zo staat elk veld één keer opgeschreven, op
+        //  de plek waar je het zoekt.
+        for (size_t row = 0; row < OPTIONAL_FIELD_ROWS; row++) {
+            cJSON *item = cJSON_GetObjectItemCaseSensitive(root, s_optional_field [row].name);
+            float *field = (float *) ((char *) data + s_optional_field [row].offset);
+
+            *field = cJSON_IsNumber(item) ? (float) item->valuedouble : 0.0f;
         }
 
-        cJSON *export_kw = cJSON_GetObjectItemCaseSensitive(root, "community_power_export_kw");
-        if (cJSON_IsNumber(export_kw))
-        {
-            data->community_power_export_kw = (float)export_kw->valuedouble;
-        }
-        else
-        {
-            data->community_power_export_kw = 0.0f;
-        }
         //  The one field the device actually acts on, so it is required rather
         //  than defaulted. An error body is valid JSON too, and quietly reading
-        //  it as zero would light the ring as "community balanced" - a
-        //  confident answer assembled out of nothing. Missing it means this is
-        //  not telemetry, whatever the status code said, and the caller renews
-        //  the token and tries again.
+        //  it as zero would show "community balanced" - a confident answer
+        //  assembled out of nothing. Missing it means this is not telemetry,
+        //  whatever the status code said, and the caller renews the token and
+        //  tries again.
         cJSON *result_kw = cJSON_GetObjectItemCaseSensitive(root, "community_power_result_kw");
         if (!cJSON_IsNumber(result_kw))
         {
@@ -401,47 +415,7 @@ static esp_err_t s_get_data_locked(energyboxx_data_t* data)
             return ESP_ERR_INVALID_RESPONSE;
         }
 
-        data->community_power_result_kw = (float)result_kw->valuedouble;
-
-        cJSON *import_price = cJSON_GetObjectItemCaseSensitive(root, "community_import_price_eur");
-        if (cJSON_IsNumber(import_price))
-        {
-            data->community_import_price_eur = (float)import_price->valuedouble;
-        }
-        else
-        {
-            data->community_import_price_eur = 0.0f;
-        }
-
-        cJSON *export_price = cJSON_GetObjectItemCaseSensitive(root, "community_export_price_eur");
-        if (cJSON_IsNumber(export_price))
-        {
-            data->community_export_price_eur = (float)export_price->valuedouble;
-        }
-        else
-        {
-            data->community_export_price_eur = 0.0f;
-        }
-
-        cJSON *shared_import_price = cJSON_GetObjectItemCaseSensitive(root, "community_shared_import_price_eur");
-        if (cJSON_IsNumber(shared_import_price))
-        {
-            data->community_shared_import_price_eur = (float)shared_import_price->valuedouble;
-        }
-        else
-        {
-            data->community_shared_import_price_eur = 0.0f;
-        }
-
-        cJSON *shared_export_price = cJSON_GetObjectItemCaseSensitive(root, "community_shared_export_price_eur");
-        if (cJSON_IsNumber(shared_export_price))
-        {
-            data->community_shared_export_price_eur = (float)shared_export_price->valuedouble;
-        }
-        else
-        {
-            data->community_shared_export_price_eur = 0.0f;
-        }
+        data->community_power_result_kw = (float) result_kw->valuedouble;
 
         cJSON_Delete(root);
         esp_http_client_cleanup(client);

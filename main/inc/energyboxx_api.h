@@ -36,7 +36,6 @@ esp_err_t energyboxx_api_restore_previous(void);
 esp_err_t energyboxx_api_load_stored_credentials(void);
 esp_err_t energyboxx_api_fetch_token(void);
 esp_err_t energyboxx_api_get_data(energyboxx_data_t* data);
-const char *energyboxx_api_get_token(void);
 bool energyboxx_api_has_credentials(void);
 
 //  How long the current token is still good for, in seconds. Zero when there

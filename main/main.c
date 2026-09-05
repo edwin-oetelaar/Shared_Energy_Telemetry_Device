@@ -23,7 +23,9 @@
 #include "soc/gpio_num.h"
 
 static const char *TAG = "[main]";
-energyboxx_data_t data;
+//  Alleen deze module leest en schrijft dit. Zonder static staat de naam in
+//  elke andere vertaaleenheid te wachten op een botsing.
+static energyboxx_data_t data;
 
 #define RESET_WIFI_GPIO GPIO_NUM_17
 #define RESET_HOLD_MS   3000
