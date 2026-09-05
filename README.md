@@ -43,8 +43,7 @@ Wat er bewust **niet** in zit, en wat er dus voor de eerste serie nog moet gebeu
 
 | Punt | Waarom het wacht |
 | --- | --- |
-| **C5** Het provisioning-netwerk is open | Beslissing over het productieproces; zie [docs/BESLUIT-c5-h5.md](docs/BESLUIT-c5-h5.md) |
-| **H5** Credentials liggen leesbaar in flash | Flash encryption en secure boot zijn na uitlevering niet meer aan te zetten; zie [docs/BESLUIT-c5-h5.md](docs/BESLUIT-c5-h5.md) |
+| **H5** Credentials liggen leesbaar in flash | Bewust niet opgelost: de apparaten komen terug en moeten herbruikbaar blijven. Zie [docs/BESLUIT-c5-h5.md](docs/BESLUIT-c5-h5.md) |
 | Prijzen op het scherm | De API levert er vier en het is niet vastgelegd welke een bewoner aangaat |
 
 Beide openstaande punten raken het productieproces en niet alleen de firmware. Zolang de vloot

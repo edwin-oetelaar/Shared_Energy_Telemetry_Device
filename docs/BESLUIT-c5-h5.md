@@ -188,7 +188,77 @@ serie gaat is het dat op den duur niet.
 
 ---
 
-## 7. Wat dit stuk niet beslist
+## 7. Het besluit, genomen op 2026-09-05
+
+**C5 is gedaan.** Het instelnetwerk staat op WPA2 met een wachtwoord per apparaat, dat op het
+scherm staat en in de QR-code zit. Het kost de gebruiker niets: wie scant komt er zonder typen
+op, net als bij het open netwerk dat het verving.
+
+**H5 wordt niet gedaan.** Geen flash encryption, geen secure boot. De reden is niet gemak maar een
+uitgangspunt: **de apparaten moeten na de pilot volledig herbruikbaar zijn.**
+
+### Waarom dat uitgangspunt hier de doorslag geeft
+
+De apparaten komen na de pilot terug voor volgende experimenten. Een apparaat dat daarna niet
+meer met een kabel te herprogrammeren is, is elektronisch afval — en dat weegt zwaarder dan het
+risico dat hier wordt afgedekt.
+
+Dat is geen aanname maar staat in de documentatie van ESP-IDF:
+
+> *In release mode, UART bootloader cannot perform flash encryption operations. New plaintext
+> images can ONLY be downloaded using the over-the-air (OTA) scheme.*
+
+| | Nog met een kabel te herprogrammeren? | Sleutels te bewaren |
+| --- | --- | --- |
+| Niets doen | ja | geen |
+| Flash encryption, development mode | ja, een beperkt aantal keer | geen |
+| **Flash encryption, release mode** | **nee** | geen |
+| Release mode met een eigen sleutel per apparaat | ja | **één per apparaat, voor altijd** |
+| Secure boot | ja, mits ondertekend met de eigen sleutel | één, voor altijd |
+
+De ontsnapping in de vierde rij bestaat wel, maar ruilt het ene probleem in voor het andere: een
+sleutel per apparaat die de levensduur moet halen. Dat is de last uit
+[SLEUTELS.md](SLEUTELS.md), vermenigvuldigd met het aantal apparaten.
+
+Secure boot brickt op zichzelf niets: zolang de sleutel er is, blijft het apparaat te
+programmeren met alles wat ermee is ondertekend. Maar raakt die sleutel kwijt, dan is het
+apparaat alsnog onbruikbaar — en dan is de uitkomst dezelfde als hierboven, alleen later en per
+ongeluk.
+
+### Wat er tegenover staat, eerlijk opgeschreven
+
+Het argument "onze energiegegevens zijn niet geheim" klopt. Maar wat er in de flash ligt is niet
+die data: het is het **wifi-wachtwoord van de bewoner**. Dat is niet van ons om weg te wuiven, en
+het hoort in dit besluit genoemd te worden in plaats van eromheen.
+
+Wat het risico klein houdt: de apparaten gaan naar bekende deelnemers en komen bij ons terug. Het
+gaat dus om een apparaat dat tijdens de pilot wordt gestolen of kwijtraakt.
+
+### Wat we in plaats daarvan doen
+
+- **Wissen bij terugkomst.** Een apparaat dat terugkomt wordt gewist voordat het ergens anders
+  heen gaat: drie keer de stroom eraf binnen tien seconden wist de wifigegevens en de
+  API-sleutels. Dat kost niets en het brickt niets.
+- **Zeggen wat het apparaat bewaart.** Een deelnemer hoort te weten dat er een wifi-wachtwoord in
+  staat.
+
+### Wat dit besluit níet afsluit
+
+Dit besluit gaat over de weg via de hardware: flash encryption en secure boot. Het zegt **niet**
+dat wachtwoorden voor altijd als leesbare tekst in de flash moeten blijven staan. Een oplossing in
+de firmware die geen eFuses brandt en niets onomkeerbaar maakt, valt buiten dit besluit en mag
+gewoon worden overwogen.
+
+### Wat het besluit zou veranderen
+
+- Een eis van de klant, van Liander of vanuit de ACM-ontheffing. Dan is het geen afweging meer.
+- Apparaten die niet meer terugkomen, bijvoorbeeld bij verkoop in plaats van een pilot. Dan
+  vervalt het uitgangspunt waarop dit besluit rust.
+- Een serie die groot genoeg is dat één gestolen apparaat niet meer het hele risico is.
+
+---
+
+## 8. Wat dit stuk niet beslist
 
 De schattingen zijn schattingen. Wat er in dit stuk **niet** staat, omdat het niet met zekerheid
 te zeggen is:

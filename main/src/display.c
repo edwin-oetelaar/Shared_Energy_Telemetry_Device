@@ -60,6 +60,10 @@ static bool s_ready = false;
 //  the About page. This is the rule that stops it happening a third time.
 #define ARROW_STRIP_HEIGHT  60
 
+//  De QR-code op het instelbeeld. Kleiner dan hij was (116), zodat de naam en
+//  het wachtwoord eronder passen zonder erdoorheen te lopen.
+#define STATUS_QR_SIZE  108
+
 //  The About page in two columns: text on the left, QR on the right. The
 //  numbers are kept together so the gutter between them stays visible. Screen
 //  is 320 wide; the QR carries a 4 px border on each side.
@@ -631,6 +635,10 @@ esp_err_t display_show_status(const char *title,
     }
 
     if (qr_text != NULL && qr_text [0] != '\0') {
+        //  Hier gezet en niet aangenomen: display_show_about () zet hem op 92,
+        //  en wie eerst die pagina bekeek en daarna deze kreeg die maat mee.
+        lv_qrcode_set_size(s_qr, STATUS_QR_SIZE);
+
         //  A QR needs a light background of its own to stay scannable, whatever
         //  colour the screen is.
         lv_qrcode_set_dark_color(s_qr, lv_color_hex(0x101410));

@@ -76,7 +76,7 @@ te repareren.
 - [x] **H15** De migratie wist de sleutels die een terugval nodig heeft — opgelost in v0.3.1
 - [x] **H16** Een kapotte uitgave kan een apparaat in een updatelus zetten die een
   fabrieksreset niet doorbreekt — opgelost, een versie die niet blijft staan wordt geweigerd
-- [ ] **H5** Credentials liggen leesbaar in flash
+- [~] **H5** Credentials liggen leesbaar in flash — bewust niet opgelost; hergebruik weegt zwaarder, zie [BESLUIT-c5-h5.md](BESLUIT-c5-h5.md)
 
 ### Middel
 - [x] **M1** SSID's worden ongeëscaped in JSON geplakt — opgelost, cJSON
@@ -826,6 +826,13 @@ encryption én secure boot v2 — de SOC-vlaggen staan aan in `sdkconfig`, de fe
 je de firmware wilt afschermen. **Beslis dit vóór de eerste serie** — achteraf inschakelen op
 reeds uitgeleverde apparaten kan niet meer.
 
+> **Besloten op 2026-09-05: niet doen.** Niet uit gemak, maar omdat de apparaten na de pilot
+> terugkomen en volledig herbruikbaar moeten zijn. Flash encryption in release mode maakt een
+> apparaat blijvend onherprogrammeerbaar via de kabel — dat staat met zoveel woorden in de
+> ESP-IDF-documentatie — en dat is elektronisch afval. Het besluit sluit de weg via de hardware
+> af, niet de vraag zelf: een oplossing in de firmware die niets onomkeerbaar maakt, mag gewoon
+> worden overwogen. De volledige afweging staat in [BESLUIT-c5-h5.md](BESLUIT-c5-h5.md).
+>
 > **Voor het gesprek met de klant:** [BESLUIT-c5-h5.md](BESLUIT-c5-h5.md). Kern van dat stuk: de
 > zwaarste kostenpost is niet de ontwikkeltijd maar het sleutelbeheer, en er is een middenweg —
 > flash encryption en NVS-encryptie zonder secure boot beschermen de gegevens van de bewoner
