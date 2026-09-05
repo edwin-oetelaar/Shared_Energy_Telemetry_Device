@@ -74,10 +74,13 @@ static const struct {
                                    "Geen verbinding",   PAINT_COLOUR, 0x8A3A2A },
     [STATUS_VIEW_WIFI_REJECTED] = { "wifi-rejected", "the network refused the stored password",
                                    "Wachtwoord klopt niet", PAINT_COLOUR, 0x8A3A2A },
+    //  "in de groep" en "voor groep": het gaat over de gemeenschap en niet
+    //  over dit huishouden. Zonder dat leest "Energie over" als "u hebt
+    //  stroom over", en dat is precies wat het apparaat niet meet.
     [STATUS_VIEW_SURPLUS]      = { "surplus",      "energy available to share",
-                                   "Energie over",      PAINT_COLOUR, 0x1F9E4B, .reading = true },
+                                   "Energie over in de groep", PAINT_COLOUR, 0x1F9E4B, .reading = true },
     [STATUS_VIEW_DEFICIT]      = { "deficit",      "energy has to be bought",
-                                   "Energie inkopen",   PAINT_COLOUR, 0xE0A21B, .reading = true },
+                                   "Energie inkopen voor groep", PAINT_COLOUR, 0xE0A21B, .reading = true },
     [STATUS_VIEW_BALANCED]     = { "balanced",     "supply and demand match",
                                    "In balans",         PAINT_COLOUR, 0x243028, .reading = true },
     [STATUS_VIEW_KEYS_NEEDED]  = { "keys-needed",  "no API credentials stored",

@@ -111,8 +111,8 @@ de meetwaarden op bij de Energyboxx-API en toont het resultaat op een scherm:
 
 | Toestand | Betekenis | Op het scherm |
 | --- | --- | --- |
-| Overschot | De gemeenschap heeft energie over om te delen | Energie over, groen |
-| Tekort | De gemeenschap moet energie inkopen | Energie inkopen, geel |
+| Overschot | De gemeenschap heeft energie over om te delen | Energie over in de groep, groen |
+| Tekort | De gemeenschap moet energie inkopen | Energie inkopen voor groep, geel |
 | In balans | Vraag en aanbod zijn gelijk | In balans, donkergroen |
 | Geen meting | Het apparaat heeft geen actuele gegevens | Geen gegevens, grijs |
 

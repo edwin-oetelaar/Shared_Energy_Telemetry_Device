@@ -21,19 +21,22 @@ Het scherm toont één van deze vier beelden, met daaronder hoeveel het is.
 
 | Beeld | Kleur | Wat het betekent |
 | --- | --- | --- |
-| **Energie over** | groen | De gemeenschap heeft stroom over. Een goed moment om stroom te gebruiken. |
-| **Energie inkopen** | geel | De gemeenschap koopt stroom in. Stel gebruik zo mogelijk uit. |
+| **Energie over in de groep** | groen | De gemeenschap heeft stroom over. Een goed moment om stroom te gebruiken. |
+| **Energie inkopen voor groep** | geel | De gemeenschap koopt stroom in. Stel gebruik zo mogelijk uit. |
 | **In balans** | donkergroen | Vraag en aanbod zijn ongeveer gelijk. |
 | **Geen gegevens** | grijs | Het apparaat heeft geen actuele meting. Zie hoofdstuk 7. |
 
 Onder het woord staat de hoeveelheid:
 
 ```text
-   Energie over
-      0,3 kW
+  Energie over in de groep
+         0,3 kW
 ```
 
 Het getal staat er zonder plus of min. Het woord erboven zegt al welke kant het op gaat.
+
+De woorden zeggen **in de groep** en **voor groep**, want het gaat over de gemeenschap als
+geheel en niet over uw eigen huis. Dit apparaat meet niets bij u binnen.
 
 ---
 

@@ -58,16 +58,16 @@ Het apparaat vraagt elke minuut de telemetrie op. Het stuurt het scherm aan op h
 
 | Uitkomst | Op het scherm | Kleur |
 | --- | --- | --- |
-| Meer dan `+0,05 kW` | Energie over | Groen |
-| Minder dan `-0,05 kW` | Energie inkopen | Geel |
+| Meer dan `+0,05 kW` | Energie over in de groep | Groen |
+| Minder dan `-0,05 kW` | Energie inkopen voor groep | Geel |
 | Tussen `-0,05` en `+0,05 kW` | In balans | Donkergroen |
 | Geen actuele meting | Geen gegevens | Grijs |
 
 Onder die woorden staat hoeveel het is, in kW, met een Nederlandse komma:
 
 ```text
-   Energie over
-      0,3 kW
+  Energie over in de groep
+         0,3 kW
 ```
 
 Zonder teken, want de titel zegt al welke kant het op gaat. Een min voor een getal onder het
@@ -135,10 +135,10 @@ meet. Alleen beelden die een meting beweren kunnen het dragen.
 
 | Beeld | Merkteken linksboven |
 | --- | --- |
-| Energie over, Energie inkopen, In balans, Geen gegevens | **voorbeeld**, zolang het niet de actuele toestand is |
+| De vier energiebeelden | **voorbeeld**, zolang het niet de actuele toestand is |
 | Statusscherm, About-pagina, Energy Owl | nooit — die gaan over het apparaat zelf en kloppen altijd |
 
-Het merkteken volgt de telemetrie. Wie op "Energie over" blijft staan terwijl de gemeenschap
+Het merkteken volgt de telemetrie. Wie op "Energie over in de groep" blijft staan terwijl de gemeenschap
 overgaat op inkopen, ziet het merkteken alsnog verschijnen.
 
 ### Het statusscherm
