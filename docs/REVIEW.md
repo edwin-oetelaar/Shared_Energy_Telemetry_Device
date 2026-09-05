@@ -1586,6 +1586,26 @@ Deze ronde kostte drie pogingen, en elke poging leerde iets dat de vorige verbor
 Het derde netwerk werd wél opgeslagen en overleefde de herstart (`3 stored networks`,
 `Plan 3: slot 2 'Free spot '`). Alleen zag niemand dat, want het portaal was weg.
 
+### Elfde ronde: een netwerk dat wegvalt tijdens bedrijf
+
+**Board:** ESP32-S3-BOX-3 · 16 MB flash · 16 MB octal PSRAM
+**Datum:** 2026-09-05 · **Firmware:** `main`, ESP-IDF v6.1
+**Uitgevoerd:** het accesspoint `Free spot` uitgezet terwijl het apparaat erop zat.
+
+| Bevinding | Status | Grondslag |
+| --- | --- | --- |
+| **C2** Reconnect na een wegval | **Bevestigd op de BOX-3** | Edwin zag het apparaat terugvallen op een van de andere onthouden netwerken |
+
+Dit was het laatste geval dat nog ontbrak. **C2** was tot nu toe bevestigd op de XIAO, en in de
+zevende ronde op dit bord met een verbinding die vanaf het begin faalde — maar niet met een
+verbinding die wegvalt terwijl hij loopt, en dat is wat er bij een bewoner thuis gebeurt.
+
+Het bevestigt in dezelfde handeling de kern van fase 2 van `docs/PLAN-wifi-slots.md`: het
+apparaat zoekt een ander netwerk in plaats van te blijven wachten op het netwerk dat weg is.
+
+Waargenomen door Edwin, niet uit een seriële log gelezen; er liep op dat moment geen monitor
+mee. Wat er precies in het backoff-schema gebeurde is dus niet vastgelegd.
+
 ### Vijfde ronde: het merkteken "voorbeeld"
 
 **Board:** ESP32-S3-BOX-3 · 16 MB flash · 16 MB octal PSRAM

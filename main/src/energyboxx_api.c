@@ -43,6 +43,21 @@ static bool has_previous = false;
 static bool renew_token = true;
 static int64_t last_data_us = 0;
 
+//  The last measurement, kept so that the screen can show numbers without
+//  going to the network for them.
+//
+//  With a lock of its own, and that is the point. The lock above is held
+//  across an HTTPS request - fetching a token takes seconds - and the screen
+//  redraws twice a second. Sharing that lock would stop the screen dead every
+//  time the device talks to the API. This one is only ever held for the length
+//  of a struct copy.
+//
+//  The writer holds both (it is inside the fetch), the reader holds only this
+//  one, so the two can never wait for each other in a circle.
+static energyboxx_data_t s_last_data;
+static StaticSemaphore_t s_data_lock_storage;
+static SemaphoreHandle_t s_data_lock = NULL;
+
 static const char *TAG = "[energyboxx_api]";
 
 //  These two are read without the lock by the status LED task, which runs at
@@ -92,6 +107,9 @@ esp_err_t energyboxx_api_init(void)
 
     s_lock = xSemaphoreCreateMutexStatic (&s_lock_storage);
     assert (s_lock);            //  Static creation only fails on a null buffer
+
+    s_data_lock = xSemaphoreCreateMutexStatic (&s_data_lock_storage);
+    assert (s_data_lock);
 
     return ESP_OK;
 }
@@ -430,6 +448,11 @@ static esp_err_t s_get_data_locked(energyboxx_data_t* data)
 
         last_data_us = esp_timer_get_time();
 
+        //  For the screen, which must not fetch.
+        xSemaphoreTake(s_data_lock, portMAX_DELAY);
+        s_last_data = *data;
+        xSemaphoreGive(s_data_lock);
+
         return ESP_OK;
     }
     else
@@ -609,6 +632,25 @@ int energyboxx_api_token_seconds_left(void)
     int64_t left = expires_in_seconds - elapsed;
 
     return left > 0 ? (int) left : 0;
+}
+
+
+bool energyboxx_api_last_data(energyboxx_data_t *out)
+{
+    assert (out);               //  Caller's contract
+
+    if (last_data_us == 0) {
+        return false;
+    }
+
+    //  A copy under the small lock: the fetching task writes this while the
+    //  screen task reads it, and half of one measurement next to half of
+    //  another is a number that was never measured.
+    xSemaphoreTake(s_data_lock, portMAX_DELAY);
+    *out = s_last_data;
+    xSemaphoreGive(s_data_lock);
+
+    return true;
 }
 
 

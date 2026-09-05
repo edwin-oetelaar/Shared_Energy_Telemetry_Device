@@ -479,6 +479,25 @@ log staat.
 
 **Klaar als:** de waarden uit de telemetrie leesbaar op het scherm staan.
 
+> **Half uitgevoerd op 2026-09-05.** Het vermogen staat er. Onder "Energie over" en "Energie
+> inkopen" staat nu hoeveel het is — `0,3 kW` — en het statusscherm toont de meting met alle
+> drie de getallen: netto, in en uit. Nederlandse komma's.
+>
+> De titel zegt welke kant het op gaat, dus het getal eronder staat zonder teken. Een min voor
+> een getal onder het woord "inkopen" leest als twee ontkenningen. Op het statusscherm staat het
+> teken er wél bij, want dat beeld gaat over het apparaat en daar hoort netto = in − uit te
+> kloppen.
+>
+> **De prijzen staan er niet.** De API levert er vier — `community_import_price_eur`,
+> `community_export_price_eur`, `community_shared_import_price_eur`,
+> `community_shared_export_price_eur` — en `docs/energiegemeenschap-wilhelminaweg.md` legt niet
+> uit welke van die vier een bewoner aangaat. Dat is domeinkennis, en de verkeerde prijs op een
+> muur is erger dan geen prijs.
+>
+> **Lettergrootte:** de waarde staat in Montserrat 14, de regel die er al was. Voor een apparaat
+> dat vanaf de bank leesbaar moet zijn is dat aan de kleine kant; een groter lettertype is een
+> Kconfig-regel en een paar kilobyte flash.
+
 ### Fase 7 — Geluid
 
 Pas oppakken als fase 1 tot en met 6 draaien. Geluid vraagt keuzes over wanneer een
