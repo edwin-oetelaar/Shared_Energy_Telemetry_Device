@@ -98,13 +98,13 @@ te repareren.
 - [x] **L3** `sdkconfig` én `sdkconfig.old` ingecheckt — opgelost, `sdkconfig.defaults`
 - [ ] **L4** Geen LICENSE-bestand
 - [ ] **L5** HTML/CSS/JS als C-stringliteral
-- [ ] **L6** Zeven keer hetzelfde JSON-parseerblok
-- [ ] **L7** Dode code
-- [ ] **L8** Ongebruikte macro naast een hardcoded URL
+- [x] **L6** Zeven keer hetzelfde JSON-parseerblok — opgelost, tabel van naam en offset
+- [x] **L7** Dode code — opgelost, `energyboxx_api_get_token()` weg; de led_ring-functies waren al met de bordwissel verdwenen
+- [x] **L8** Ongebruikte macro naast een hardcoded URL — opgelost, de macro wordt nu gebruikt
 - [x] **L9** Headers zijn niet zelfstandig — opgelost, was een harde buildbreker op IDF 5.5.5
 - [x] **L10** `is_valid_credentials()` zonder `void` — opgelost
-- [ ] **L11** Client secret in een `type=text`-veld; `data` niet `static`
-- [ ] **L12** Losse `printf` in de HTTP-eventhandler vervuilt de log
+- [x] **L11** Client secret in een `type=text`-veld; `data` niet `static` — opgelost
+- [x] **L12** Losse `printf` in de HTTP-eventhandler vervuilt de log — opgelost
 
 ---
 
@@ -1064,6 +1064,25 @@ Geen van deze breekt iets, samen bepalen ze wel hoe het project over een jaar aa
 - **L11 — Client secret in een `type=text`-veld** (`main/src/wifi_web.c:143`), terwijl het
   wifi-wachtwoord wél op `password` staat. En `energyboxx_data_t data` in `main/main.c:19` is niet
   `static`.
+  **Opgelost.** De eerste helft bleek onderweg al gerepareerd: het veld `clientSecret` staat op
+  `type='password'`. Wat er nog stond was `clientId` op `type='text'`, en dat hoort ook zo — een
+  client ID is geen geheim. De tweede helft is nu ook weg: `data` is `static`.
+
+> **L6, L7, L8 en L12 opgelost op 2026-09-05.**
+>
+> **L6.** Zes velden gaan nu door een tabel van `{naam, offset}` en één lus. Het zevende,
+> `community_power_result_kw`, staat er met opzet buiten: dat veld mag niet ontbreken, en die
+> uitzondering is M3. Op hardware bevestigd — alle zeven velden komen goed door, en een
+> `result_kw` van −34,88 levert nog steeds "Energie inkopen".
+>
+> **L7.** `energyboxx_api_get_token()` is weg, uit de bron en uit de header. De led_ring-functies
+> die deze bevinding ook noemde waren al met de bordwissel verdwenen.
+>
+> **L8.** `ENERGYBOXX_TOKEN_URL` wordt nu gebruikt op de plek waar de URL letterlijk stond.
+>
+> **L12.** De losse `printf`'s zijn weg. In de seriële log stonden drie lege regels vóór elk
+> antwoord; die zijn er niet meer. Wat niemand opvangt gaat nu naar één `ESP_LOGD` met het aantal
+> bytes — met tag en niveau, in plaats van eromheen.
 
 ### M10 — Tijdens provisioning blijft het schema afgewezen credentials proberen
 `main/src/wifi_provisioning.c` (`s_schedule_retry`, ingevoerd bij C2)
