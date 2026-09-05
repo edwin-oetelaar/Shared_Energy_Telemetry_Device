@@ -14,3 +14,7 @@ sdkconfig.old
 #  Ondertekensleutels. Een vangnet en geen beleid: de sleutel hoort hier
 #  helemaal niet te staan. Zie docs/SLEUTELS.md.
 *.pem
+
+#  Gegenereerde PDF-versies van de documenten. Maak ze met
+#  tools/handleiding-pdf.sh; ze horen niet in de repository.
+*.pdf
