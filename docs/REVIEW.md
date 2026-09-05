@@ -74,6 +74,8 @@ te repareren.
 - [x] **H14** Verbinden lukt niet zolang het apparaat al verbonden is — opgelost, eerst
   weggaan en dan aankomen
 - [x] **H15** De migratie wist de sleutels die een terugval nodig heeft — opgelost in v0.3.1
+- [ ] **H16** Een kapotte uitgave kan een apparaat in een updatelus zetten die een
+  fabrieksreset niet doorbreekt
 - [ ] **H5** Credentials liggen leesbaar in flash
 
 ### Middel
@@ -598,6 +600,47 @@ scherm gebruikte.
 >
 > Er is nu een `wifi_prov_link_state()` voor de tweede vraag. Zie de achtste ronde onder
 > "Bevestigd op hardware".
+
+### H16 — Een kapotte uitgave kan een apparaat in een updatelus zetten
+`main/src/updater.c`
+
+Opgeworpen door Edwin op 2026-09-05, als vraag bij het uitbrengen van v0.3.1: wat gebeurt er met
+een uitgave die opstart maar geen netwerk vindt?
+
+Dan loopt dit af, en het is erger dan een lus:
+
+1. Het apparaat haalt de versie op en start erin op.
+2. De proeftijd loopt nooit af — geen telemetrie, en ook geen netwerk dat tien minuten aanstaat.
+3. **Het apparaat valt niet vanzelf terug.** `s_probation_task ()` markeert alleen goed; het
+   markeert nooit fout en herstart nooit. Het apparaat blijft staan met firmware die niets kan.
+4. De gebruiker trekt de stekker eruit. Nu valt het terug op de vorige versie, die wél verbindt.
+5. Vijf minuten later ziet die vorige versie dezelfde kapotte uitgave en installeert hem opnieuw.
+
+Elke stroomonderbreking koopt ongeveer vijf minuten werkend apparaat.
+
+**Een fabrieksreset maakt het erger.** Drie keer de stroom eraf wist de wifigegevens en de
+API-sleutels, niet de updatelogica. De gebruiker stelt alles opnieuw in, het apparaat verbindt,
+en loopt binnen vijf minuten weer in stap 1 — met het gevoel dat hij het zelf heeft verergerd.
+De enige uitweg is dan een kabel, en bij apparaten bij bewoners betekent dat terughalen.
+
+Wat dit zo vervelend maakt is dat de bestaande beproeving het niet dekt. "De terugval beproeven"
+in `docs/OTA.md` gebruikt een versie die **crasht**, en die wordt netjes opgevangen. Een versie
+die rustig draait en alleen geen netwerk vindt, wordt niet opgevangen — en er is geen crash die
+het aanwijst.
+
+**Fix:** onthouden welke versie is teruggevallen en die niet nog een keer installeren.
+
+- Vóór het schrijven van versie *V*: `pending = V` in NVS.
+- Bij de volgende start: staat er een `pending` en draait er iets anders dan *V*, dan is *V* niet
+  blijven staan. Noteer *V* als geweigerd.
+- De updater slaat een uitgave met dat nummer over, en zegt dat in de log en op de About-pagina.
+- Eigen namespace, zodat de fabrieksreset het niet wist. Dat is het hele punt.
+
+Een latere, hogere versie heeft een ander nummer en komt er gewoon door, dus een reparatie
+bereikt het apparaat altijd nog.
+
+**Nog niet gebouwd.** Dit staat hier zodat het niet vergeten wordt; zie ook "De lus die nooit mag
+ontstaan" in `docs/OTA.md`.
 
 ### H15 — De migratie wist de sleutels die een terugval nodig heeft
 `main/src/wifi_storage.c` (`s_migrate_single_network`), uitgeleverd in **v0.3.0**
