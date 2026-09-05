@@ -45,6 +45,13 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
 #  bigger font than the 14 pixel default it ships with.
 CONFIG_LV_FONT_MONTSERRAT_28=y
 
+#  En een maat ertussen voor het vermogen onder die tekst. In 14 punt was het
+#  getal van een meter of drie niet meer te lezen, en juist dat getal is waar
+#  iemand voor blijft staan. Deze staat niet in de CI-controle op
+#  sdkconfig.defaults: een lettertype dat niet in de configuratie landt levert
+#  meteen een compilerfout op lv_font_montserrat_24, dus de bouw zegt het zelf.
+CONFIG_LV_FONT_MONTSERRAT_24=y
+
 #  A QR code on the provisioning screen: a phone camera joins the access point
 #  from it, so nobody has to work out which network to look for.
 CONFIG_LV_USE_QRCODE=y

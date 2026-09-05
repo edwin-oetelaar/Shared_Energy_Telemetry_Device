@@ -45,6 +45,10 @@ static const char *TAG = "[status_view]";
 //  download, and the update view counts percent. Those are painted again on
 //  every pass; the rest only when the state changes.
 //
+//  `arrow` is de tweede manier om te zeggen welke kant het op gaat. Kleur is
+//  de eerste, en die werkt niet voor iedereen: bij rood-groen kleurenblindheid
+//  is groen tegenover geel het enige verschil tussen "over" en "inkopen".
+//
 //  `reading` marks the views that claim something about the energy of the
 //  community: what stands there is what the device measured a moment ago.
 //  Those, and only those, can carry the "voorbeeld" mark in the corner, and
@@ -63,6 +67,7 @@ static const struct {
     uint32_t    rgb;
     bool        live;
     bool        reading;
+    display_arrow_t arrow;
 } s_view [STATUS_VIEW_STATE_COUNT] = {
     [STATUS_VIEW_STARTING]     = { "starting",     "powered on",
                                    "",                  PAINT_IMAGE,  0x000000 },
@@ -78,9 +83,11 @@ static const struct {
     //  over dit huishouden. Zonder dat leest "Energie over" als "u hebt
     //  stroom over", en dat is precies wat het apparaat niet meet.
     [STATUS_VIEW_SURPLUS]      = { "surplus",      "energy available to share",
-                                   "Energie over in de groep", PAINT_COLOUR, 0x1F9E4B, .reading = true },
+                                   "Energie over in de groep", PAINT_COLOUR, 0x1F9E4B,
+                                   .reading = true, .arrow = DISPLAY_ARROW_UP },
     [STATUS_VIEW_DEFICIT]      = { "deficit",      "energy has to be bought",
-                                   "Energie inkopen voor groep", PAINT_COLOUR, 0xE0A21B, .reading = true },
+                                   "Energie inkopen voor groep", PAINT_COLOUR, 0xE0A21B,
+                                   .reading = true, .arrow = DISPLAY_ARROW_DOWN },
     [STATUS_VIEW_BALANCED]     = { "balanced",     "supply and demand match",
                                    "In balans",         PAINT_COLOUR, 0x243028, .reading = true },
     [STATUS_VIEW_KEYS_NEEDED]  = { "keys-needed",  "no API credentials stored",
@@ -334,6 +341,25 @@ static const char *s_power_line(void)
 
 
 //  --------------------------------------------------------------------------
+//  Het getal dat bij dit beeld hoort, of NULL als dit beeld er geen heeft.
+//  Deze drie gaan over de gemeenschap en niet over het apparaat, en zij zijn
+//  daarmee ook de drie die op de grote manier getekend worden.
+
+static const char *s_value_for(status_view_state_t state)
+{
+    switch (state) {
+        case STATUS_VIEW_SURPLUS:
+        case STATUS_VIEW_DEFICIT:
+        case STATUS_VIEW_BALANCED:
+            return s_power_line();
+
+        default:
+            return NULL;
+    }
+}
+
+
+//  --------------------------------------------------------------------------
 //  The line under the title. Only two states have something worth saying
 //  there, and both of them name a network.
 
@@ -347,13 +373,6 @@ static const char *s_detail_for(status_view_state_t state)
         case STATUS_VIEW_UPDATING:
             snprintf(s_detail, sizeof(s_detail), "%s", s_update_status());
             return s_detail;
-
-        //  De drie beelden die over de gemeenschap gaan, en niet over het
-        //  apparaat. Daar hoort het getal bij dat de toestand bepaalde.
-        case STATUS_VIEW_SURPLUS:
-        case STATUS_VIEW_DEFICIT:
-        case STATUS_VIEW_BALANCED:
-            return s_power_line();
 
         case STATUS_VIEW_CONNECTING:
         case STATUS_VIEW_CONNECT_FAILED:
@@ -496,10 +515,18 @@ static esp_err_t s_paint(status_view_state_t state)
         err = display_show_bringup();
     }
     else {
-        err = display_show_status(s_view [state].label,
-                                  s_detail_for(state),
-                                  s_qr_for(state),
-                                  s_view [state].rgb);
+        const char *value = s_value_for(state);
+
+        if (value != NULL) {
+            err = display_show_reading(s_view [state].label, value,
+                                       s_view [state].arrow, s_view [state].rgb);
+        }
+        else {
+            err = display_show_status(s_view [state].label,
+                                      s_detail_for(state),
+                                      s_qr_for(state),
+                                      s_view [state].rgb);
+        }
     }
 
     if (err != ESP_OK) {
