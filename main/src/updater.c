@@ -5,6 +5,7 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -17,6 +18,7 @@
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_timer.h"
+#include "nvs.h"
 
 #include "inc/updater.h"
 #include "inc/wifi_provisioning.h"
@@ -94,6 +96,36 @@ static const struct {
 };
 
 //  The status of the last answer from GitHub, or zero when there was none.
+//  --------------------------------------------------------------------------
+//  Remembering which version did not stick.
+//
+//  A release that starts up but never finds a network is the worst kind. Its
+//  probation never ends, so it is never marked good - but nothing rolls it
+//  back either, because the probation only ever marks good. The device simply
+//  sits there. The owner pulls the plug, the bootloader puts the previous
+//  version back, that one connects, and five minutes later it installs the
+//  same broken release again. Every power cut buys five working minutes.
+//
+//  A factory reset makes it worse: it clears the credentials, not the update
+//  logic, so the owner sets everything up again and walks straight back in.
+//  That is why this lives in a namespace of its own - wiping the device must
+//  not wipe the memory of what went wrong.
+//
+//  How it works: before restarting into a new version we write down which
+//  version that is. If the next start is running something else, the install
+//  did not stick and that version gets a mark against it.
+//
+//  Not on the first failure. A perfectly good version fails its probation when
+//  the router happens to be off, and blocking it for ever would be a worse
+//  fault than the one we are preventing. The second failure is what counts:
+//  bad luck twice in a row over the same version, with an hour in between, is
+//  no longer luck.
+#define UPDATER_NAMESPACE   "updater"
+#define KEY_PENDING         "pending"
+#define KEY_BAD_VERSION     "bad_ver"
+#define KEY_BAD_COUNT       "bad_count"
+#define BAD_VERSION_LIMIT   2
+
 //  esp_https_ota_begin () frees its handle when it fails, so the status has to
 //  be caught on the way past rather than asked for afterwards.
 static int s_http_status = 0;
@@ -117,6 +149,128 @@ static esp_err_t s_http_event(esp_http_client_event_t *event)
     }
 
     return ESP_OK;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Small readers and writers for the namespace above. None of them fail the
+//  update when NVS is unhappy: not being able to remember is a reason to be
+//  careful, not a reason to stop.
+
+static bool s_read_note(const char *key, char *value, size_t size)
+{
+    nvs_handle_t handle;
+
+    if (nvs_open(UPDATER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK) {
+        return false;
+    }
+
+    size_t length = size;
+    bool found = nvs_get_str(handle, key, value, &length) == ESP_OK;
+
+    nvs_close(handle);
+
+    return found;
+}
+
+
+static uint8_t s_read_count(void)
+{
+    nvs_handle_t handle;
+
+    if (nvs_open(UPDATER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK) {
+        return 0;
+    }
+
+    uint8_t count = 0;
+
+    if (nvs_get_u8(handle, KEY_BAD_COUNT, &count) != ESP_OK) {
+        count = 0;
+    }
+
+    nvs_close(handle);
+
+    return count;
+}
+
+
+//  Pass NULL to erase.
+
+static void s_write_note(const char *key, const char *value)
+{
+    nvs_handle_t handle;
+
+    if (nvs_open(UPDATER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) {
+        return;
+    }
+
+    if (value != NULL) {
+        nvs_set_str(handle, key, value);
+    }
+    else {
+        nvs_erase_key(handle, key);
+    }
+
+    nvs_commit(handle);
+    nvs_close(handle);
+}
+
+
+static void s_write_count(uint8_t count)
+{
+    nvs_handle_t handle;
+
+    if (nvs_open(UPDATER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) {
+        return;
+    }
+
+    nvs_set_u8(handle, KEY_BAD_COUNT, count);
+    nvs_commit(handle);
+    nvs_close(handle);
+}
+
+
+//  --------------------------------------------------------------------------
+//  A version we wrote down as "about to run" is not what came up. Count it
+//  against that version, and say so: this is the line somebody needs when a
+//  device keeps going quiet after an update.
+
+static void s_note_version_did_not_stick(const char *pending, const char *running)
+{
+    char bad [32] = {0};
+    uint8_t count = 1;
+
+    if (s_read_note(KEY_BAD_VERSION, bad, sizeof(bad)) && strcmp(bad, pending) == 0) {
+        count = s_read_count();
+        count = count < 255 ? count + 1 : 255;
+    }
+
+    s_write_note(KEY_BAD_VERSION, pending);
+    s_write_count(count);
+    s_write_note(KEY_PENDING, NULL);
+
+    ESP_LOGE(TAG, "Version %s was installed but %s came up instead; "
+                  "that is %u time%s for this version",
+             pending, running, (unsigned) count, count == 1 ? "" : "s");
+
+    if (count >= BAD_VERSION_LIMIT) {
+        ESP_LOGE(TAG, "Not installing %s again. A higher version still will be",
+                 pending);
+    }
+}
+
+
+//  Whether this offer is the one that keeps failing.
+
+static bool s_is_known_bad(const char *offered)
+{
+    char bad [32] = {0};
+
+    if (!s_read_note(KEY_BAD_VERSION, bad, sizeof(bad)) || strcmp(bad, offered) != 0) {
+        return false;
+    }
+
+    return s_read_count() >= BAD_VERSION_LIMIT;
 }
 
 
@@ -270,6 +424,15 @@ static void s_run_update(void)
 
     const esp_app_desc_t *running = esp_app_get_description();
 
+    if (s_is_known_bad(offered.version)) {
+        ESP_LOGW(TAG, "Skipping %s: it has failed to come up %d times. "
+                      "Publish a higher version to get past this",
+                 offered.version, BAD_VERSION_LIMIT);
+        esp_https_ota_abort(handle);
+        updater_handle(UPDATER_EV_NOTHING);
+        return;
+    }
+
     if (!s_is_newer(offered.version, running->version)) {
         ESP_LOGI(TAG, "Running %s, offered %s: nothing to do",
                  running->version, offered.version);
@@ -307,6 +470,11 @@ static void s_run_update(void)
 
     s_percent = 100;
     updater_handle(UPDATER_EV_INSTALLED);
+
+    //  Written down before the restart, so the next start can tell whether
+    //  this version actually came up. Cleared again the moment it proves
+    //  itself; see updater_note_device_working ().
+    s_write_note(KEY_PENDING, offered.version);
 
     //  A moment so the screen can say what happened before it goes dark.
     ESP_LOGW(TAG, "Restarting into %s", offered.version);
@@ -418,12 +586,34 @@ void updater_note_device_working(void)
     s_marked_good = true;
     s_on_probation = false;
 
+    //  This version did come up and it does work. Nothing left to suspect: the
+    //  note about what we were installing goes, and so does any mark against
+    //  this version from an earlier attempt that failed for its own reasons.
+    s_write_note(KEY_PENDING, NULL);
+    s_write_note(KEY_BAD_VERSION, NULL);
+    s_write_count(0);
+
     ESP_LOGW(TAG, "This image works and is now permanent");
 }
 
 
 esp_err_t updater_init(void)
 {
+    //  Did the last thing we installed actually come up? This runs before
+    //  anything else, because the answer decides whether the next check may
+    //  offer that version again.
+    char pending [32] = {0};
+    const esp_app_desc_t *app = esp_app_get_description();
+
+    if (s_read_note(KEY_PENDING, pending, sizeof(pending)) && pending [0] != '\0') {
+        if (strcmp(pending, app->version) != 0) {
+            s_note_version_did_not_stick(pending, app->version);
+        }
+        //  Running what we wrote down: leave the note. It is cleared when the
+        //  image proves itself, and stays if the device restarts before that -
+        //  which is exactly the case we want to catch.
+    }
+
     const esp_partition_t *running = esp_ota_get_running_partition();
     esp_ota_img_states_t state;
 
