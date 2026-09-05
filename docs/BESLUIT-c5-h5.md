@@ -109,7 +109,7 @@ Hier zit meer aan vast dan werk.
 | Kostenpost | Wat het inhoudt |
 | --- | --- |
 | **Onomkeerbaar** | Het wordt in de chip gebrand. Terugdraaien kan niet, en **aanzetten kan niet over de lucht** — het moet met een kabel, in de fabriek, vóór uitlevering |
-| **Sleutelbeheer** | Er komt een ondertekensleutel die de hele levensduur van het product moet blijven bestaan. Kwijt betekent: nooit meer een update. Uitgelekt betekent: secure boot is waardeloos |
+| **Sleutelbeheer** | Er komt een ondertekensleutel die de hele levensduur van het product moet blijven bestaan. Kwijt betekent: nooit meer een update. Uitgelekt betekent: secure boot is waardeloos. Alleen voor secure boot — flash encryption en NVS-encryptie maken hun sleutel op het apparaat zelf. Zie [SLEUTELS.md](SLEUTELS.md) |
 | **De bouwstraat** | Die sleutel moet in de bouwomgeving staan om releases te ondertekenen. Dat is een nieuwe plek waar een geheim ligt |
 | **Onderhoud** | Een apparaat dat terugkomt is lastiger te onderzoeken: opnieuw flashen via de kabel gaat in de strengste stand niet meer |
 | **Ontwikkeltijd** | Enkele dagen, inclusief het beproeven — en beproeven betekent hier dat een fout een bord onherstelbaar kan maken |
@@ -170,7 +170,7 @@ nog — dus dit is geen besluit dat vastloopt.
 **H5: nu beslissen, ook als de uitkomst "niet doen" is.** En als het besluit "wel doen" wordt,
 dan in deze volgorde, want de kosten liggen niet waar men ze verwacht:
 
-1. **Eerst het sleutelbeheer regelen.** Waar staat de sleutel, wie kan erbij, wat gebeurt er als
+1. **Eerst het sleutelbeheer regelen.** De werkwijze staat in [SLEUTELS.md](SLEUTELS.md). Waar staat de sleutel, wie kan erbij, wat gebeurt er als
    die persoon er niet meer is, en hoe wordt hij bewaard buiten één laptop. Zonder antwoord op
    die vragen is de rest zinloos.
 2. **Dan flash encryption en NVS encryption.** Die beschermen de gegevens van de bewoner en

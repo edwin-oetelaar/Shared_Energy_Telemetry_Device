@@ -10,3 +10,7 @@ test/test_*
 !test/test_*.c
 sdkconfig
 sdkconfig.old
+
+#  Ondertekensleutels. Een vangnet en geen beleid: de sleutel hoort hier
+#  helemaal niet te staan. Zie docs/SLEUTELS.md.
+*.pem
