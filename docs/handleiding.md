@@ -1,7 +1,7 @@
 # Energy Owl — handleiding
 
-Deze handleiding beschrijft versie **v0.3.0**. De versie staat op de About-pagina van het
-apparaat zelf.
+Welke firmware uw apparaat draait, staat op de About-pagina van het apparaat zelf. Wordt deze
+handleiding als PDF uitgedeeld, dan staat het versienummer op de titelpagina.
 
 ---
 

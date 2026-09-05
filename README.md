@@ -589,14 +589,14 @@ assets/energy-owl.png         De tekening, onbewerkt
 assets/energy-owl-bringup.bin Het opstartbeeld zoals het scherm het tekent
 partitions-box3.csv           Partitie-indeling van de 16 MB flash
 test/                         Host-tests voor de modules zonder ESP-IDF
-tools/                        Beeldomzetter, seriële monitor, bouwomgeving
+tools/                        Beeldomzetter, seriële monitor, PDF-maker, bouwomgeving
 ```
 
 De documenten, en voor wie ze zijn:
 
 | Document | Voor wie |
 | --- | --- |
-| [docs/handleiding.md](docs/handleiding.md) | De bewoner met het apparaat aan de muur |
+| [docs/handleiding.md](docs/handleiding.md) | De bewoner met het apparaat aan de muur. Met `tools/handleiding-pdf.sh` maakt u er een PDF van om uit te delen |
 | [docs/energiegemeenschap-wilhelminaweg.md](docs/energiegemeenschap-wilhelminaweg.md) | Wie wil weten bij welk project dit hoort |
 | [docs/OTA.md](docs/OTA.md) | Wie een versie uitgeeft |
 | [docs/NVS.md](docs/NVS.md) | Wie de indeling van de opslag verandert |
