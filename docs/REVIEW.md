@@ -73,6 +73,7 @@ te repareren.
   verruimd en de marge gemeten
 - [x] **H14** Verbinden lukt niet zolang het apparaat al verbonden is — opgelost, eerst
   weggaan en dan aankomen
+- [x] **H15** De migratie wist de sleutels die een terugval nodig heeft — opgelost in v0.3.1
 - [ ] **H5** Credentials liggen leesbaar in flash
 
 ### Middel
@@ -597,6 +598,53 @@ scherm gebruikte.
 >
 > Er is nu een `wifi_prov_link_state()` voor de tweede vraag. Zie de achtste ronde onder
 > "Bevestigd op hardware".
+
+### H15 — De migratie wist de sleutels die een terugval nodig heeft
+`main/src/wifi_storage.c` (`s_migrate_single_network`), uitgeleverd in **v0.3.0**
+
+Gevonden op 2026-09-05, door Edwin, één vraag na het uitbrengen van v0.3.0: *"had de vorige
+release al drie slots? Is de indeling van de NVS niet veranderd tussen de twee?"*
+
+Ja, en dat was het probleem. `v0.2.1` bewaarde één netwerk onder `ssid` en `password`. `v0.3.0`
+kopieert dat naar `ssid0`/`pw0` en **wiste daarna de oude sleutels**.
+
+Het bijwerken zelf ging goed; dat is met een NVS-dump aangetoond. Het gaat mis bij de
+**terugval**. Een apparaat dat van v0.2.1 naar v0.3.0 gaat houdt v0.2.1 in het andere slot.
+Zakt v0.3.0 door de proeftijd, dan start het bootprogramma v0.2.1 op — en dat zoekt naar sleutels
+die er niet meer zijn. Portaal aan, apparaat offline, iemand moet ernaartoe met een telefoon.
+
+Dat is de verkeerde combinatie: de terugval bestaat om een apparaat te redden als een nieuwe
+versie stuk is, en strandde het hier juist. Precies in het geval waarin je hem nodig hebt.
+
+**Fix:** de oude sleutels blijven staan, en ze worden bijgehouden. Bij elke geslaagde verbinding
+wordt het netwerk dat werkte ook onder `ssid`/`password` gezet — het netwerk dat het laatst
+werkte, niet slot 0, want dat is het netwerk waarmee oudere firmware de beste kans heeft. Wissen
+en vergeten ruimen de brug mee op.
+
+> **Opgelost en op hardware bewezen.** De echte `v0.2.1` uit de tag is over het bord heen
+> geflasht — wat een terugval met de NVS doet, want de app wisselt en de opslag blijft:
+>
+> ```
+> [1.20] app_init:  App version:      v0.2.1
+> [1.80] wifi_prov: Connecting to SSID: OETELX
+> [7.67] wifi_prov: Got IP: 192.168.50.145
+> ```
+>
+> **De fix maakte onderweg een tweede gat, en dezelfde proef liet het zien.** Het bestaan van de
+> oude sleutels was het signaal "nog niet gemigreerd". Nu ze blijven staan, betekende dat signaal
+> niets meer en draaide de kopie bij **elke** start — waarbij de brug over slot 0 werd geschreven,
+> wat de eigenaar daar ook had staan. Op de werkbank hield slot 0 bij het opstarten het ene
+> netwerk en een seconde later dat van de brug.
+>
+> Er is nu een sleutel `layout` die zegt op welke indeling het apparaat staat. Bevestigd met twee
+> starts achter elkaar: de eerste kopieerde, de tweede deed niets.
+>
+> **Wat deze fix niet dekt:** een apparaat dat terugvalt, dáár een nieuw netwerk krijgt
+> ingetypt, en daarna weer vooruit gaat. De markering zegt dan "al gemigreerd" en dat netwerk
+> komt niet in een slot terecht. Het apparaat gebruikt dan zijn eigen slots, die een werkend
+> netwerk bevatten, en het nieuwe kan er via het portaal bij. Bewust zo gelaten: de regel
+> "kopieer wat nog in geen enkel slot staat" dekt dat geval wel, maar heeft meer randen dan het
+> waard is voor iets dat zelden gebeurt.
 
 ### H14 — Verbinden lukt niet zolang het apparaat al verbonden is
 `main/src/wifi_provisioning.c` (`s_connect_to`), `main/src/wifi_web.c` (de portalpagina)
