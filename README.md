@@ -13,6 +13,35 @@ in [docs/energiegemeenschap-wilhelminaweg.md](docs/energiegemeenschap-wilhelmina
 De gebruiker stelt de wifi- en API-gegevens in via een webportaal op het apparaat zelf. De
 gegevens staan dus niet in de firmware.
 
+**Dit document is voor wie aan de firmware werkt.** Wie het apparaat gebruikt, heeft aan
+[docs/handleiding.md](docs/handleiding.md) genoeg: wat de beelden betekenen, hoe u het instelt,
+hoe u meer dan één netwerk toevoegt, en wat u doet als er iets niet goed gaat.
+
+## Versie v0.3.0 — de basis
+
+`v0.3.0` is de eerste versie die doet wat de klant als eerste vroeg, en daarmee het punt waar
+alles vanaf nu tegen afgezet wordt.
+
+Wat er in zit:
+
+- De toestand van de gemeenschap op het scherm, met de hoeveelheid in kW erbij
+- Instellen via een portaal op het apparaat, met een QR-code om erop te komen
+- Drie onthouden wifinetwerken, gekozen op basis van een scan
+- Bijwerken over de lucht, met terugval naar de vorige versie als het misgaat
+- Een statusscherm dat zegt wat het apparaat weet, zonder seriële kabel
+
+Wat er bewust **niet** in zit, en wat er dus voor de eerste serie nog moet gebeuren:
+
+| Punt | Waarom het wacht |
+| --- | --- |
+| **C5** Het provisioning-netwerk is open | Beslissing over het productieproces; zie [docs/REVIEW.md](docs/REVIEW.md) |
+| **H5** Credentials liggen leesbaar in flash | Flash encryption en secure boot zijn na uitlevering niet meer aan te zetten |
+| Prijzen op het scherm | De API levert er vier en het is niet vastgelegd welke een bewoner aangaat |
+
+Beide openstaande punten raken het productieproces en niet alleen de firmware. Zolang de vloot
+uit eigen testapparaten bestaat is dat een aanvaardbaar risico; vóór de eerste serie is het dat
+niet.
+
 ## Wat het apparaat doet
 
 Het apparaat vraagt elke minuut de telemetrie op. Het stuurt het scherm aan op het veld
