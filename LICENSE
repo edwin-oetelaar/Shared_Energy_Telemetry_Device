@@ -1,0 +1,63 @@
+Copyright (c) 2026 Dolphin Solutions
+Alle rechten voorbehouden. / All rights reserved.
+
+Gebouwd door Job en Edwin.
+
+--------------------------------------------------------------------------
+NEDERLANDS
+
+Deze software en de bijbehorende documentatie zijn eigendom van Dolphin
+Solutions. Er wordt geen toestemming verleend om deze software of enig deel
+ervan te gebruiken, te kopiëren, te wijzigen, samen te voegen, te publiceren,
+te verspreiden, in sublicentie te geven of te verkopen.
+
+Dat de broncode openbaar te lezen is, verandert daar niets aan. Lezen mag;
+gebruiken niet.
+
+Wilt u deze software gebruiken, in welke vorm dan ook, neem dan contact op
+voor de licentievoorwaarden en de prijzen:
+
+    Dolphin Solutions
+    https://www.dolphinsolutions.nl/
+
+--------------------------------------------------------------------------
+ENGLISH
+
+This software and its documentation are the property of Dolphin Solutions. No
+permission is granted to use, copy, modify, merge, publish, distribute,
+sublicense or sell this software or any part of it.
+
+The source being readable in public changes nothing about that. Reading is
+allowed; using is not.
+
+If you want to use this software in any form, please get in touch for licence
+terms and pricing:
+
+    Dolphin Solutions
+    https://www.dolphinsolutions.nl/
+
+--------------------------------------------------------------------------
+UITZONDERINGEN / EXCEPTIONS
+
+Niet alles in deze repository is van Dolphin Solutions. Het volgende valt
+buiten het bovenstaande en houdt zijn eigen licentie:
+
+  main/src/dns_server.c   Espressif Systems (Shanghai) CO LTD, 2021-2025
+                          SPDX-License-Identifier: Unlicense OR CC0-1.0
+                          Overgenomen uit de voorbeelden van ESP-IDF, met de
+                          oorspronkelijke koptekst.
+
+De onderdelen die tijdens het bouwen worden opgehaald - ESP-IDF zelf en alles
+onder managed_components/ - staan niet in deze repository en houden de
+licentie van hun makers.
+
+--------------------------------------------------------------------------
+GEEN GARANTIE / NO WARRANTY
+
+DE SOFTWARE WORDT GELEVERD "ZOALS ZIJ IS", ZONDER ENIGE GARANTIE, UITDRUKKELIJK
+OF STILZWIJGEND. DE AUTEURS ZIJN NIET AANSPRAKELIJK VOOR ENIGE CLAIM, SCHADE OF
+ANDERE AANSPRAKELIJKHEID DIE VOORTVLOEIT UIT DE SOFTWARE OF HET GEBRUIK ERVAN.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED. THE AUTHORS SHALL NOT BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY ARISING FROM THE SOFTWARE OR THE USE OF IT.
