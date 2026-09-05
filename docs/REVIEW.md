@@ -74,8 +74,8 @@ te repareren.
 - [x] **H14** Verbinden lukt niet zolang het apparaat al verbonden is — opgelost, eerst
   weggaan en dan aankomen
 - [x] **H15** De migratie wist de sleutels die een terugval nodig heeft — opgelost in v0.3.1
-- [ ] **H16** Een kapotte uitgave kan een apparaat in een updatelus zetten die een
-  fabrieksreset niet doorbreekt
+- [x] **H16** Een kapotte uitgave kan een apparaat in een updatelus zetten die een
+  fabrieksreset niet doorbreekt — opgelost, een versie die niet blijft staan wordt geweigerd
 - [ ] **H5** Credentials liggen leesbaar in flash
 
 ### Middel
@@ -639,8 +639,36 @@ het aanwijst.
 Een latere, hogere versie heeft een ander nummer en komt er gewoon door, dus een reparatie
 bereikt het apparaat altijd nog.
 
-**Nog niet gebouwd.** Dit staat hier zodat het niet vergeten wordt; zie ook "De lus die nooit mag
-ontstaan" in `docs/OTA.md`.
+> **Opgelost en op hardware bewezen.** Vóór de herstart schrijft de updater op welke versie hij
+> installeert. Komt bij de volgende start iets anders op, dan krijgt die versie een streep. Bij
+> de tweede streep wordt zij overgeslagen.
+>
+> Beproefd door met de hand een openstaande belofte in NVS te zetten die niet uitkwam:
+>
+> ```
+> E [updater]: Version v9.9.9 was installed but v0.3.1-2-gc9a366f-dirty came up instead;
+>              that is 1 time for this version
+> ```
+>
+> en de tweede keer:
+>
+> ```
+> E [updater]: ... that is 2 times for this version
+> E [updater]: Not installing v9.9.9 again. A higher version still will be
+> ```
+>
+> In NVS bleef `bad_ver` met `bad_count: 2` staan, en `pending` was opgeruimd.
+>
+> **Niet bij de eerste keer.** Een prima versie zakt door haar proeftijd als de router toevallig
+> uit staat, en die voor altijd weigeren is een ergere fout dan de fout die we voorkomen. Twee
+> keer pech achter elkaar over dezelfde versie, met een uur ertussen, is geen pech meer.
+>
+> **In een eigen namespace `updater`**, zodat de fabrieksreset het niet wist. Dat is het hele
+> punt: een gebruiker die alles wist om het te repareren, mag niet in dezelfde toestand
+> terugkomen.
+>
+> Een hogere versie heeft een ander nummer en komt er gewoon door, dus een reparatie bereikt het
+> apparaat altijd nog. En zodra een versie zich bewijst, worden de streep en de belofte gewist.
 
 ### H15 — De migratie wist de sleutels die een terugval nodig heeft
 `main/src/wifi_storage.c` (`s_migrate_single_network`), uitgeleverd in **v0.3.0**

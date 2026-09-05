@@ -269,14 +269,24 @@ precies terug waar hij vandaan kwam — met het gevoel dat hij het zelf erger he
   draait en alleen geen netwerk vindt. Dat is het gevaarlijkere van de twee, want er is geen
   crash die het aanwijst.
 
-### Wat de firmware zou moeten doen
+### Wat de firmware hiertegen doet
 
-Onthouden welke versie is teruggevallen, en die niet nog een keer installeren. Een nummer in NVS,
-in een eigen namespace zodat de fabrieksreset het niet wist, en de updater die een uitgave met
-dat nummer overslaat. Een latere, hogere versie komt er dan gewoon door, dus een reparatie
-bereikt het apparaat altijd nog.
+Sinds **v0.3.2** onthoudt het apparaat welke versie niet is blijven staan.
 
-Dat zit er **nog niet** in. Zie **H16** in [REVIEW.md](REVIEW.md).
+Vóór de herstart schrijft de updater op welke versie hij installeert. Komt bij de volgende start
+iets anders op, dan is die versie niet blijven staan en krijgt zij een streep. **Bij de tweede
+streep wordt zij overgeslagen**, met een regel in de log die zegt waarom.
+
+Niet bij de eerste. Een prima versie zakt door haar proeftijd als de router toevallig uit staat,
+en die voor altijd weigeren zou een ergere fout zijn dan de fout die we voorkomen.
+
+Dit staat in een eigen namespace `updater`, zodat de fabrieksreset het niet wist. Dat is het hele
+punt: een gebruiker die alles wist om het te repareren mag niet in dezelfde toestand terugkomen.
+
+Een hogere versie heeft een ander nummer en komt er gewoon door — een reparatie bereikt het
+apparaat dus altijd nog. Zodra een versie zich bewijst, worden de streep en de belofte gewist.
+
+Zie **H16** in [REVIEW.md](REVIEW.md).
 
 ## Regels voor het versienummer
 

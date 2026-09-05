@@ -34,6 +34,21 @@ Vier namespaces. Drie ervan zijn van ons.
 Geen schemanummer. Zolang deze twee sleutels blijven wat ze zijn is dat geen probleem; verandert
 er ooit iets, dan hoort er eerst een nummer bij. Zie hoofdstuk 4.
 
+### `updater` — wat er van de vorige uitgave is geworden
+
+| Sleutel | Type | Wat het is | Sinds |
+| --- | --- | --- | --- |
+| `pending` | `str` | De versie die zojuist is geschreven en waarin het apparaat gaat herstarten. Weg zodra die versie zich bewijst | v0.3.2 |
+| `bad_ver` | `str` | De versie die niet is blijven staan | v0.3.2 |
+| `bad_count` | `u8` | Hoe vaak diezelfde versie het niet haalde; vanaf twee wordt zij overgeslagen | v0.3.2 |
+
+Geen schemanummer: drie sleutels met één betekenis elk, en de updater kan met alle drie afwezig
+overweg.
+
+**Deze namespace overleeft de fabrieksreset met opzet.** Zou hij mee gewist worden, dan brengt
+een gebruiker die alles wist om het te repareren zichzelf terug in de lus die dit juist
+voorkomt. Zie "De lus die nooit mag ontstaan" in `docs/OTA.md`.
+
 ### `boot_count` — de teller achter de fabrieksreset
 
 | Sleutel | Type | Wat het is |
@@ -58,8 +73,8 @@ Drie stroomonderbrekingen binnen tien seconden, of de resetknop bij het opstarte
 - alles in `wifi_creds`, inclusief de brug
 - alles in `api_credentials`
 
-Wat **niet** wordt gewist: `boot_count` zelf, en alles wat later in een eigen namespace wordt
-gezet. Dat is opzet en geen toeval — zie hoofdstuk 5.
+Wat **niet** wordt gewist: `boot_count` zelf, en `updater`. Dat is opzet en geen toeval — zie
+hoofdstuk 5 en "De lus die nooit mag ontstaan" in `docs/OTA.md`.
 
 ---
 
