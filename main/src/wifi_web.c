@@ -13,6 +13,7 @@
 #include "inc/api_storage.h"
 #include "inc/uri_decode.h"
 #include "inc/wifi_storage.h"
+#include "inc/web_page.h"
 
 static const char *TAG = "[wifi_web]";
 
@@ -85,205 +86,60 @@ static esp_err_t favicon_get_handler(httpd_req_t *req)
     return httpd_resp_send(req, NULL, 0);
 }
 
-static esp_err_t s_send_wifi_page(httpd_req_t *req)
+/*  =========================================================================
+    De pagina's van het portaal
+
+    Zij stonden als C-stringliteraal in dit bestand: onhandig te bewerken,
+    geen syntax highlighting, en de directe oorzaak van C4 - een "width:100%"
+    in de CSS die door printf werd gelezen als een conversieopgave. Nu staan
+    ze in main/web/ en worden ze bij het bouwen ingebed.
+
+    Waar iets per bezoek verschilt staat een gat {{naam}} in het bestand; zie
+    web_page.h. Bevinding L5.
+    =========================================================================
+*/
+
+extern const char wifi_html_start[]       asm("_binary_wifi_html_start");
+extern const char wifi_html_end[]         asm("_binary_wifi_html_end");
+extern const char api_setup_html_start[]  asm("_binary_api_setup_html_start");
+extern const char api_setup_html_end[]    asm("_binary_api_setup_html_end");
+
+
+//  Eén stuk de deur uit. web_page_render () stuurt nooit iets van lengte nul,
+//  en dat is hier van belang: bij chunked encoding betekent zo'n stuk "einde
+//  antwoord", en de pagina zou midden in afbreken.
+
+static bool s_send_piece(void *context, const char *text, size_t length)
 {
-    const char *html =
-        "<!DOCTYPE html>"
-        "<html>"
-        "<head>"
-        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        "<title>SETD WiFi Setup</title>"
-        "<style>"
-        "body{font-family:Arial,sans-serif;margin:0;background:#f4f6f8;color:#111;}"
-        ".card{max-width:420px;margin:40px auto;padding:24px;background:white;border-radius:16px;"
-        "box-shadow:0 8px 30px rgba(0,0,0,.12);}"
-        "h1{margin-top:0;font-size:28px;}"
-        "label{display:block;margin-top:18px;font-weight:bold;}"
-        "select,input,button{width:100%;box-sizing:border-box;font-size:16px;padding:12px;margin-top:8px;"
-        "border-radius:10px;border:1px solid #ccc;}"
-        "button{background:#111;color:white;border:none;margin-top:24px;font-weight:bold;}"
-        "button:disabled{background:#999;}"
-        "#status{margin-top:18px;font-weight:bold;}"
-        ".slots{margin-top:12px;padding:12px;background:#eef1f4;border-radius:10px;"
-        "font-size:14px;line-height:1.4;}"
-        ".slots .row{display:flex;align-items:center;gap:8px;margin-top:6px;}"
-        ".slots .row span{flex:1;}"
-        ".slots .use{color:#1f7a3d;font-weight:bold;}"
-        ".slots button{width:auto;margin-top:0;padding:6px 12px;font-size:13px;"
-        "background:#8a3a2a;border-radius:8px;}"
-        "#doneBtn{background:#5a5a5a;margin-top:12px;}"
-        "</style>"
-        "</head>"
-        "<body>"
-        "<div class='card'>"
-        "<h1>SETD WiFi Setup</h1>"
-        "<p>Choose the WiFi network this device should connect to.</p>"
+    return httpd_resp_send_chunk((httpd_req_t *) context, text, length) == ESP_OK;
+}
 
-        "<div id='slots' class='slots'></div>"
 
-        "<label for='ssid'>Network</label>"
-        "<select id='ssid' onchange='slots()'>"
-        "<option>Scanning...</option>"
-        "</select>"
-        "<button type='button' onclick='scan()'>Refresh networks</button>"
+static esp_err_t s_send_page(httpd_req_t *req, const char *start, const char *end,
+                             const web_value_t *values, size_t count)
+{
+    //  EMBED_TXTFILES zet er een afsluitende nul achter. Die hoort in het
+    //  bestand, niet in het antwoord.
+    size_t length = (size_t) (end - start);
 
-        "<label for='password'>Password</label>"
-        "<input id='password' type='password' placeholder='WiFi password'>"
-
-        "<button id='connectBtn' onclick='connectWifi()'>Connect</button>"
-
-        //  Alleen zichtbaar als er iets is om mee op te houden - zie slots ().
-        //  Deze pagina wordt sinds fase 3 en 4 ook gebruikt om netwerken te
-        //  beheren op een apparaat dat allang werkt, en dan is de API-pagina
-        //  een omweg naar een knop die alleen nog "sluit dit venster"
-        //  betekent. Dit is dezelfde /done, zonder die omweg.
-        "<button id='doneBtn' type='button' onclick='finish()' hidden>Klaar</button>"
-        "<div id='status'>Status: Ready</div>"
-        "</div>"
-
-        "<script>"
-        "async function scan(){"
-        " const ssid=document.getElementById('ssid');"
-        " ssid.innerHTML='<option>Scanning...</option>';"
-        " try{"
-        "  const r=await fetch('/scan');"
-        "  const networks=await r.json();"
-        "  ssid.innerHTML='';"
-        "  networks.forEach(n=>{"
-        "   const o=document.createElement('option');"
-        "   o.value=n.ssid;"
-        "   o.textContent=n.ssid+' ('+n.rssi+' dBm)';"
-        "   ssid.appendChild(o);"
-        "  });"
-        " }catch(e){ssid.innerHTML='<option>Scan failed</option>';}"
-        " slots();"
-        "}"
-        ""
-
-        //  The device decides where a network goes and what it remembers; this
-        //  only shows the answers. Every network name goes in through
-        //  textContent and never through innerHTML: an SSID is chosen by
-        //  whoever owns the access point, and one with a tag in it must not be
-        //  able to write this page.
-        "async function slots(){"
-        " const sel=document.getElementById('ssid');"
-        " const box=document.getElementById('slots');"
-        " const q=sel.value?('?ssid='+encodeURIComponent(sel.value)):'';"
-        " try{"
-        "  const r=await fetch('/networks'+q);"
-        "  const d=await r.json();"
-        "  const named=d.stored.filter(s=>s.length>0);"
-        "  box.textContent='';"
-        "  const head=document.createElement('div');"
-        "  head.textContent=named.length"
-        "   ?('This device remembers '+named.length+' of '+d.stored.length+' networks:')"
-        "   :'This device remembers no networks yet.';"
-        "  box.appendChild(head);"
-        "  d.stored.forEach((s,i)=>{"
-        "   if(!s)return;"
-        "   const row=document.createElement('div');"
-        "   row.className='row';"
-        "   const name=document.createElement('span');"
-        "   name.textContent=s;"
-        "   row.appendChild(name);"
-        "   if(i===d.in_use){"
-        "    const now=document.createElement('span');"
-        "    now.className='use';"
-        "    now.textContent='in use now';"
-        "    row.appendChild(now);"
-        "   }"
-        "   const btn=document.createElement('button');"
-        "   btn.type='button';"
-        "   btn.textContent='Forget';"
-        "   btn.onclick=()=>forget(s,i===d.in_use);"
-        "   row.appendChild(btn);"
-        "   box.appendChild(row);"
-        "  });"
-        "  if(d.why!==undefined){"
-        "   const note=document.createElement('div');"
-        "   note.textContent='What you enter now goes in place '+(d.target+1)+' ('+d.why+').';"
-        "   box.appendChild(note);"
-        "  }"
-        //  Er valt pas iets af te sluiten als het apparaat ergens op zit. Wie
-        //  hier voor het eerst staat heeft nog geen netwerk, en een knop die
-        //  het portaal sluit zou hem dan met lege handen achterlaten.
-        "  document.getElementById('doneBtn').hidden = !(d.in_use >= 0);"
-        " }catch(e){box.textContent='';}"
-        "}"
-        ""
-
-        "async function finish(){"
-        " const status=document.getElementById('status');"
-        " document.getElementById('doneBtn').disabled=true;"
-        " document.getElementById('connectBtn').disabled=true;"
-        " try{ await fetch('/done',{method:'POST'}); }catch(e){}"
-        " status.textContent='Done. The device is going back to its own screen,'"
-        "  +' and this network will disappear in a moment. You can close this page.';"
-        "}"
-        ""
-
-        "async function forget(ssid,inUse){"
-        " let ask='Forget '+ssid+'?';"
-        " if(inUse){ask+=String.fromCharCode(10,10)"
-        "  +'The device is using this network right now. It stays connected until it restarts,'"
-        "  +' and after that it will not come back to this one.';}"
-        " if(!confirm(ask))return;"
-        " await fetch('/forget',{"
-        "  method:'POST',"
-        "  headers:{'Content-Type':'application/x-www-form-urlencoded'},"
-        "  body:'ssid='+encodeURIComponent(ssid)"
-        " });"
-        " slots();"
-        "}"
-        ""
-        "async function connectWifi(){"
-        " const btn=document.getElementById('connectBtn');"
-        " const status=document.getElementById('status');"
-        " btn.disabled=true;"
-        " status.textContent='Status: Connecting...';"
-        " const ssid = document.getElementById('ssid').value;"
-        " const password = document.getElementById('password').value;"
-        //  The answer was thrown away here. When the device could not even
-        //  start - it says so, with a 500 - the page went on polling a state
-        //  that was never going to change, and left its button disabled.
-        " let r;"
-        " try{"
-        "  r=await fetch('/connect', {"
-        "      method: 'POST',"
-        "      headers: {'Content-Type': 'application/x-www-form-urlencoded'},"
-        "      body: `ssid=${encodeURIComponent(ssid)}&password=${encodeURIComponent(password)}`"
-        "  });"
-        " }catch(e){"
-        "  status.textContent='The device did not answer. Try again.';"
-        "  btn.disabled=false;"
-        "  return;"
-        " }"
-        " if(!r.ok){"
-        "  status.textContent='The device could not start connecting. Try again.';"
-        "  btn.disabled=false;"
-        "  return;"
-        " }"
-        " pollStatus();"
-        "}"
-        ""
-        "async function pollStatus(){"
-        " const btn=document.getElementById('connectBtn');"
-        " const status=document.getElementById('status');"
-        " const timer=setInterval(async()=>{"
-        "  const r=await fetch('/status');"
-        "  const s=await r.json();"
-        "  status.textContent='Status: '+s.state;"
-        "  if(s.state==='connected'){clearInterval(timer);window.location.href='/api-setup';return;}"
-        "  if(s.state==='failed'){clearInterval(timer);status.textContent='Could not connect. Check password.';btn.disabled=false;}"
-        " },1000);"
-        "}"
-        "scan();"
-        "</script>"
-        "</body>"
-        "</html>";
+    if (length > 0 && start [length - 1] == '\0') {
+        length--;
+    }
 
     httpd_resp_set_type(req, "text/html");
-    return httpd_resp_send(req, html, HTTPD_RESP_USE_STRLEN);
+
+    if (!web_page_render(start, length, values, count, s_send_piece, req)) {
+        ESP_LOGE(TAG, "Could not send the page");
+        return ESP_FAIL;
+    }
+
+    return httpd_resp_send_chunk(req, NULL, 0);
+}
+
+
+static esp_err_t s_send_wifi_page(httpd_req_t *req)
+{
+    return s_send_page(req, wifi_html_start, wifi_html_end, NULL, 0);
 }
 
 
@@ -321,145 +177,19 @@ static esp_err_t api_setup_get_handler(httpd_req_t *req)
 {
     wifi_prov_note_portal_activity();
 
-    const bool api_ready = energyboxx_api_has_credentials() && energyboxx_api_is_valid_credentials();
+    const bool api_ready = energyboxx_api_has_credentials()
+                        && energyboxx_api_is_valid_credentials();
 
-    //  The page goes out in pieces instead of through snprintf, because the
-    //  CSS below contains "width:100%" and printf reads that as a conversion
-    //  specification. The two variable pieces are the button's disabled
-    //  attribute and the flag the script reads.
-
-    const char *html_head =
-        "<!DOCTYPE html><html><head>"
-        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        "<title>SETD API Setup</title>"
-        "<style>"
-        "body{font-family:Arial,sans-serif;margin:0;background:#f4f6f8;color:#111;}"
-        ".card{max-width:420px;margin:40px auto;padding:24px;background:white;border-radius:16px;"
-        "box-shadow:0 8px 30px rgba(0,0,0,.12);}"
-        "label{display:block;margin-top:18px;font-weight:bold;}"
-        "input,button{width:100%;box-sizing:border-box;font-size:16px;padding:12px;margin-top:8px;"
-        "border-radius:10px;border:1px solid #ccc;}"
-        "button{background:#111;color:white;border:none;margin-top:24px;font-weight:bold;}"
-        "button:disabled{background:#999;}"
-        "#status{margin-top:18px;font-weight:bold;}"
-        ".slots{margin-top:12px;padding:12px;background:#eef1f4;border-radius:10px;"
-        "font-size:14px;line-height:1.4;}"
-        ".slots .row{display:flex;align-items:center;gap:8px;margin-top:6px;}"
-        ".slots .row span{flex:1;}"
-        ".slots .use{color:#1f7a3d;font-weight:bold;}"
-        ".slots button{width:auto;margin-top:0;padding:6px 12px;font-size:13px;"
-        "background:#8a3a2a;border-radius:8px;}"
-        "#doneBtn{background:#5a5a5a;margin-top:12px;}"
-        "</style></head><body>"
-        "<div class='card'>"
-        "<h1>SETD API Setup</h1>"
-        "<p>Enter your API credentials.</p>"
-
-        "<label for='clientId'>Client ID</label>"
-        "<input id='clientId' type='text' autocomplete='off' placeholder='Client ID'>"
-
-        "<label for='clientSecret'>Client Secret</label>"
-        "<input id='clientSecret' type='password' autocomplete='off' placeholder='Client Secret'>"
-
-        "<button id='checkBtn' onclick='act()'>Controleren en opslaan</button>"
-
-        "<div id='status'>";
-
-    //  Two variable parts. The first is what the status line says on arrival,
-    //  the second tells the script whether there are working credentials, which
-    //  decides what the button means when the fields are left empty.
-    const char *html_body =
-        "</div>"
-        "<p><a href='/wifi'>Networks this device remembers</a></p>"
-        "</div>"
-
-        "<script>"
-        "const apiReady=";
-
-    const char *html_tail =
-        ";"
-        "const id=document.getElementById('clientId');"
-        "const sec=document.getElementById('clientSecret');"
-        "const btn=document.getElementById('checkBtn');"
-        "const status=document.getElementById('status');"
-        "let mode='save';"
-
-        //  The button says what it will do, and does what it says. Empty
-        //  fields with working credentials means "leave things as they are";
-        //  filled fields mean "replace them". Half filled is neither, so the
-        //  button is off rather than failing on a blank secret.
-        "function refresh(){"
-        " const a=id.value.trim()!=='';"
-        " const b=sec.value.trim()!=='';"
-        " if(a&&b){mode='save';btn.textContent='Controleren en opslaan';btn.disabled=false;}"
-        " else if(!a&&!b&&apiReady){mode='done';btn.textContent='Klaar';btn.disabled=false;}"
-        " else {mode='save';btn.textContent='Controleren en opslaan';btn.disabled=true;}"
-        "}"
-        "id.addEventListener('input',refresh);"
-        "sec.addEventListener('input',refresh);"
-        "refresh();"
-
-        "async function act(){"
-        " if(mode==='done'){return finish();}"
-        " return checkKeys();"
-        "}"
-
-        "async function finish(){"
-        " btn.disabled=true;"
-        " status.textContent='Afronden...';"
-        " try{"
-        "  await fetch('/done',{method:'POST'});"
-        "  status.textContent='Klaar. Het apparaat gaat verder; u kunt deze pagina sluiten.';"
-        " }catch(e){"
-        "  status.textContent='Klaar. Het apparaat gaat verder; u kunt deze pagina sluiten.';"
-        " }"
-        "}"
-
-        "async function checkKeys(){"
-        " status.textContent='Sleutels controleren...';"
-        " btn.disabled=true;"
-        " try{"
-        "  const r=await fetch('/api-check',{"
-        "   method:'POST',"
-        "   headers:{'Content-Type':'application/x-www-form-urlencoded'},"
-        "   body:`client_id=${encodeURIComponent(id.value.trim())}"
-        "&client_secret=${encodeURIComponent(sec.value.trim())}`"
-        "  });"
-        "  const j=await r.json();"
-        "  if(j.ok){status.textContent='Sleutels opgeslagen. Het apparaat gaat verder.';return;}"
-        "  status.textContent=j.message||'Sleutels afgekeurd';"
-        "  refresh();"
-        " }catch(e){status.textContent='Controle mislukt';refresh();}"
-        "}"
-        "</script></body></html>";
-
-    const char *piece [] = {
-        html_head,
-        api_ready
-            ? "De opgeslagen sleutels werken. Laat de velden leeg en druk op Klaar, "
-              "of vul nieuwe in om ze te vervangen."
-            : "Vul de Energyboxx client ID en client secret in.",
-        html_body,
-        api_ready ? "true" : "false",
-        html_tail
+    const web_value_t values [] = {
+        { "intro", api_ready
+              ? "De opgeslagen sleutels werken. Laat de velden leeg en druk op Klaar, "
+                "of vul nieuwe in om ze te vervangen."
+              : "Vul de Energyboxx client ID en client secret in." },
+        { "api_ready", api_ready ? "true" : "false" }
     };
 
-    httpd_resp_set_type(req, "text/html");
-
-    for (size_t index = 0; index < sizeof (piece) / sizeof (piece [0]); index++) {
-        //  A zero-length chunk is how chunked encoding says "end of response",
-        //  so an empty piece has to be skipped rather than sent.
-        if (piece [index][0] == '\0')
-            continue;
-
-        esp_err_t err = httpd_resp_send_chunk(req, piece [index], HTTPD_RESP_USE_STRLEN);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to send API setup page: %s", esp_err_to_name(err));
-            return err;
-        }
-    }
-
-    return httpd_resp_send_chunk(req, NULL, 0);
+    return s_send_page(req, api_setup_html_start, api_setup_html_end,
+                       values, sizeof (values) / sizeof (values [0]));
 }
 
 static const char *state_to_string(wifi_prov_state_t state)

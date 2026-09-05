@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>SETD WiFi Setup</title>
+<style>
+body{font-family:Arial,sans-serif;margin:0;background:#f4f6f8;color:#111;}
+.card{max-width:420px;margin:40px auto;padding:24px;background:white;border-radius:16px;
+box-shadow:0 8px 30px rgba(0,0,0,.12);}
+h1{margin-top:0;font-size:28px;}
+label{display:block;margin-top:18px;font-weight:bold;}
+select,input,button{width:100%;box-sizing:border-box;font-size:16px;padding:12px;margin-top:8px;
+border-radius:10px;border:1px solid #ccc;}
+button{background:#111;color:white;border:none;margin-top:24px;font-weight:bold;}
+button:disabled{background:#999;}
+#status{margin-top:18px;font-weight:bold;}
+.slots{margin-top:12px;padding:12px;background:#eef1f4;border-radius:10px;
+font-size:14px;line-height:1.4;}
+.slots .row{display:flex;align-items:center;gap:8px;margin-top:6px;}
+.slots .row span{flex:1;}
+.slots .use{color:#1f7a3d;font-weight:bold;}
+.slots button{width:auto;margin-top:0;padding:6px 12px;font-size:13px;
+background:#8a3a2a;border-radius:8px;}
+#doneBtn{background:#5a5a5a;margin-top:12px;}
+</style>
+</head>
+<body>
+<div class='card'>
+<h1>SETD WiFi Setup</h1>
+<p>Choose the WiFi network this device should connect to.</p>
+<div id='slots' class='slots'></div>
+<label for='ssid'>Network</label>
+<select id='ssid' onchange='slots()'>
+<option>Scanning...</option>
+</select>
+<button type='button' onclick='scan()'>Refresh networks</button>
+<label for='password'>Password</label>
+<input id='password' type='password' placeholder='WiFi password'>
+<button id='connectBtn' onclick='connectWifi()'>Connect</button>
+<button id='doneBtn' type='button' onclick='finish()' hidden>Klaar</button>
+<div id='status'>Status: Ready</div>
+</div>
+<script>
+async function scan(){
+ const ssid=document.getElementById('ssid');
+ ssid.innerHTML='<option>Scanning...</option>';
+ try{
+  const r=await fetch('/scan');
+  const networks=await r.json();
+  ssid.innerHTML='';
+  networks.forEach(n=>{
+   const o=document.createElement('option');
+   o.value=n.ssid;
+   o.textContent=n.ssid+' ('+n.rssi+' dBm)';
+   ssid.appendChild(o);
+  });
+ }catch(e){ssid.innerHTML='<option>Scan failed</option>';}
+ slots();
+}
+
+async function slots(){
+ const sel=document.getElementById('ssid');
+ const box=document.getElementById('slots');
+ const q=sel.value?('?ssid='+encodeURIComponent(sel.value)):'';
+ try{
+  const r=await fetch('/networks'+q);
+  const d=await r.json();
+  const named=d.stored.filter(s=>s.length>0);
+  box.textContent='';
+  const head=document.createElement('div');
+  head.textContent=named.length
+   ?('This device remembers '+named.length+' of '+d.stored.length+' networks:')
+   :'This device remembers no networks yet.';
+  box.appendChild(head);
+  d.stored.forEach((s,i)=>{
+   if(!s)return;
+   const row=document.createElement('div');
+   row.className='row';
+   const name=document.createElement('span');
+   name.textContent=s;
+   row.appendChild(name);
+   if(i===d.in_use){
+    const now=document.createElement('span');
+    now.className='use';
+    now.textContent='in use now';
+    row.appendChild(now);
+   }
+   const btn=document.createElement('button');
+   btn.type='button';
+   btn.textContent='Forget';
+   btn.onclick=()=>forget(s,i===d.in_use);
+   row.appendChild(btn);
+   box.appendChild(row);
+  });
+  if(d.why!==undefined){
+   const note=document.createElement('div');
+   note.textContent='What you enter now goes in place '+(d.target+1)+' ('+d.why+').';
+   box.appendChild(note);
+  }
+  document.getElementById('doneBtn').hidden = !(d.in_use >= 0);
+ }catch(e){box.textContent='';}
+}
+
+async function finish(){
+ const status=document.getElementById('status');
+ document.getElementById('doneBtn').disabled=true;
+ document.getElementById('connectBtn').disabled=true;
+ try{ await fetch('/done',{method:'POST'}); }catch(e){}
+ status.textContent='Done. The device is going back to its own screen,'
+  +' and this network will disappear in a moment. You can close this page.';
+}
+
+async function forget(ssid,inUse){
+ let ask='Forget '+ssid+'?';
+ if(inUse){ask+=String.fromCharCode(10,10)
+  +'The device is using this network right now. It stays connected until it restarts,'
+  +' and after that it will not come back to this one.';}
+ if(!confirm(ask))return;
+ await fetch('/forget',{
+  method:'POST',
+  headers:{'Content-Type':'application/x-www-form-urlencoded'},
+  body:'ssid='+encodeURIComponent(ssid)
+ });
+ slots();
+}
+
+async function connectWifi(){
+ const btn=document.getElementById('connectBtn');
+ const status=document.getElementById('status');
+ btn.disabled=true;
+ status.textContent='Status: Connecting...';
+ const ssid = document.getElementById('ssid').value;
+ const password = document.getElementById('password').value;
+ let r;
+ try{
+  r=await fetch('/connect', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: `ssid=${encodeURIComponent(ssid)}&password=${encodeURIComponent(password)}`
+  });
+ }catch(e){
+  status.textContent='The device did not answer. Try again.';
+  btn.disabled=false;
+  return;
+ }
+ if(!r.ok){
+  status.textContent='The device could not start connecting. Try again.';
+  btn.disabled=false;
+  return;
+ }
+ pollStatus();
+}
+
+async function pollStatus(){
+ const btn=document.getElementById('connectBtn');
+ const status=document.getElementById('status');
+ const timer=setInterval(async()=>{
+  const r=await fetch('/status');
+  const s=await r.json();
+  status.textContent='Status: '+s.state;
+  if(s.state==='connected'){clearInterval(timer);window.location.href='/api-setup';return;}
+  if(s.state==='failed'){clearInterval(timer);status.textContent='Could not connect. Check password.';btn.disabled=false;}
+ },1000);
+}
+scan();
+</script>
+</body>
+</html>

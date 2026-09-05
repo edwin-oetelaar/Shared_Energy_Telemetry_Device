@@ -13,11 +13,15 @@ idf_component_register(
         "src/input.c"
         "src/updater.c"
         "src/uri_decode.c"
+        "src/web_page.c"
     INCLUDE_DIRS
         "."
         "inc"
     EMBED_FILES
         "../assets/energy-owl-bringup.bin"
+    EMBED_TXTFILES
+        "web/wifi.html"
+        "web/api-setup.html"
     REQUIRES
         esp_wifi
         esp_event

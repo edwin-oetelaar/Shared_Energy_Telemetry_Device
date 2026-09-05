@@ -38,7 +38,7 @@ te repareren.
 | Correctheid | **Zakt** | Goed | C1–C4 opgelost: decoding, format string, datarace, body-lezen |
 | Betrouwbaarheid in het veld | **Zakt** | Goed | Backoff zonder bovengrens, geen aborts meer op externe input |
 | Security | **Zwak** | Zwak | C5, H5 open: open AP + plain HTTP, plaintext NVS, geen flash encryption |
-| Onderhoudbaarheid | Matig | Matig | L5–L8 open: HTML als C-string, copy-paste JSON, dode code |
+| Onderhoudbaarheid | Matig | Goed | L4–L8, L11 en L12 opgelost: HTML in eigen bestanden, JSON via een tabel, dode code weg |
 | Updatebaarheid | **Zakt** | Goed | H4 opgelost en op hardware bevestigd: bijwerken én terugvallen |
 | Testbaarheid | **Zakt** | Redelijk | CI met host-tests, cppcheck en firmwarebuild; nog geen hardwaretest |
 | Reproduceerbaarheid | Matig | Redelijk | `sdkconfig.defaults` op orde; M9 open: IDF-versie niet gepind |
@@ -97,7 +97,7 @@ te repareren.
 - [x] **L2** Compilerwaarschuwingen staan op de standaard — opgelost, twaalf meldingen opgeruimd
 - [x] **L3** `sdkconfig` én `sdkconfig.old` ingecheckt — opgelost, `sdkconfig.defaults`
 - [ ] **L4** Geen LICENSE-bestand
-- [ ] **L5** HTML/CSS/JS als C-stringliteral
+- [x] **L5** HTML/CSS/JS als C-stringliteral — opgelost, `main/web/` plus `EMBED_TXTFILES`
 - [x] **L6** Zeven keer hetzelfde JSON-parseerblok — opgelost, tabel van naam en offset
 - [x] **L7** Dode code — opgelost, `energyboxx_api_get_token()` weg; de led_ring-functies waren al met de bordwissel verdwenen
 - [x] **L8** Ongebruikte macro naast een hardcoded URL — opgelost, de macro wordt nu gebruikt
@@ -1037,6 +1037,22 @@ Geen van deze breekt iets, samen bepalen ze wel hoe het project over een jaar aa
   CC0-header, maar het project zelf heeft geen licentie — juridisch "alle rechten voorbehouden".
 - **L5 — HTML, CSS en JavaScript als C-stringliteral.** Onhandig te bewerken, geen syntax
   highlighting, en de directe oorzaak van C4. ESP-IDF's `EMBED_FILES` lost dit netjes op.
+  **Opgelost op 2026-09-05.** De twee pagina's staan in `main/web/` en worden ingebed met
+  `EMBED_TXTFILES`. `wifi_web.c` ging van 1069 naar 799 regels en bevat geen HTML meer.
+  Waar iets per bezoek verschilt staat een gat `{{naam}}` in het bestand; `web_page.c` loopt de
+  pagina langs en vult ze in.
+  **Drie dingen die daarbij konden misgaan, en wat ertegen is gedaan:**
+  - *Een stuk van lengte nul.* Bij chunked encoding betekent dat "einde antwoord", dus een lege
+    waarde zou de pagina midden in afkappen. `web_page_render ()` stuurt nooit een leeg stuk, en
+    de host-test klaagt als het toch gebeurt.
+  - *Regelovergangen in JavaScript.* Het bestand is leesbaar gemaakt met echte regels, waar de
+    C-versie alles op één regel had. Een regelovergang op de verkeerde plek voegt in JavaScript
+    een puntkomma in die er niet hoort. Beide scripts zijn door `node --check` gehaald.
+  - *Een gat dat niet meer overeenkomt met de naam in de code.* Dat breekt stil: de build merkt
+    er niets van, want het bestand wordt alleen ingebed, en een bewoner ziet `{{api_ready}}` op
+    zijn scherm. Er is nu een host-test die de échte pagina met de échte namen opbouwt en
+    controleert dat er geen gat overblijft. Die test vond meteen iets: het gat stond op een eigen
+    regel, waardoor er regelovergangen omheen kwamen.
 - **L6 — Zeven keer hetzelfde JSON-parseerblok.** `main/src/energyboxx_api.c:281-348` — een tabel
   van `{naam, offset}` plus één lus doet hetzelfde in tien regels.
 - **L7 — Dode code.** `led_ring_set_fill()`, `led_ring_start_loop_async()`,
