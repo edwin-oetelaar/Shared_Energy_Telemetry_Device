@@ -2,53 +2,58 @@
 
 ![Energy Owl](assets/energy-owl.png)
 
-Firmware voor een ESP32-S3-BOX-3 die toont hoeveel energie de energiegemeenschap op dit
-moment over heeft. Het apparaat haalt de meetwaarden op bij de Energyboxx-API en toont de
-uitkomst op zijn scherm.
+De **Energy Owl** hangt aan de muur en laat in één oogopslag zien hoe de energiegemeenschap
+ervoor staat. Groen met een pijl omhoog: er is stroom over, een goed moment voor de wasmachine.
+Geel met een pijl omlaag: de gemeenschap koopt in. Daaronder staat hoeveel het is, groot genoeg
+om vanaf de bank te lezen.
 
-Dit apparaat hoort bij de Energiegemeenschap Wilhelminaweg in Wageningen. Dat is een groep
-huishoudens die overtollige zonne-energie deelt. Wat dat project wil bereiken en hoe, staat
-in [docs/energiegemeenschap-wilhelminaweg.md](docs/energiegemeenschap-wilhelminaweg.md).
+Firmware voor een ESP32-S3-BOX-3. Het apparaat haalt elke minuut de meetwaarden op bij de
+Energyboxx-API en toont de uitkomst op zijn scherm.
 
-De gebruiker stelt de wifi- en API-gegevens in via een webportaal op het apparaat zelf. De
-gegevens staan dus niet in de firmware.
-
-**Licentie:** alle rechten voorbehouden. Zie [LICENSE](LICENSE) — lezen mag, gebruiken niet;
-neem contact op voor de voorwaarden en de prijzen. `main/src/dns_server.c` valt daarbuiten en
-houdt zijn eigen licentie van Espressif.
+Het apparaat hoort bij de Energiegemeenschap Wilhelminaweg in Wageningen, een groep huishoudens
+die overtollige zonne-energie deelt. Wat dat project wil bereiken staat in
+[docs/energiegemeenschap-wilhelminaweg.md](docs/energiegemeenschap-wilhelminaweg.md).
 
 **Dit document is voor wie aan de firmware werkt.** Wie het apparaat gebruikt, heeft aan
-[docs/handleiding.md](docs/handleiding.md) genoeg: wat de beelden betekenen, hoe u het instelt,
-hoe u meer dan één netwerk toevoegt, en wat u doet als er iets niet goed gaat.
+[docs/handleiding.md](docs/handleiding.md) genoeg.
 
-## Versie v0.3.1 — de basis
+**Licentie:** alle rechten voorbehouden. Zie [LICENSE](LICENSE) — lezen mag, gebruiken niet; neem
+contact op voor de voorwaarden en de prijzen. `main/src/dns_server.c` valt daarbuiten en houdt zijn
+eigen licentie van Espressif.
 
-`v0.3.x` is de eerste reeks die doet wat de klant als eerste vroeg, en daarmee het punt waar
-alles vanaf nu tegen afgezet wordt. Gebruik **v0.3.1** of hoger.
+## Wat deze versie kan
 
-> **v0.3.0 niet gebruiken.** Die versie wist bij het bijwerken de wifisleutels van de oude
-> indeling. Ging de nieuwe versie daarna door de proeftijd heen, dan was er niets aan de hand —
-> maar zakte hij, dan viel het apparaat terug op firmware die zijn netwerk niet meer kon vinden.
-> Zie **H15** in [docs/REVIEW.md](docs/REVIEW.md).
+De huidige versie is **v0.3.4**. Dit is wat het apparaat doet, en het doet het zonder dat er
+iemand naartoe hoeft.
 
-Wat er in zit:
+**Het zegt wat de gemeenschap doet.** Vier beelden, elk met een kleur, een pijl en het vermogen
+in kW. De pijl staat er naast de kleur, zodat het ook leesbaar is voor wie groen en geel niet
+onderscheidt.
 
-- De toestand van de gemeenschap op het scherm, met de hoeveelheid in kW erbij
-- Instellen via een portaal op het apparaat, met een QR-code om erop te komen
-- Drie onthouden wifinetwerken, gekozen op basis van een scan
-- Bijwerken over de lucht, met terugval naar de vorige versie als het misgaat
-- Een statusscherm dat zegt wat het apparaat weet, zonder seriële kabel
+**Het stelt zichzelf in via een eigen netwerk.** Scan de QR-code op het scherm en de telefoon komt
+op het instelnetwerk zonder dat u iets typt. Dat netwerk is beveiligd met WPA2, en naam en
+wachtwoord verschillen per apparaat.
 
-Wat er bewust **niet** in zit, en wat er dus voor de eerste serie nog moet gebeuren:
+**Het onthoudt drie netwerken en kiest zelf.** Bij het opstarten kijkt het welke ervan in de lucht
+zijn en neemt het de sterkste; het netwerk dat de vorige keer werkte gaat voor. Een netwerk dat er
+niet is kost geen wachttijd. Zo werkt hetzelfde apparaat thuis, op kantoor en op een hotspot.
 
-| Punt | Waarom het wacht |
+**Het werkt zichzelf bij, en valt terug als dat misgaat.** Nieuwe firmware moet eerst bewijzen dat
+zij een verbinding maakt en gegevens ophaalt. Lukt dat niet, dan komt de vorige versie terug. Een
+versie die twee keer niet blijft staan, wordt overgeslagen.
+
+**Het geeft nooit op.** Wifi weg, API onbereikbaar, wachtwoord geweigerd: het apparaat blijft
+proberen volgens vaste schema's, en het zegt op zijn scherm wat er aan de hand is.
+
+**Het vertelt wat het weet.** Het statusscherm toont het netwerk, het adres, de staat van de
+sleutels en de laatste meting. Daar is geen seriële kabel voor nodig.
+
+### Wat er bewust niet in zit
+
+| Punt | Waarom |
 | --- | --- |
-| **H5** Credentials liggen leesbaar in flash | Bewust niet opgelost: de apparaten komen terug en moeten herbruikbaar blijven. Zie [docs/BESLUIT-c5-h5.md](docs/BESLUIT-c5-h5.md) |
-| Prijzen op het scherm | De API levert er vier en het is niet vastgelegd welke een bewoner aangaat |
-
-Beide openstaande punten raken het productieproces en niet alleen de firmware. Zolang de vloot
-uit eigen testapparaten bestaat is dat een aanvaardbaar risico; vóór de eerste serie is het dat
-niet.
+| Flash encryption en secure boot | De apparaten komen na de pilot terug en moeten herbruikbaar blijven. Zie [docs/BESLUIT-c5-h5.md](docs/BESLUIT-c5-h5.md) |
+| Prijzen op het scherm | De API levert er vier, en het is niet vastgelegd welke een bewoner aangaat |
 
 ## Wat het apparaat doet
 
@@ -108,6 +113,14 @@ versienummer van de firmware rechtsonder.
 | Release | Een uitgave van de firmware met een versienummer |
 | Proeftijd | De periode waarin nieuwe firmware moet bewijzen dat zij werkt |
 | Terugval | Het apparaat start de vorige firmware weer op |
+| Bijwerken over de lucht | Nieuwe firmware ophalen en installeren zonder kabel |
+| Instelnetwerk | Het eigen wifinetwerk dat het apparaat aanzet om ingesteld te worden |
+| Slot | Eén van de drie plekken waar het apparaat een netwerk onthoudt |
+| Bladeren | Met de pijlen of het aanraakscherm door de beelden lopen |
+| Wachtschema | De oplopende wachttijd tussen twee pogingen |
+| NVS | Het deel van de flash waar gegevens staan die een herstart overleven |
+| Coredump | Wat het apparaat bij een crash wegschrijft om later te onderzoeken |
+| Merkteken | Het woord **voorbeeld** linksboven op een gebladerd beeld |
 
 ## Hardware
 
@@ -226,9 +239,8 @@ De naam draagt de laatste drie bytes van het MAC-adres, dezelfde die op de About
 en overleeft een fabrieksreset — zo blijft kloppen wat er ooit op een sticker of in een
 administratie is beland.
 
-Het netwerk is beveiligd met **WPA2**. Tot v0.3.3 stond het open, en gingen het wifi-wachtwoord
-van de bewoner en de API-sleutels onversleuteld door de lucht. Zie **C5** in
-[docs/REVIEW.md](docs/REVIEW.md).
+Het netwerk is beveiligd met **WPA2**. Zonder dat zouden het wifi-wachtwoord van de bewoner en de
+API-sleutels onversleuteld door de lucht gaan.
 
 Op het scherm staat een **QR-code**, en die draagt het wachtwoord mee. Richt daar een
 telefooncamera op: de telefoon biedt aan het netwerk te joinen, zonder dat er iets getypt hoeft
@@ -368,7 +380,7 @@ adressen met een kabel.
 | De nieuwe firmware bereikt de API niet | Het apparaat start de vorige versie weer op |
 
 Nieuwe firmware wordt in het vrije slot geschreven. De draaiende firmware blijft onaangeroerd
-tot de nieuwe zich bewijst. Dat is beproefd; zie de vierde ronde in [docs/REVIEW.md](docs/REVIEW.md).
+tot de nieuwe zich bewijst. Dat is op hardware beproefd, met een versie die met opzet stuk was.
 
 ### Wie beslist
 
@@ -566,21 +578,32 @@ main/
     ├── status_view.c         Welke toestand het apparaat toont
     ├── updater.c             Nieuwe firmware ophalen en installeren
     ├── uri_decode.c          Decoderen van formulierwaarden
+    ├── web_page.c            Een ingebedde pagina uitsturen, gaten ingevuld
     ├── wifi_provisioning.c   Wifitoestand, accesspoint en portaal
+    ├── wifi_slots.c          De regels over de drie onthouden netwerken
     ├── wifi_storage.c        Wifigegevens in NVS
     └── wifi_web.c            Het webportaal
 
+main/web/                     De pagina's van het portaal, ingebed bij het bouwen
 assets/energy-owl.png         De tekening, onbewerkt
 assets/energy-owl-bringup.bin Het opstartbeeld zoals het scherm het tekent
 partitions-box3.csv           Partitie-indeling van de 16 MB flash
-docs/REVIEW.md                Review vóór productie, met werklijst
-docs/PLAN-box3.md             De overstap naar de ESP32-S3-BOX-3, in fasen
-docs/PLAN-wifi-slots.md       Drie onthouden wifi-netwerken in plaats van één, in fasen
-docs/OTA.md                   Bijwerken over de lucht, en een versie uitgeven
-docs/energiegemeenschap-wilhelminaweg.md   Het project waar dit apparaat bij hoort
 test/                         Host-tests voor de modules zonder ESP-IDF
 tools/                        Beeldomzetter, seriële monitor, bouwomgeving
 ```
+
+De documenten, en voor wie ze zijn:
+
+| Document | Voor wie |
+| --- | --- |
+| [docs/handleiding.md](docs/handleiding.md) | De bewoner met het apparaat aan de muur |
+| [docs/energiegemeenschap-wilhelminaweg.md](docs/energiegemeenschap-wilhelminaweg.md) | Wie wil weten bij welk project dit hoort |
+| [docs/OTA.md](docs/OTA.md) | Wie een versie uitgeeft |
+| [docs/NVS.md](docs/NVS.md) | Wie de indeling van de opslag verandert |
+| [docs/BESLUIT-c5-h5.md](docs/BESLUIT-c5-h5.md) | Het gesprek over beveiliging met de klant |
+| [docs/SLEUTELS.md](docs/SLEUTELS.md) | Wie ooit met ondertekensleutels gaat werken |
+| [docs/REVIEW.md](docs/REVIEW.md) | De review vóór productie, met alles wat eruit kwam |
+| [docs/PLAN-box3.md](docs/PLAN-box3.md), [docs/PLAN-wifi-slots.md](docs/PLAN-wifi-slots.md) | Hoe twee grote wijzigingen in fasen zijn gedaan |
 
 ## Verloop na het opstarten
 
