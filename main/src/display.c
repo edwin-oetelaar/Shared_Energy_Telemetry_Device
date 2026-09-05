@@ -557,17 +557,33 @@ esp_err_t display_show_reading(const char *title,
             break;
     }
 
-    lv_obj_set_style_text_font(s_detail, &lv_font_montserrat_24, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_detail, &lv_font_montserrat_36, LV_PART_MAIN);
     lv_obj_set_style_text_color(s_detail, ink, LV_PART_MAIN);
     lv_label_set_text(s_detail, line);
     lv_obj_remove_flag(s_detail, LV_OBJ_FLAG_HIDDEN);
 
-    lv_obj_align(s_title, LV_ALIGN_CENTER, 0, -22);
+    //  Bovenaan en niet gecentreerd. De onderste zestig pixels horen bij de
+    //  pijlenstrip, dus wat "in het midden" staat hangt in werkelijkheid te
+    //  laag - en de ruimte die overblijft zit onder het getal, waar niemand
+    //  iets aan heeft.
+    lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, 14);
 
     //  Onder de titel en niet op een vaste hoogte: de titel is één regel of
     //  twee, afhankelijk van hoe lang hij is.
+    //
+    //  De tussenruimte is ruim, en dat is met opzet - zo hangt het getal in
+    //  het onderste deel van het beeld in plaats van tegen de woorden aan.
+    //  De rekensom, met de werkelijke regelhoogtes van LVGL: Montserrat 28 is
+    //  30 pixels hoog, Montserrat 36 is 40, en de pijlenstrip begint op 180.
+    //
+    //      titel van twee regels   14 .. 74
+    //      + 54 tussenruimte       getal 128 .. 168
+    //      pijlenstrip begint op   180        -> 12 pixels over
+    //
+    //  Twee regels is het langste dat voorkomt: "Energie inkopen voor groep"
+    //  is 26 tekens, en er passen er ongeveer 18 op een regel van 288 pixels.
     lv_obj_update_layout(s_title);
-    lv_obj_align_to(s_detail, s_title, LV_ALIGN_OUT_BOTTOM_MID, 0, 10);
+    lv_obj_align_to(s_detail, s_title, LV_ALIGN_OUT_BOTTOM_MID, 0, 54);
 
     bsp_display_unlock();
 
