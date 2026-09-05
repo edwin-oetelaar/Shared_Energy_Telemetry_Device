@@ -566,7 +566,13 @@ esp_err_t display_show_status(const char *title,
     }
     else if (has_detail) {
         lv_obj_align(s_title, LV_ALIGN_CENTER, 0, -18);
-        lv_obj_align(s_detail, LV_ALIGN_CENTER, 0, 24);
+
+        //  Onder de titel, en niet op een vaste hoogte. "Energie inkopen voor
+        //  groep" past niet op één regel in 28 punt en breekt af; met een
+        //  vaste plek zou het getal dan tegen de tweede regel aan komen. Zo
+        //  schuift het mee, of de titel nu één regel is of twee.
+        lv_obj_update_layout(s_title);
+        lv_obj_align_to(s_detail, s_title, LV_ALIGN_OUT_BOTTOM_MID, 0, 8);
     }
     else {
         lv_obj_center(s_title);
