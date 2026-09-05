@@ -229,6 +229,55 @@ Apparaten die de versie nog niet hebben, halen hem daarna niet meer op. Apparate
 hebben, houden hem: intrekken haalt niets terug. Geef daarom altijd meteen een nieuwe versie uit
 met een hoger nummer, met daarin de reparatie of de vorige toestand.
 
+## De lus die nooit mag ontstaan
+
+Dit is de ergste afloop van een uitgave, en hij mag niet kunnen gebeuren. Wie een versie
+uitbrengt hoort te weten hoe hij eruitziet.
+
+**Het scenario.** Er gaat een versie uit die opstart maar geen netwerk kan vinden — een fout in
+de wifi-code, een verkeerde instelling, iets dat de CI niet ziet omdat het pas op een draaiend
+apparaat bestaat.
+
+1. Het apparaat haalt de versie op, schrijft hem, en start erin op.
+2. De nieuwe versie vindt geen netwerk. De proeftijd loopt daarom nooit af: er komt geen
+   telemetrie, en er is ook geen netwerk dat tien minuten aanstaat.
+3. **Het apparaat valt niet vanzelf terug.** Het blijft staan met firmware die niets kan.
+   Terugvallen gebeurt pas bij een herstart, en niets in de firmware herstart.
+4. De gebruiker ziet een dood apparaat en trekt de stekker eruit. Nu valt het terug op de vorige
+   versie, die wél verbindt.
+5. Vijf minuten later kijkt die vorige versie of er nieuwe firmware is, vindt dezelfde kapotte
+   uitgave, haalt hem op, en start er weer in op.
+6. Vanaf stap 2.
+
+Elke stroomonderbreking koopt de gebruiker ongeveer vijf minuten werkend apparaat.
+
+**Waarom een fabrieksreset niet helpt.** Drie keer de stroom eraf wist de wifigegevens en de
+API-sleutels. De gebruiker stelt het apparaat opnieuw in, het verbindt, en loopt binnen vijf
+minuten weer in stap 1. Het wissen raakt de updatelogica niet, dus het brengt de gebruiker
+precies terug waar hij vandaan kwam — met het gevoel dat hij het zelf erger heeft gemaakt.
+
+**De uitweg is dan een kabel.** Bij apparaten op een vensterbank betekent dat terughalen.
+
+### Wat dit betekent voor wie uitgeeft
+
+- **Trek een kapotte uitgave meteen in** en geef er een hogere overheen. Zie "Een release
+  intrekken". Zolang de kapotte versie de laatste is, haalt elk apparaat hem elk uur opnieuw op.
+- **Beproef een uitgave op hardware voordat u hem publiceert**, en dan met het netwerk erbij:
+  een versie die bouwt en opstart is niet hetzelfde als een versie die verbindt.
+- De uitgave met opzet stuk maken en de terugval beproeven — zie "De terugval beproeven" — dekt
+  het geval van een versie die **crasht**. Zij dekt niet het geval van een versie die netjes
+  draait en alleen geen netwerk vindt. Dat is het gevaarlijkere van de twee, want er is geen
+  crash die het aanwijst.
+
+### Wat de firmware zou moeten doen
+
+Onthouden welke versie is teruggevallen, en die niet nog een keer installeren. Een nummer in NVS,
+in een eigen namespace zodat de fabrieksreset het niet wist, en de updater die een uitgave met
+dat nummer overslaat. Een latere, hogere versie komt er dan gewoon door, dus een reparatie
+bereikt het apparaat altijd nog.
+
+Dat zit er **nog niet** in. Zie **H16** in [REVIEW.md](REVIEW.md).
+
 ## Regels voor het versienummer
 
 - Gebruik drie getallen met een `v` ervoor: `v0.2.0`.

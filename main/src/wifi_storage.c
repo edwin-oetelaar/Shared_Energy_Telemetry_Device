@@ -42,14 +42,24 @@ static const char *TAG = "[wifi_storage]";
 //  fit on the screen.
 #define KEY_LAST_OK  "last_ok"
 
-//  Which layout this device is on. Needed the moment the old keys stopped
-//  being erased: their presence used to mean "not migrated yet", and now it
-//  means nothing at all. Without this marker the copy below runs on every
-//  single start and writes the bridge over slot 0 - whatever the owner had
-//  put there. Seen on the bench: slot 0 held one network at boot and the
-//  bridge's network a second later.
+//  Which layout this namespace is on. Not which firmware wrote it: a device
+//  can sit offline for months and then arrive here from any older version in
+//  one jump, so the number has to describe what is stored and nothing else.
+//
+//  It became necessary the moment the old keys stopped being erased: their
+//  presence used to mean "not migrated yet", and now it means nothing at all.
+//  Without this number the copy below runs on every single start and writes
+//  the bridge over slot 0 - whatever the owner had put there. Seen on the
+//  bench: slot 0 held one network at boot and the bridge's network a second
+//  later.
+//
+//  The rules for raising it are in docs/NVS.md. The short version: one step at
+//  a time, each step commits its own number, add but never remove, and never
+//  reuse a name.
 #define KEY_LAYOUT     "layout"
-#define LAYOUT_SLOTS   1
+
+//  1 = three slots plus the bridge for older firmware.
+#define LAYOUT_CURRENT 1
 
 static void s_key_for(char *key, size_t size, const char *stem, size_t slot)
 {
@@ -118,7 +128,7 @@ static esp_err_t s_read_slot(nvs_handle_t handle, size_t slot, wifi_slot_t *cred
 
 static void s_mark_layout(nvs_handle_t handle)
 {
-    if (nvs_set_u8(handle, KEY_LAYOUT, LAYOUT_SLOTS) == ESP_OK) {
+    if (nvs_set_u8(handle, KEY_LAYOUT, LAYOUT_CURRENT) == ESP_OK) {
         nvs_commit(handle);
     }
 }
@@ -128,8 +138,26 @@ static esp_err_t s_migrate_single_network(nvs_handle_t handle)
 {
     uint8_t layout = 0;
 
-    if (nvs_get_u8(handle, KEY_LAYOUT, &layout) == ESP_OK && layout >= LAYOUT_SLOTS) {
-        return ESP_OK;              //  Already on the slotted layout
+    if (nvs_get_u8(handle, KEY_LAYOUT, &layout) == ESP_OK) {
+        if (layout > LAYOUT_CURRENT) {
+            //  Newer firmware has been here. This is a rollback, and there is
+            //  nothing to migrate downwards - we read the keys we know, which
+            //  works because a layout only ever adds. Worth saying out loud:
+            //  somebody reading this log is looking at a device that went
+            //  backwards, and that is rarely on purpose.
+            ESP_LOGW(TAG, "Storage is on layout %u and this firmware knows %u; "
+                          "running on what we recognise",
+                     (unsigned) layout, (unsigned) LAYOUT_CURRENT);
+            return ESP_OK;
+        }
+
+        if (layout == LAYOUT_CURRENT) {
+            return ESP_OK;          //  Nothing to do
+        }
+
+        //  layout < LAYOUT_CURRENT would run the steps between here and now.
+        //  There is only one layout so far, so there are no steps to run yet;
+        //  docs/NVS.md describes the shape the chain takes when there are.
     }
 
     char ssid [WIFI_SSID_SIZE] = {0};
