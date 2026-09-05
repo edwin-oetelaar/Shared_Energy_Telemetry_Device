@@ -13,6 +13,10 @@ in [docs/energiegemeenschap-wilhelminaweg.md](docs/energiegemeenschap-wilhelmina
 De gebruiker stelt de wifi- en API-gegevens in via een webportaal op het apparaat zelf. De
 gegevens staan dus niet in de firmware.
 
+**Licentie:** alle rechten voorbehouden. Zie [LICENSE](LICENSE) — lezen mag, gebruiken niet;
+neem contact op voor de voorwaarden en de prijzen. `main/src/dns_server.c` valt daarbuiten en
+houdt zijn eigen licentie van Espressif.
+
 **Dit document is voor wie aan de firmware werkt.** Wie het apparaat gebruikt, heeft aan
 [docs/handleiding.md](docs/handleiding.md) genoeg: wat de beelden betekenen, hoe u het instelt,
 hoe u meer dan één netwerk toevoegt, en wat u doet als er iets niet goed gaat.
