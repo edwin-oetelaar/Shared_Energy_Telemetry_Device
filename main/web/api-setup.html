@@ -1,0 +1,81 @@
+<!DOCTYPE html><html><head>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>SETD API Setup</title>
+<style>
+body{font-family:Arial,sans-serif;margin:0;background:#f4f6f8;color:#111;}
+.card{max-width:420px;margin:40px auto;padding:24px;background:white;border-radius:16px;
+box-shadow:0 8px 30px rgba(0,0,0,.12);}
+label{display:block;margin-top:18px;font-weight:bold;}
+input,button{width:100%;box-sizing:border-box;font-size:16px;padding:12px;margin-top:8px;
+border-radius:10px;border:1px solid #ccc;}
+button{background:#111;color:white;border:none;margin-top:24px;font-weight:bold;}
+button:disabled{background:#999;}
+#status{margin-top:18px;font-weight:bold;}
+.slots{margin-top:12px;padding:12px;background:#eef1f4;border-radius:10px;
+font-size:14px;line-height:1.4;}
+.slots .row{display:flex;align-items:center;gap:8px;margin-top:6px;}
+.slots .row span{flex:1;}
+.slots .use{color:#1f7a3d;font-weight:bold;}
+.slots button{width:auto;margin-top:0;padding:6px 12px;font-size:13px;
+background:#8a3a2a;border-radius:8px;}
+#doneBtn{background:#5a5a5a;margin-top:12px;}
+</style></head><body>
+<div class='card'>
+<h1>SETD API Setup</h1>
+<p>Enter your API credentials.</p>
+<label for='clientId'>Client ID</label>
+<input id='clientId' type='text' autocomplete='off' placeholder='Client ID'>
+<label for='clientSecret'>Client Secret</label>
+<input id='clientSecret' type='password' autocomplete='off' placeholder='Client Secret'>
+<button id='checkBtn' onclick='act()'>Controleren en opslaan</button>
+<div id='status'>{{intro}}</div>
+<p><a href='/wifi'>Networks this device remembers</a></p>
+</div>
+<script>
+const apiReady={{api_ready}};
+const id=document.getElementById('clientId');
+const sec=document.getElementById('clientSecret');
+const btn=document.getElementById('checkBtn');
+const status=document.getElementById('status');
+let mode='save';
+function refresh(){
+ const a=id.value.trim()!=='';
+ const b=sec.value.trim()!=='';
+ if(a&&b){mode='save';btn.textContent='Controleren en opslaan';btn.disabled=false;}
+ else if(!a&&!b&&apiReady){mode='done';btn.textContent='Klaar';btn.disabled=false;}
+ else {mode='save';btn.textContent='Controleren en opslaan';btn.disabled=true;}
+}
+id.addEventListener('input',refresh);
+sec.addEventListener('input',refresh);
+refresh();
+async function act(){
+ if(mode==='done'){return finish();}
+ return checkKeys();
+}
+async function finish(){
+ btn.disabled=true;
+ status.textContent='Afronden...';
+ try{
+  await fetch('/done',{method:'POST'});
+  status.textContent='Klaar. Het apparaat gaat verder; u kunt deze pagina sluiten.';
+ }catch(e){
+  status.textContent='Klaar. Het apparaat gaat verder; u kunt deze pagina sluiten.';
+ }
+}
+async function checkKeys(){
+ status.textContent='Sleutels controleren...';
+ btn.disabled=true;
+ try{
+  const r=await fetch('/api-check',{
+   method:'POST',
+   headers:{'Content-Type':'application/x-www-form-urlencoded'},
+   body:`client_id=${encodeURIComponent(id.value.trim())}
+&client_secret=${encodeURIComponent(sec.value.trim())}`
+  });
+  const j=await r.json();
+  if(j.ok){status.textContent='Sleutels opgeslagen. Het apparaat gaat verder.';return;}
+  status.textContent=j.message||'Sleutels afgekeurd';
+  refresh();
+ }catch(e){status.textContent='Controle mislukt';refresh();}
+}
+</script></body></html>

@@ -6,7 +6,7 @@
 CC      ?= gcc
 CFLAGS  ?= -std=c11 -Wall -Wextra -Werror -O1 -g -I../main
 
-TESTS = test_uri_decode test_wifi_slots
+TESTS = test_uri_decode test_wifi_slots test_web_page
 
 all: check
 
@@ -20,6 +20,9 @@ test_uri_decode: test_uri_decode.c ../main/src/uri_decode.c
 	$(CC) $(CFLAGS) -o $@ $^
 
 test_wifi_slots: test_wifi_slots.c ../main/src/wifi_slots.c
+	$(CC) $(CFLAGS) -o $@ $^
+
+test_web_page: test_web_page.c ../main/src/web_page.c
 	$(CC) $(CFLAGS) -o $@ $^
 
 clean:
