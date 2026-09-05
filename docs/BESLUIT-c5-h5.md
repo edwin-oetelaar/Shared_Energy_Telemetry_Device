@@ -249,6 +249,36 @@ dat wachtwoorden voor altijd als leesbare tekst in de flash moeten blijven staan
 de firmware die geen eFuses brandt en niets onomkeerbaar maakt, valt buiten dit besluit en mag
 gewoon worden overwogen.
 
+**Geparkeerd op 2026-09-05: verhullen in de firmware.** Het idee is om het wachtwoord niet als
+leesbare tekst weg te schrijven maar het te verhullen met iets dat het apparaat zelf kent, zoals
+zijn MAC-adres. Bewust nog niet gedaan, en met lage prioriteit voor deze pilot, tot de klant erover
+heeft meegedacht.
+
+Wat het zou opleveren en wat niet, zodat dat niet opnieuw uitgezocht hoeft te worden:
+
+- **Het stopt `strings`.** Wie een flashdump doorkijkt ziet geen wachtwoord meer. Dat is de
+  realistische situatie bij een pilot: een dump in een bugrapport, een apparaat dat wordt
+  doorgegeven, iemand die uit nieuwsgierigheid kijkt.
+- **Het stopt niemand die het probeert.** De MAC is geen geheim. Hij staat op de About-pagina, hij
+  staat sinds v0.3.4 in de naam van het instelnetwerk, hij zit in elk wifi-frame, en de broncode
+  staat publiek. Wie de flash kan uitlezen heeft het apparaat, en dan heeft hij de sleutel erbij.
+- Noem het daarom **verhulling en geen versleuteling**. Met de eFuse-route van tafel is verhulling
+  het plafond: zonder geheim in de hardware is er niets waar een sleutel uit kan komen die de
+  bezitter van het apparaat niet ook heeft.
+- Als het gebeurt: een SHA-256 over MAC plus een vaste waarde en dáármee XOR-en kost even veel
+  werk als een kale XOR met de MAC, en haalt het herhalende patroon van zes bytes eruit.
+
+En twee dingen die eerst moeten:
+
+1. **De brug voor v0.2.x moet weg.** Die houdt het netwerk dat het laatst werkte leesbaar onder de
+   oude sleutels `ssid`/`password`, zodat een terugval nog een netwerk vindt. Zolang die er is,
+   staat het wachtwoord er alsnog leesbaar en levert verhullen niets op. De brug mag weg zodra
+   geen apparaat meer een v0.2.x-image in zijn andere slot heeft.
+2. **De terugval moet meegedacht worden.** Slaat een nieuwe versie verhulde wachtwoorden op en
+   zakt zij door haar proeftijd, dan leest de oudere versie die bytes als het wachtwoord en komt
+   het apparaat niet online. Dat is H15 opnieuw. Op te lossen met een verhoging van `layout` en de
+   regels uit [NVS.md](NVS.md), maar niet in een uurtje.
+
 ### Wat het besluit zou veranderen
 
 - Een eis van de klant, van Liander of vanuit de ACM-ontheffing. Dan is het geen afweging meer.

@@ -369,7 +369,10 @@ static const char *s_detail_for(status_view_state_t state)
         case STATUS_VIEW_PROVISIONING:
             //  Naam én wachtwoord: wie de QR-code niet kan scannen moet het
             //  van het scherm kunnen overnemen.
-            snprintf(s_detail, sizeof(s_detail), "%s\n%s",
+            //  Op één regel: onder de QR-code is plaats voor één regel en niet
+            //  voor twee. Wie de code kan scannen leest dit niet; wie dat niet
+            //  kan, typt het over.
+            snprintf(s_detail, sizeof(s_detail), "%s   %s",
                      wifi_prov_ap_ssid(), wifi_prov_ap_password());
             return s_detail;
 

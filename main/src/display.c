@@ -658,10 +658,18 @@ esp_err_t display_show_status(const char *title,
     bool has_detail = detail != NULL && detail [0] != '\0';
 
     if (has_qr) {
-        lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, 8);
-        lv_obj_align(s_qr, LV_ALIGN_TOP_MID, 0, 48);
-        //  Just above the arrow strip; the arrows may appear over this screen.
-        lv_obj_align(s_detail, LV_ALIGN_BOTTOM_MID, 0, -ARROW_STRIP_HEIGHT + 4);
+        //  Alle drie op een vaste plek van bovenaf, en dat is de reparatie:
+        //  de regel eronder stond aan de ONDERkant vastgezet en groeide dus
+        //  naar boven. Zodra er een wachtwoord bij de naam kwam werd het twee
+        //  regels, en die liepen dwars door de QR-code heen.
+        //
+        //      titel      6 ..  36   (Montserrat 28, regelhoogte 30)
+        //      QR        40 .. 156   (108 plus 4 pixels rand rondom)
+        //      regel    162 .. 178   (Montserrat 14, regelhoogte 16)
+        //      pijlenstrip vanaf 180 -> 2 pixels over
+        lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, 6);
+        lv_obj_align(s_qr, LV_ALIGN_TOP_MID, 0, 40);
+        lv_obj_align(s_detail, LV_ALIGN_TOP_MID, 0, 162);
     }
     else if (has_detail) {
         lv_obj_align(s_title, LV_ALIGN_CENTER, 0, -18);
