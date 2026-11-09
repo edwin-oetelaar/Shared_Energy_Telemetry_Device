@@ -69,8 +69,7 @@ async function checkKeys(){
   const r=await fetch('/api-check',{
    method:'POST',
    headers:{'Content-Type':'application/x-www-form-urlencoded'},
-   body:`client_id=${encodeURIComponent(id.value.trim())}
-&client_secret=${encodeURIComponent(sec.value.trim())}`
+   body:`client_id=${encodeURIComponent(id.value.trim())}&client_secret=${encodeURIComponent(sec.value.trim())}`
   });
   const j=await r.json();
   if(j.ok){status.textContent='Sleutels opgeslagen. Het apparaat gaat verder.';return;}

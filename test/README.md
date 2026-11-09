@@ -8,6 +8,16 @@ cycle.
 make -C test check
 ```
 
-A module qualifies when it includes nothing from ESP-IDF. `uri_decode` is the
-first one; keep new pure-C logic in that shape where it is practical, and add
-it here.
+A module qualifies when it includes nothing from ESP-IDF. Tests cover URL decoding,
+Wi-Fi slot selection, page templates, and day-ahead pricing date/quarter selection
+(including Dutch summer/winter clock changes, missing slots, and negative prices).
+
+After a firmware configure has fetched the managed cJSON dependency, also run:
+
+```bash
+make -C test check-json
+```
+
+This checks the EnergyZero parser against the API's string-valued prices,
+separate price series, and malformed/truncated entries. CI runs it after the
+firmware build. Override `CJSON_DIR` if cJSON is stored elsewhere.

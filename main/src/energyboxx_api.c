@@ -12,8 +12,10 @@
 
 #include "esp_http_client.h"
 #include "esp_crt_bundle.h"
+#include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "esp_log.h"
+#include "esp_wifi.h"
 #include <string.h>
 #include "cJSON.h"
 
@@ -178,6 +180,32 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt)
     return ESP_OK;
 }
 
+// Capture transport details before cleanup destroys the client. No request
+// bodies or credentials belong in these diagnostics.
+static void s_log_request_failure(const char *request, esp_http_client_handle_t client,
+                                  esp_err_t err)
+{
+    int socket_errno = esp_http_client_get_errno(client);
+    int tls_code = 0, tls_flags = 0;
+    esp_err_t tls_err = esp_http_client_get_and_clear_last_tls_error(client, &tls_code, &tls_flags);
+    ESP_LOGE(TAG, "%s failed: %s; socket errno=%d, TLS=%s, mbedTLS=%d, verify=0x%x",
+             request, esp_err_to_name(err), socket_errno, esp_err_to_name(tls_err),
+             tls_code, (unsigned)tls_flags);
+
+    wifi_ap_record_t ap = {0};
+    esp_err_t wifi_err = esp_wifi_sta_get_ap_info(&ap);
+    if (wifi_err == ESP_OK) {
+        ESP_LOGW(TAG, "Wi-Fi associated, RSSI=%d dBm", (int)ap.rssi);
+    } else {
+        ESP_LOGW(TAG, "Wi-Fi association unavailable: %s", esp_err_to_name(wifi_err));
+    }
+    ESP_LOGW(TAG, "RAM free/largest: internal=%u/%u, PSRAM=%u/%u bytes",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+}
+
 static esp_err_t s_fetch_token_locked(void)
 {
     int64_t elapsed_seconds = (esp_timer_get_time() - token_acquired_us) / 1000000;
@@ -276,7 +304,7 @@ static esp_err_t s_fetch_token_locked(void)
     }
     else
     {
-        ESP_LOGE(TAG, "Token request failed: %s", esp_err_to_name(err));
+        s_log_request_failure("Token request", client, err);
     }
 
     esp_http_client_cleanup(client);
@@ -354,7 +382,7 @@ static esp_err_t s_get_data_locked(energyboxx_data_t* data)
     // ESP_LOGI(TAG, "Response: %s", response_buffer);
 
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "GET request failed: %s", esp_err_to_name(err));
+        s_log_request_failure("GET request", client, err);
         esp_http_client_cleanup(client);
         return err;
     }
@@ -411,8 +439,7 @@ static esp_err_t s_get_data_locked(energyboxx_data_t* data)
         //  than defaulted. An error body is valid JSON too, and quietly reading
         //  it as zero would show "community balanced" - a confident answer
         //  assembled out of nothing. Missing it means this is not telemetry,
-        //  whatever the status code said, and the caller renews the token and
-        //  tries again.
+        //  whatever the status code said, and the caller retries with backoff.
         cJSON *result_kw = cJSON_GetObjectItemCaseSensitive(root, "community_power_result_kw");
         if (!cJSON_IsNumber(result_kw))
         {

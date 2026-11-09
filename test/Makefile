@@ -6,7 +6,8 @@
 CC      ?= gcc
 CFLAGS  ?= -std=c11 -Wall -Wextra -Werror -O1 -g -I../main
 
-TESTS = test_uri_decode test_wifi_slots test_web_page
+TESTS = test_uri_decode test_wifi_slots test_web_page test_day_ahead_model
+CJSON_DIR ?= ../managed_components/espressif__cjson/cJSON
 
 all: check
 
@@ -25,7 +26,17 @@ test_wifi_slots: test_wifi_slots.c ../main/src/wifi_slots.c
 test_web_page: test_web_page.c ../main/src/web_page.c
 	$(CC) $(CFLAGS) -o $@ $^
 
-clean:
-	rm -f $(TESTS)
+test_day_ahead_model: test_day_ahead_model.c ../main/src/day_ahead_model.c
+	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -o $@ $^ -lm
 
-.PHONY: all check clean
+# Run after idf.py has fetched managed components; no system cJSON required.
+check-json: test_day_ahead_json
+	./test_day_ahead_json
+
+test_day_ahead_json: test_day_ahead_json.c ../main/src/day_ahead_json.c ../main/src/day_ahead_model.c $(CJSON_DIR)/cJSON.c
+	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -I$(CJSON_DIR) -o $@ $^ -lm
+
+clean:
+	rm -f $(TESTS) test_day_ahead_json
+
+.PHONY: all check check-json clean

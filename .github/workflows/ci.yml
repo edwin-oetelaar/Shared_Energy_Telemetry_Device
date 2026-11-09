@@ -96,6 +96,7 @@ jobs:
             'CONFIG_PARTITION_TABLE_OFFSET=0x11000'
             'CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-box3.csv"'
             'CONFIG_SPIRAM_MODE_OCT=y'
+            'CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y'
             'CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y'
             'CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y'
           )
@@ -116,3 +117,7 @@ jobs:
         run: |
           . "$IDF_PATH/export.sh"
           idf.py size
+
+      - name: Test the EnergyZero response parser
+        shell: bash
+        run: make -C test check-json

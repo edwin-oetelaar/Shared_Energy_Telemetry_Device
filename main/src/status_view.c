@@ -23,6 +23,7 @@
 #include "inc/energyboxx_api.h"
 
 #include "inc/display.h"
+#include "inc/day_ahead_view.h"
 #include "inc/status_view.h"
 #include "inc/updater.h"
 #include "inc/wifi_provisioning.h"
@@ -57,7 +58,7 @@ static const char *TAG = "[status_view]";
 //  whenever somebody looks at them, so they are never marked. This column is
 //  the whole rule; there is no second place that decides.
 
-typedef enum { PAINT_IMAGE = 0, PAINT_COLOUR, PAINT_REPORT, PAINT_ABOUT } paint_t;
+typedef enum { PAINT_IMAGE = 0, PAINT_COLOUR, PAINT_REPORT, PAINT_ABOUT, PAINT_PRICES } paint_t;
 
 static const struct {
     const char *name;
@@ -88,6 +89,8 @@ static const struct {
     [STATUS_VIEW_DEFICIT]      = { "deficit",      "energy has to be bought",
                                    "Energie inkopen voor groep", PAINT_COLOUR, 0xE0A21B,
                                    .reading = true, .arrow = DISPLAY_ARROW_DOWN },
+    [STATUS_VIEW_PRICES]       = { "prices", "Dutch quarter-hour day-ahead prices",
+                                   "Stroomprijzen", PAINT_PRICES, 0x14324A, .live = true },
     [STATUS_VIEW_BALANCED]     = { "balanced",     "supply and demand match",
                                    "In balans",         PAINT_COLOUR, 0x243028, .reading = true },
     [STATUS_VIEW_KEYS_NEEDED]  = { "keys-needed",  "no API credentials stored",
@@ -114,11 +117,18 @@ static const struct {
 //  that a stray touch does not leave a wrong reading on the wall for long, and
 //  long enough to look at something on purpose.
 #define BROWSE_TIMEOUT_MS  15000
+#define AUTO_SCREEN_INTERVAL_MS 15000
+
+// A navigation entry that resolves to the current energy/device state.
+// It is never passed to the renderer as a real state.
+#define BROWSE_LIVE STATUS_VIEW_STATE_COUNT
 
 //  The views worth paging through by hand. Provisioning and connecting are not
 //  in the list: they say what the device is doing right now, and browsing to
 //  them would be a lie.
 static const status_view_state_t s_browsable [] = {
+    BROWSE_LIVE,
+    STATUS_VIEW_PRICES,
     STATUS_VIEW_REPORT,
     STATUS_VIEW_ABOUT,
     STATUS_VIEW_STARTING,
@@ -137,6 +147,8 @@ static int64_t s_bringup_since_us = 0;
 //  What the telemetry last said, kept while somebody is browsing so the device
 //  can go straight back to it.
 static status_view_state_t s_auto_state = STATUS_VIEW_STARTING;
+static bool s_cycle_prices = false;
+static int64_t s_cycle_until_us = 0;
 static bool s_browsing = false;
 static size_t s_browse_row = 0;
 static int64_t s_browse_until_us = 0;
@@ -444,6 +456,8 @@ esp_err_t status_view_init(void)
     s_shown = false;
     s_bringup_since_us = 0;
     s_preview_marked = false;   //  display_init () builds the mark hidden
+    s_cycle_prices = false;
+    s_cycle_until_us = 0;
 
     return ESP_OK;
 }
@@ -457,6 +471,7 @@ esp_err_t status_view_init(void)
 
 static void s_open_portal(void);
 static void s_check_for_update(void);
+static void s_toggle_prices(void);
 
 static const char *s_portal_button(void)
 {
@@ -483,7 +498,8 @@ static const struct {
     void        (*run)   (void);
 } s_action [STATUS_VIEW_STATE_COUNT] = {
     [STATUS_VIEW_REPORT] = { s_portal_button, s_open_portal },
-    [STATUS_VIEW_ABOUT]  = { s_update_button, s_check_for_update }
+    [STATUS_VIEW_ABOUT]  = { s_update_button, s_check_for_update },
+    [STATUS_VIEW_PRICES] = { day_ahead_view_action_label, s_toggle_prices }
 };
 
 
@@ -509,7 +525,12 @@ static esp_err_t s_paint(status_view_state_t state)
 
     esp_err_t err;
 
-    if (s_view [state].paint == PAINT_ABOUT) {
+    if (state != STATUS_VIEW_PRICES) day_ahead_view_hide();
+
+    if (s_view [state].paint == PAINT_PRICES) {
+        err = day_ahead_view_show();
+    }
+    else if (s_view [state].paint == PAINT_ABOUT) {
         s_build_about();
         err = display_show_about(s_view [state].label, s_about,
                                  PROJECT_PAGE, s_action_label_for(state),
@@ -606,6 +627,7 @@ static esp_err_t s_draw(status_view_state_t state)
 
 static size_t s_row_of(status_view_state_t state)
 {
+    if (state == s_auto_state) return 0;
     for (size_t row = 0; row < BROWSABLE_COUNT; row++) {
         if (s_browsable [row] == state) {
             return row;
@@ -674,6 +696,12 @@ static void s_check_for_update(void)
 }
 
 
+static void s_toggle_prices(void)
+{
+    day_ahead_view_toggle();
+    s_start_browsing();
+}
+
 void status_view_action(void)
 {
     if (s_action [s_current].run == NULL) {
@@ -688,13 +716,11 @@ void status_view_action(void)
 
 void status_view_resume_auto(void)
 {
-    if (!s_browsing) {
-        return;
-    }
-
-    ESP_LOGI(TAG, "Back to following the telemetry");
+    ESP_LOGI(TAG, "Back to the live screen; automatic alternation resumes");
 
     s_browsing = false;
+    s_cycle_prices = false;
+    s_cycle_until_us = esp_timer_get_time() + (int64_t)AUTO_SCREEN_INTERVAL_MS * 1000;
     display_show_browse_controls(false);
 
     s_draw(s_auto_state);
@@ -712,6 +738,7 @@ void status_view_browse(int direction)
                  % BROWSABLE_COUNT;
 
     status_view_state_t state = s_browsable [s_browse_row];
+    if (state == BROWSE_LIVE) state = s_auto_state;
 
     s_draw(state);
 }
@@ -733,10 +760,14 @@ esp_err_t status_view_show(status_view_state_t state)
         }
 
         s_announcing = false;
+        s_cycle_prices = false;
+        s_cycle_until_us = 0;
     }
 
     if (s_browsing) {
         if (esp_timer_get_time() < s_browse_until_us) {
+            // The live entry follows telemetry changes even during browsing.
+            if (s_browse_row == 0) return s_draw(state);
             //  The telemetry may have moved while somebody is looking at
             //  something else, so the mark is decided again here, whether or
             //  not this view repaints.
@@ -750,9 +781,12 @@ esp_err_t status_view_show(status_view_state_t state)
             return ESP_OK;
         }
 
-        ESP_LOGI(TAG, "Browsing timed out, following the telemetry again");
+        ESP_LOGI(TAG, "Browsing timed out, resuming automatic alternation");
         s_browsing = false;
         display_show_browse_controls(false);
+        // Give the chosen live/price screen a full interval before switching.
+        s_cycle_prices = s_current == STATUS_VIEW_PRICES;
+        s_cycle_until_us = esp_timer_get_time() + (int64_t)AUTO_SCREEN_INTERVAL_MS * 1000;
     }
 
     //  Hold the bring-up image its minimum time, but only on the automatic
@@ -765,5 +799,21 @@ esp_err_t status_view_show(status_view_state_t state)
         return ESP_OK;
     }
 
-    return s_draw(state);
+    // Setup, connection failures and updates remain visible immediately.
+    // Once online, alternate the actual state with pricing; browsing pauses it.
+    bool can_cycle = wifi_prov_is_connected() &&
+        (state == STATUS_VIEW_SURPLUS || state == STATUS_VIEW_DEFICIT ||
+         state == STATUS_VIEW_BALANCED || state == STATUS_VIEW_NO_DATA ||
+         state == STATUS_VIEW_KEYS_NEEDED);
+    int64_t now = esp_timer_get_time();
+    if (!can_cycle) {
+        s_cycle_prices = false;
+        s_cycle_until_us = 0;
+    } else if (s_cycle_until_us == 0) {
+        s_cycle_until_us = now + (int64_t)AUTO_SCREEN_INTERVAL_MS * 1000;
+    } else if (now >= s_cycle_until_us) {
+        s_cycle_prices = !s_cycle_prices;
+        s_cycle_until_us = now + (int64_t)AUTO_SCREEN_INTERVAL_MS * 1000;
+    }
+    return s_draw(can_cycle && s_cycle_prices ? STATUS_VIEW_PRICES : state);
 }

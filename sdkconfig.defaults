@@ -15,6 +15,11 @@ CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
 
+#  Energyboxx and day-ahead prices can perform HTTPS requests concurrently.
+#  Internal-only TLS allocation exhausted DRAM at startup (ssl_setup -0x7F00).
+#  Use the BOX-3's PSRAM for TLS rather than coupling the independent workers.
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+
 #  Partition layout: see partitions-box3.csv and docs/PLAN-box3.md. The table
 #  sits at 0x11000 rather than the default 0x8000, which is the largest offset
 #  the ESP32-S3 allows. That leaves the bootloader its full 64 KB plus a 4 KB
@@ -57,6 +62,7 @@ CONFIG_LV_FONT_MONTSERRAT_36=y
 #  A QR code on the provisioning screen: a phone camera joins the access point
 #  from it, so nobody has to work out which network to look for.
 CONFIG_LV_USE_QRCODE=y
+CONFIG_LV_USE_CHART=y
 
 #  Roll back to the previous firmware when a new one does not prove itself.
 #  A fresh image starts as "pending verify"; it only becomes permanent once the

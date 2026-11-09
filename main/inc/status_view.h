@@ -35,6 +35,7 @@ typedef enum {
     STATUS_VIEW_ABOUT,          //  Who made this, which build, where to read more
     STATUS_VIEW_SETUP_DONE,     //  Credentials just accepted; setup is finished
     STATUS_VIEW_UPDATING,       //  Fetching and installing new firmware
+    STATUS_VIEW_PRICES,         //  Independent Dutch day-ahead pricing screen
     STATUS_VIEW_STATE_COUNT     //  Not a state; the size of the table
 } status_view_state_t;
 
@@ -47,12 +48,11 @@ esp_err_t status_view_init(void);
 esp_err_t status_view_show(status_view_state_t state);
 
 //  Step through the views by hand. Direction is -1 for back and +1 for
-//  forward. Browsing never lasts: after a while without input the device goes
-//  back to showing what the telemetry says, because that is its job.
+//  forward. After inactivity, automatic alternation between the live energy
+//  screen and prices resumes. The two are adjacent in the browse order.
 void status_view_browse(int direction);
 
-//  Stop browsing at once and follow the telemetry again, without waiting for
-//  the timeout.
+//  Show the live screen immediately and restart its automatic rotation timer.
 void status_view_resume_auto(void);
 
 //  Somebody pressed the button under the view that is on screen. What that

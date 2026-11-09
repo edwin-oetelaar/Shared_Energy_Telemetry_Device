@@ -2,6 +2,10 @@ idf_component_register(
     SRCS
         "main.c"
         "src/energyboxx_api.c"
+        "src/day_ahead.c"
+        "src/day_ahead_model.c"
+        "src/day_ahead_json.c"
+        "src/day_ahead_view.c"
         "src/wifi_provisioning.c"
         "src/wifi_web.c"
         "src/dns_server.c"
@@ -26,6 +30,7 @@ idf_component_register(
         esp_wifi
         esp_event
         esp_netif
+        lwip
         nvs_flash
         esp_http_client
         esp_driver_gpio
