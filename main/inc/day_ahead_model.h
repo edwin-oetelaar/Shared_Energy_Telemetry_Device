@@ -63,6 +63,28 @@ int
 int
     day_ahead_cheapest (const day_ahead_day_t *day, time_t from);
 
+//  What the schedule needs to know after a good answer. Pure data, so the
+//  host tests can try every rule.
+typedef struct {
+    time_t now;                 //  The moment of the answer
+    time_t today;               //  Start of today, from the answer
+    time_t tomorrow;            //  Start of tomorrow, from the answer
+    bool tomorrow_complete;     //  Every quarter of tomorrow is in
+    unsigned spread;            //  This device's seconds after a publication
+    unsigned random;            //  Any random number, to spread the retries
+} day_ahead_schedule_t;
+
+//  EPEX publishes tomorrow's prices shortly before 13:00; ask at 13:05.
+#define DAY_AHEAD_PUBLICATION_SECONDS (13 * 3600 + 5 * 60)
+
+//  Until tomorrow's prices are in, ask again this often.
+#define DAY_AHEAD_REFRESH_SECONDS (30 * 60)
+
+//  Seconds until the next request, never fewer than 60. Sets *rule to the
+//  name of the rule that decided, for the log.
+long long
+    day_ahead_next_request (const day_ahead_schedule_t *input, const char **rule);
+
 #ifdef __cplusplus
 }
 #endif

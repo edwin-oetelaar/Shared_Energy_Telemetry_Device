@@ -18,8 +18,56 @@ static time_t utc(const char *text)
     return result;
 }
 
+//  The schedule: one case per rule, and the floor of 60 s. Times are Dutch
+//  local times on a winter day, 15 November 2026 (UTC+1).
+
+static void
+    s_check_schedule (void)
+{
+    day_ahead_day_t today, tomorrow;
+    assert (day_ahead_day_init (&today, utc ("2026-11-15T12:00:00Z"), 0));
+    assert (day_ahead_day_init (&tomorrow, utc ("2026-11-15T12:00:00Z"), 1));
+    const char *rule = NULL;
+
+    //  00:23, tomorrow not in yet: ask at 13:05 plus the spread.
+    day_ahead_schedule_t night = { .now = utc ("2026-11-14T23:23:00Z"), .today = today.start,
+                                   .tomorrow = tomorrow.start, .spread = 214 };
+    assert (day_ahead_next_request (&night, &rule) == 12 * 3600 + 42 * 60 + 214);
+    assert (rule [0] == 'b');           //  before today's publication
+
+    //  13:10, tomorrow complete: nothing until tomorrow 13:05 plus the spread.
+    day_ahead_schedule_t done = { .now = utc ("2026-11-15T12:10:00Z"), .today = today.start,
+                                  .tomorrow = tomorrow.start, .tomorrow_complete = true, .spread = 214 };
+    assert (day_ahead_next_request (&done, &rule) == 23 * 3600 + 55 * 60 + 214);
+    assert (rule [0] == 't');           //  tomorrow is complete
+
+    //  14:00, tomorrow still missing: every half hour, with up to a fifth more.
+    day_ahead_schedule_t late = { .now = utc ("2026-11-15T13:00:00Z"), .today = today.start,
+                                  .tomorrow = tomorrow.start, .random = 1000 };
+    long long wait = day_ahead_next_request (&late, &rule);
+    assert (wait == DAY_AHEAD_REFRESH_SECONDS + 1000 % (DAY_AHEAD_REFRESH_SECONDS / 5 + 1));
+    assert (rule [0] == 'w');           //  waiting for tomorrow
+
+    //  A second before 13:05 without spread: never sooner than a minute.
+    day_ahead_schedule_t edge = { .now = today.start + DAY_AHEAD_PUBLICATION_SECONDS - 1,
+                                  .today = today.start, .tomorrow = tomorrow.start };
+    assert (day_ahead_next_request (&edge, &rule) == 60);
+
+    //  Spring clock change, 29 March 2026: 13:05 counted from midnight is
+    //  14:05 by the clock. Late, and after the publication: harmless.
+    day_ahead_day_t spring;
+    assert (day_ahead_day_init (&spring, utc ("2026-03-29T10:00:00Z"), 0));
+    day_ahead_schedule_t change = { .now = spring.start + 60, .today = spring.start,
+                                    .tomorrow = spring.end };
+    long long until = day_ahead_next_request (&change, &rule);
+    struct tm at;
+    assert (day_ahead_localtime (change.now + (time_t) until, &at));
+    assert (at.tm_hour == 14 && at.tm_min == 5);
+}
+
 int main(void)
 {
+    s_check_schedule ();
     day_ahead_day_t day;
     time_t ignored;
     assert(!day_ahead_parse_utc("2026-02-29T00:00:00Z", &ignored));

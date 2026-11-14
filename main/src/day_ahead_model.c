@@ -183,3 +183,81 @@ int
     }
     return best;
 }
+
+
+//  --------------------------------------------------------------------------
+//  When to ask again after a good answer. Prices change once a day, so there
+//  is no point asking until the next day's are published. The first row that
+//  applies decides; the last row always applies.
+//
+//  Counted from local midnight, so on the two clock-change days 13:05 falls an
+//  hour off: 14:05 in spring, harmless, and 12:05 in autumn, when the prices
+//  are not there yet and the last row picks them up.
+
+static bool
+    s_tomorrow_is_complete (const day_ahead_schedule_t *input)
+{
+    return input->tomorrow_complete;
+}
+
+static bool
+    s_before_publication (const day_ahead_schedule_t *input)
+{
+    return input->now < input->today + DAY_AHEAD_PUBLICATION_SECONDS;
+}
+
+static bool
+    s_always (const day_ahead_schedule_t *input)
+{
+    (void) input;
+    return true;
+}
+
+static long long
+    s_at_tomorrows_publication (const day_ahead_schedule_t *input)
+{
+    return (long long) (input->tomorrow + DAY_AHEAD_PUBLICATION_SECONDS - input->now) + input->spread;
+}
+
+static long long
+    s_at_todays_publication (const day_ahead_schedule_t *input)
+{
+    return (long long) (input->today + DAY_AHEAD_PUBLICATION_SECONDS - input->now) + input->spread;
+}
+
+static long long
+    s_in_a_while (const day_ahead_schedule_t *input)
+{
+    return DAY_AHEAD_REFRESH_SECONDS + input->random % (DAY_AHEAD_REFRESH_SECONDS / 5 + 1);
+}
+
+static const struct {
+    const char *name;
+    bool (*applies) (const day_ahead_schedule_t *input);
+    long long (*seconds) (const day_ahead_schedule_t *input);
+} s_schedule [] = {
+    { "tomorrow is complete",       s_tomorrow_is_complete, s_at_tomorrows_publication },
+    { "before today's publication", s_before_publication,   s_at_todays_publication    },
+    { "waiting for tomorrow",       s_always,               s_in_a_while               }
+};
+
+#define SCHEDULE_COUNT (sizeof (s_schedule) / sizeof (s_schedule [0]))
+
+
+//  --------------------------------------------------------------------------
+
+long long
+    day_ahead_next_request (const day_ahead_schedule_t *input, const char **rule)
+{
+    assert (input);             //  Caller's contract
+    assert (rule);
+
+    size_t row = 0;
+    while (!s_schedule [row].applies (input))
+        row++;
+    assert (row < SCHEDULE_COUNT);      //  The last row always applies
+
+    *rule = s_schedule [row].name;
+    long long seconds = s_schedule [row].seconds (input);
+    return seconds < 60 ? 60 : seconds; //  Never hammer, whatever the clock says
+}

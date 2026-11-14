@@ -25,7 +25,12 @@
 #include "freertos/task.h"
 
 #define RESPONSE_LIMIT (256 * 1024)
-#define REFRESH_SECONDS (30 * 60)
+
+//  The schedule itself is in day_ahead_model.c, where the host tests reach it.
+
+//  Each device picks one spread from this range at start-up and keeps it, so
+//  a street of devices does not ask at the same second at 13:05.
+#define SPREAD_SECONDS 600
 
 static const char *TAG = "[day_ahead]";
 static StaticSemaphore_t s_lock_storage;
@@ -219,6 +224,7 @@ static day_ahead_state_t s_machine = DAY_AHEAD_WAIT_WIFI;
 static int64_t s_due_us = 0;            //  When READY or FAILED asks again
 static time_t s_handled_day = 0;        //  Start of the last date asked for
 static unsigned s_failures = 0;         //  Backoff step, capped at five
+static unsigned s_spread = 0;           //  This device's seconds after 13:05
 
 //  Observed once and then remembered: esp_netif_sntp_sync_wait () reports a
 //  synchronisation only once, so "has the clock ever been set" must be kept.
@@ -246,6 +252,50 @@ static time_t
 {
     day_ahead_day_t today;
     return day_ahead_day_init (&today, time (NULL), 0) ? today.start : 0;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Whether the cache holds a complete day that starts at start.
+
+static bool
+    s_cache_has (time_t start)
+{
+    bool found = false;
+    xSemaphoreTake (s_lock, portMAX_DELAY);
+    for (size_t d = 0; d < 2; d++) {
+        const day_ahead_day_t *day = &s_cache.days [d];
+        if (day->start == start && day->count > 0 && day->available == day->count)
+            found = true;
+    }
+    xSemaphoreGive (s_lock);
+    return found;
+}
+
+
+//  --------------------------------------------------------------------------
+//  Set the next request from the schedule, and say which row decided it.
+
+static void
+    s_schedule_next (void)
+{
+    day_ahead_schedule_t input = {
+        .now = time (NULL),
+        .spread = s_spread,
+        .random = esp_random ()
+    };
+    xSemaphoreTake (s_lock, portMAX_DELAY);
+    input.today = s_cache.days [0].start;
+    input.tomorrow = s_cache.days [1].start;
+    input.tomorrow_complete = s_cache.days [1].count > 0
+                           && s_cache.days [1].available == s_cache.days [1].count;
+    xSemaphoreGive (s_lock);
+
+    const char *rule = NULL;
+    long long seconds = day_ahead_next_request (&input, &rule);
+    s_due_us = esp_timer_get_time () + (int64_t) seconds * 1000000;
+    ESP_LOGI (TAG, "Next price request in %dh%02dm (%s)",
+              (int) (seconds / 3600), (int) (seconds % 3600 / 60), rule);
 }
 
 
@@ -288,7 +338,7 @@ static void
 
         case DAY_AHEAD_READY:
             s_failures = 0;
-            s_due_us = s_due_after (REFRESH_SECONDS);
+            s_schedule_next ();
             break;
 
         case DAY_AHEAD_ERROR:
@@ -334,12 +384,19 @@ static bool
     return s_clock_set && time (NULL) >= DAY_AHEAD_EARLIEST_TIME;
 }
 
+//  Due when the schedule says so, or when a new day has begun that the cache
+//  does not hold. That second case is rare: the answer of the day before
+//  normally brings the new day along. It waits for this device's spread too.
+
 static bool
     s_request_due (void)
 {
+    if (esp_timer_get_time () >= s_due_us)
+        return true;
     time_t today = s_today_start ();
-    return esp_timer_get_time () >= s_due_us
-        || (today != 0 && today != s_handled_day);
+    return today != 0 && today != s_handled_day
+        && time (NULL) >= today + (time_t) s_spread
+        && !s_cache_has (today);
 }
 
 static const struct {
@@ -394,6 +451,8 @@ static void
     s_task (void *argument)
 {
     (void) argument;
+    s_spread = esp_random () % (SPREAD_SECONDS + 1);
+    ESP_LOGI (TAG, "This device asks %u s after each publication", s_spread);
     s_state (s_machine);
     while (true) {
         for (size_t source = 0; source < SOURCE_COUNT; source++) {
