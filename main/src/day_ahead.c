@@ -43,6 +43,7 @@ static esp_err_t s_receive(esp_http_client_event_t *event)
 
 static esp_err_t s_fetch(day_ahead_snapshot_t *next)
 {
+    int64_t started_us = esp_timer_get_time();
     time_t now = time(NULL);
     struct tm date;
     day_ahead_localtime(now, &date);
@@ -79,6 +80,12 @@ static esp_err_t s_fetch(day_ahead_snapshot_t *next)
     } else if (next->days[0].available == 0) {
         ESP_LOGW(TAG, "No quarters for requested date %s (%u bytes)", day, (unsigned)response.used);
         err = ESP_ERR_INVALID_RESPONSE;
+    } else {
+        // Without this line a good fetch leaves no trace; only failures did.
+        ESP_LOGI(TAG, "Prices for %s: today %u/%u, tomorrow %u/%u quarters (%u bytes, %d ms)",
+                 day, (unsigned)next->days[0].available, (unsigned)next->days[0].count,
+                 (unsigned)next->days[1].available, (unsigned)next->days[1].count,
+                 (unsigned)response.used, (int)((esp_timer_get_time() - started_us) / 1000));
     }
     esp_http_client_cleanup(client);
     free(response.body);
@@ -110,6 +117,7 @@ static void s_task(void *argument)
     int64_t next_fetch = 0;
     time_t cached_day = 0;
     unsigned failures = 0;
+    bool stack_reported = false;
     while (true) {
         if (!wifi_prov_is_connected()) {
             s_state(DAY_AHEAD_WAIT_WIFI);
@@ -145,6 +153,12 @@ static void s_task(void *argument)
                         cached_day = next.days[0].start;
                         failures = 0;
                         delay = REFRESH_SECONDS;
+                        if (!stack_reported) {
+                            // ESP-IDF returns bytes here, not words as plain FreeRTOS does.
+                            ESP_LOGI(TAG, "Price task stack: %u bytes still free",
+                                     (unsigned)uxTaskGetStackHighWaterMark(NULL));
+                            stack_reported = true;
+                        }
                     } else {
                         ESP_LOGW(TAG, "Prices unavailable: %s", esp_err_to_name(err));
                         s_state(DAY_AHEAD_ERROR);
