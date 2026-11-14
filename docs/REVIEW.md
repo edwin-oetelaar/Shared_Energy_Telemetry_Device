@@ -91,6 +91,7 @@ te repareren.
 - [x] **M11** Een gebladerd voorbeeld is niet te onderscheiden van een echte meting — opgelost
 - [x] **M8** Twee responses op één request in het API-check pad — opgelost
 - [x] **M9** De ESP-IDF-versie ligt nergens vast — opgelost, vastgelegd op v6.1
+- [ ] **M14** Een updatecontrole neemt het scherm over — open, gezien bij de review van PR #41
 
 ### Klein
 - [x] **L1** Geen tests, geen CI, geen static analysis — opgezet
@@ -1028,6 +1029,15 @@ antwoord aan de aanroeper laten, die dat toch al doet.
 > Gebouwd voor esp32s3 op ESP-IDF 5.5.5. Niet op hardware getest.
 
 ---
+
+### M14 — Een updatecontrole neemt het scherm over
+
+`main.c:138` laat het scherm "Bijwerken" tonen zodra de updater niet `idle` en niet `failed` is.
+Dat geldt ook voor `checking`. Elk apparaat toont daardoor vijf minuten na de start, en daarna
+elk uur, ongeveer 5 s "Bijwerken", ook als er niets nieuws is. Gezien op 2026-11-15 bij de
+review van PR #41; zie [REVIEW-PR41.md](REVIEW-PR41.md).
+
+**Fix:** het scherm alleen overnemen bij `downloading` en `ready`.
 
 ## Klein
 
