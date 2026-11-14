@@ -35,6 +35,16 @@ static const struct {
     [DAY_AHEAD_ERROR]     = { "Ophalen mislukt; nieuwe poging volgt", "Update mislukt"    }
 };
 
+//  Which day's data the graph shows now. The graph is rebuilt only when this
+//  changes: the screen asks for a repaint every half second, and a hundred
+//  points that have not changed do not need setting again.
+
+static struct {
+    bool valid;
+    time_t start;               //  Which day
+    time_t fetched_at;          //  Which answer it came from
+} s_drawn;
+
 //  Leave the bottom 60 pixels for the existing navigation and day button.
 #define CHART_X 52
 #define CHART_Y 46
@@ -200,7 +210,13 @@ esp_err_t
             lv_obj_add_flag (s_x_ticks [i], LV_OBJ_FLAG_HIDDEN);
         }
     }
-    if (has_day) {
+    bool same_graph = has_day && s_drawn.valid
+                   && s_drawn.start == day->start
+                   && s_drawn.fetched_at == snapshot.fetched_at;
+    if (has_day && !same_graph) {
+        s_drawn.valid = true;
+        s_drawn.start = day->start;
+        s_drawn.fetched_at = snapshot.fetched_at;
         lv_obj_add_flag (s_scale, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag (s_chart, LV_OBJ_FLAG_HIDDEN);
         lv_chart_set_point_count (s_chart, (uint32_t) day->count);
@@ -236,7 +252,9 @@ esp_err_t
             lv_label_set_text (s_x_ticks [i], text);
         }
     }
-    else {
+    else
+    if (!has_day) {
+        s_drawn.valid = false;
         lv_obj_remove_flag (s_scale, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag (s_chart, LV_OBJ_FLAG_HIDDEN);
         //  Without a usable clock the screen cannot know which day it is,
