@@ -22,6 +22,10 @@ extern "C" {
 #define DAY_AHEAD_MAX_POINTS 100
 #define DAY_AHEAD_QUARTER_SECONDS 900
 
+//  2025-01-01T00:00:00Z. A clock that reads earlier than this has not been set
+//  yet, whatever it claims; no date can be chosen from it.
+#define DAY_AHEAD_EARLIEST_TIME ((time_t) 1735689600)
+
 typedef struct {
     time_t start;
     time_t end;
@@ -32,10 +36,13 @@ typedef struct {
 } day_ahead_day_t;
 
 //  Dutch civil time without changing the process-wide TZ used by other modules.
+//  The pointers in this module are the caller's contract and are asserted; the
+//  times, texts and prices are data and are checked.
 bool
     day_ahead_localtime (time_t utc, struct tm *local);
 
 //  Prepare day to hold today (offset 0) or tomorrow (offset 1), as seen at now.
+//  Any other offset is a programming error.
 bool
     day_ahead_day_init (day_ahead_day_t *day, time_t now, int offset);
 

@@ -141,7 +141,7 @@ esp_err_t
     bool tomorrow = atomic_load (&s_tomorrow);
     time_t now = time (NULL);
     day_ahead_day_t expected;
-    bool clock_ok = now >= 1735689600 && day_ahead_day_init (&expected, now, tomorrow ? 1 : 0);
+    bool clock_ok = now >= DAY_AHEAD_EARLIEST_TIME && day_ahead_day_init (&expected, now, tomorrow ? 1 : 0);
     const day_ahead_day_t *day = &snapshot.days [0];
     if (clock_ok && snapshot.days [1].start == expected.start)
         day = &snapshot.days [1];

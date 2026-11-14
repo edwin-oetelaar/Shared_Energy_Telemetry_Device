@@ -6,6 +6,7 @@
 #include "inc/day_ahead_json.h"
 
 #include "cJSON.h"
+#include <assert.h>
 #include <ctype.h>
 #include <errno.h>
 #include <math.h>
@@ -22,8 +23,8 @@
 bool
     day_ahead_json_parse (const char *body, day_ahead_day_t days [2])
 {
-    if (!body || !days)
-        return false;
+    assert (body);              //  Caller's contract; the body's content is data
+    assert (days);
     const char *cursor = strstr (body, "\"base\"");
     if (!cursor)
         return false;

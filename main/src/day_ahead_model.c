@@ -5,6 +5,7 @@
 
 #include "inc/day_ahead_model.h"
 
+#include <assert.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -68,8 +69,7 @@ static int
 bool
     day_ahead_localtime (time_t utc, struct tm *local)
 {
-    if (!local)
-        return false;
+    assert (local);             //  Caller's contract
     int offset = s_offset (utc);
     if (!s_gmtime (utc + offset, local))
         return false;
@@ -86,8 +86,10 @@ bool
 bool
     day_ahead_day_init (day_ahead_day_t *day, time_t now, int offset)
 {
+    assert (day);               //  Caller's contract
+    assert (offset == 0 || offset == 1);
     struct tm date;
-    if (!day || !day_ahead_localtime (now, &date) || offset < 0 || offset > 1)
+    if (!day_ahead_localtime (now, &date))
         return false;
     memset (day, 0, sizeof (*day));
     time_t midnight = (time_t) ((s_days (date.tm_year + 1900, date.tm_mon + 1, date.tm_mday) + offset) * 86400);
@@ -108,9 +110,10 @@ bool
 bool
     day_ahead_parse_utc (const char *text, time_t *result)
 {
+    assert (text);              //  Caller's contract: checked to be a string
+    assert (result);
     int year, month, day, hour, minute, second, consumed = 0;
-    if (!text || !result
-    ||  sscanf (text, "%4d-%2d-%2dT%2d:%2d:%2dZ%n", &year, &month, &day,
+    if (sscanf (text, "%4d-%2d-%2dT%2d:%2d:%2dZ%n", &year, &month, &day,
                 &hour, &minute, &second, &consumed) != 6
     ||  consumed != 20 || text [consumed]
     ||  year < 2020 || year > 2100 || month < 1 || month > 12 || day < 1
@@ -133,7 +136,8 @@ bool
 bool
     day_ahead_day_put (day_ahead_day_t *day, time_t start, time_t end, float price)
 {
-    if (!day || !isfinite (price) || fabsf (price) > 1000.0f || start < day->start
+    assert (day);               //  Caller's contract
+    if (!isfinite (price) || fabsf (price) > 1000.0f || start < day->start
     ||  start >= day->end || end - start != DAY_AHEAD_QUARTER_SECONDS
     ||  (start - day->start) % DAY_AHEAD_QUARTER_SECONDS != 0)
         return false;
@@ -154,7 +158,8 @@ bool
 int
     day_ahead_current (const day_ahead_day_t *day, time_t now)
 {
-    if (!day || now < day->start || now >= day->end)
+    assert (day);               //  Caller's contract
+    if (now < day->start || now >= day->end)
         return -1;
     size_t index = (size_t) ((now - day->start) / DAY_AHEAD_QUARTER_SECONDS);
     return index < day->count && day->present [index] ? (int) index : -1;
@@ -167,9 +172,8 @@ int
 int
     day_ahead_cheapest (const day_ahead_day_t *day, time_t from)
 {
+    assert (day);               //  Caller's contract
     int best = -1;
-    if (!day)
-        return best;
     for (size_t i = 0; i < day->count; i++) {
         //  A slot that has already begun is not a complete upcoming quarter.
         if (!day->present [i] || day->start + (time_t) i * DAY_AHEAD_QUARTER_SECONDS < from)

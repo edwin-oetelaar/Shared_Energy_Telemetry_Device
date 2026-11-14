@@ -5,6 +5,8 @@
 
 #include "freertos/FreeRTOS.h"
 #include "inc/day_ahead.h"
+
+#include <assert.h>
 #include "inc/wifi_provisioning.h"
 
 #include <stdio.h>
@@ -69,7 +71,8 @@ static esp_err_t
     int64_t started_us = esp_timer_get_time ();
     time_t now = time (NULL);
     struct tm date;
-    day_ahead_localtime (now, &date);
+    if (!day_ahead_localtime (now, &date))
+        return ESP_FAIL;        //  Otherwise the date below is uninitialised
     char day [16], url [200];
     strftime (day, sizeof (day), "%d-%m-%Y", &date);
     snprintf (url, sizeof (url), "https://public.api.energyzero.nl/v1/prices?date=%s"
@@ -152,8 +155,7 @@ static void
 void
     day_ahead_snapshot (day_ahead_snapshot_t *out)
 {
-    if (!out)
-        return;
+    assert (out);               //  Caller's contract
     if (!s_lock) {
         memset (out, 0, sizeof (*out));
         return;
@@ -199,7 +201,7 @@ static void
                 ESP_LOGI (TAG, "Clock synchronized; ready to request prices");
             }
             time_t now = time (NULL);
-            if (!clock_synced || now < 1735689600)
+            if (!clock_synced || now < DAY_AHEAD_EARLIEST_TIME)
                 s_state (DAY_AHEAD_WAIT_TIME);
             else {
                 day_ahead_day_t today;
