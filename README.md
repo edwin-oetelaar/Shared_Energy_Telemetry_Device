@@ -177,10 +177,31 @@ Nog niet gepubliceerde prijzen worden niet geschat. De prijzen zijn de `base`-re
 zonder btw en toeslagen; dit is geen berekening van het huishoudelijke eindtarief.
 
 Deze functie heeft een eigen taak en cache en werkt zodra wifi en tijdsynchronisatie beschikbaar
-zijn, ook zonder Energyboxx-sleutels. Na een geslaagde aanvraag volgt na 30 tot 36 minuten een
-nieuwe; bij een fout volgen oplopende wachttijden met spreiding. De datum volgt de Nederlandse
-zomer- en wintertijd, inclusief dagen met 92 of 100 kwartieren. Bij een netwerkstoring blijven
-opgehaalde prijzen voor de juiste datum zichtbaar, met een melding dat ze bewaard zijn.
+zijn, ook zonder Energyboxx-sleutels. De datum volgt de Nederlandse zomer- en wintertijd,
+inclusief dagen met 92 of 100 kwartieren. Bij een netwerkstoring blijven opgehaalde prijzen voor
+de juiste datum zichtbaar, met een melding dat ze bewaard zijn.
+
+Eén aanvraag geeft gisteren, vandaag en, zodra die gepubliceerd zijn, morgen. De prijzen
+veranderen één keer per dag, dus het apparaat vraagt alleen als er iets nieuws kan zijn:
+
+| Na een geslaagde aanvraag | Volgende aanvraag |
+| --- | --- |
+| De prijzen van morgen zijn compleet | Morgen om 13:05 |
+| Het is vóór 13:00 | Vandaag om 13:05 |
+| Na 13:00, de prijzen van morgen ontbreken | Over 30 tot 36 minuten |
+
+Bij het opstarten vraagt het apparaat meteen. Elk apparaat telt er één vaste spreiding van 0 tot
+10 minuten bij op, zodat niet alle apparaten om 13:05 tegelijk vragen. Middernacht is geen
+aanvraagmoment: de nieuwe dag zit al in het vorige antwoord. Na een fout volgen oplopende
+wachttijden met spreiding. Dat is 1 tot 3 aanvragen per dag in plaats van 48.
+
+De taak is een toestandsmachine. Het log toont elke overgang en de reden van de volgende aanvraag:
+
+```text
+[day_ahead]: prices: wait-time --clock-set--> loading
+[day_ahead]: Prices for 15-11-2026: today 96/96, tomorrow 0/96 quarters (93820 bytes, 2103 ms)
+[day_ahead]: Next price request in 12h45m (before today's publication)
+```
 
 De implementatie staat los in `day_ahead.c` (netwerk, SNTP en cache), `day_ahead_json.c`
 (EnergyZero-formaat), `day_ahead_model.c` (tijd en kwartierselectie) en `day_ahead_view.c`
