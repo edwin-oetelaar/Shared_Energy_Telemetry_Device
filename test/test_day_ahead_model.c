@@ -1,3 +1,8 @@
+/*  =========================================================================
+    test_day_ahead_model - dates, clock changes, quarters
+    =========================================================================
+*/
+
 #define _POSIX_C_SOURCE 200809L
 #include "inc/day_ahead_model.h"
 #undef NDEBUG

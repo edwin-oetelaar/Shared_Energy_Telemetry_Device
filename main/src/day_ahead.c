@@ -1,3 +1,8 @@
+/*  =========================================================================
+    day_ahead - fetch Dutch day-ahead electricity prices
+    =========================================================================
+*/
+
 #include "freertos/FreeRTOS.h"
 #include "inc/day_ahead.h"
 #include "inc/wifi_provisioning.h"
@@ -25,93 +30,148 @@ static StaticSemaphore_t s_lock_storage;
 static SemaphoreHandle_t s_lock;
 static day_ahead_snapshot_t s_cache;
 
-typedef struct { char *body; size_t used; bool overflow; } response_t;
+typedef struct {
+    char *body;
+    size_t used;
+    bool overflow;
+} response_t;
 
-static esp_err_t s_receive(esp_http_client_event_t *event)
+
+//  --------------------------------------------------------------------------
+//  Collect the response body. The size comes from outside, so it is checked
+//  against what is left of the buffer before anything is copied.
+
+static esp_err_t
+    s_receive (esp_http_client_event_t *event)
 {
     response_t *response = event->user_data;
-    if (event->event_id != HTTP_EVENT_ON_DATA) return ESP_OK;
-    if (event->data_len < 0 || (size_t)event->data_len > RESPONSE_LIMIT - response->used - 1) {
+    if (event->event_id != HTTP_EVENT_ON_DATA)
+        return ESP_OK;
+    if (event->data_len < 0 || (size_t) event->data_len > RESPONSE_LIMIT - response->used - 1) {
         response->overflow = true;
         return ESP_ERR_INVALID_SIZE;
     }
-    memcpy(response->body + response->used, event->data, (size_t)event->data_len);
-    response->used += (size_t)event->data_len;
-    response->body[response->used] = '\0';
+    memcpy (response->body + response->used, event->data, (size_t) event->data_len);
+    response->used += (size_t) event->data_len;
+    response->body [response->used] = '\0';
     return ESP_OK;
 }
 
-static esp_err_t s_fetch(day_ahead_snapshot_t *next)
-{
-    int64_t started_us = esp_timer_get_time();
-    time_t now = time(NULL);
-    struct tm date;
-    day_ahead_localtime(now, &date);
-    char day[16], url[200];
-    strftime(day, sizeof(day), "%d-%m-%Y", &date);
-    snprintf(url, sizeof(url), "https://public.api.energyzero.nl/v1/prices?date=%s"
-             "&interval=INTERVAL_QUARTER&energy_type=ENERGY_TYPE_ELECTRICITY", day);
-    if (!day_ahead_day_init(&next->days[0], now, 0) ||
-        !day_ahead_day_init(&next->days[1], now, 1)) return ESP_FAIL;
 
-    response_t response = { .body = heap_caps_malloc(RESPONSE_LIMIT, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) };
-    if (!response.body) return ESP_ERR_NO_MEM;
-    response.body[0] = '\0';
+//  --------------------------------------------------------------------------
+//  One request for today's date, which also brings yesterday and, once they
+//  are published, tomorrow. The result goes into next; the cache is not
+//  touched here, so a failed request never replaces good prices.
+
+static esp_err_t
+    s_fetch (day_ahead_snapshot_t *next)
+{
+    int64_t started_us = esp_timer_get_time ();
+    time_t now = time (NULL);
+    struct tm date;
+    day_ahead_localtime (now, &date);
+    char day [16], url [200];
+    strftime (day, sizeof (day), "%d-%m-%Y", &date);
+    snprintf (url, sizeof (url), "https://public.api.energyzero.nl/v1/prices?date=%s"
+              "&interval=INTERVAL_QUARTER&energy_type=ENERGY_TYPE_ELECTRICITY", day);
+    if (!day_ahead_day_init (&next->days [0], now, 0)
+    ||  !day_ahead_day_init (&next->days [1], now, 1))
+        return ESP_FAIL;
+
+    response_t response = { .body = heap_caps_malloc (RESPONSE_LIMIT, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) };
+    if (!response.body)
+        return ESP_ERR_NO_MEM;
+    response.body [0] = '\0';
     esp_http_client_config_t config = {
-        .url = url, .crt_bundle_attach = esp_crt_bundle_attach,
-        .timeout_ms = 15000, .event_handler = s_receive, .user_data = &response,
+        .url = url,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+        .timeout_ms = 15000,
+        .event_handler = s_receive,
+        .user_data = &response,
     };
-    esp_http_client_handle_t client = esp_http_client_init(&config);
-    if (!client) { free(response.body); return ESP_ERR_NO_MEM; }
-    esp_err_t err = esp_http_client_perform(client);
-    int status = esp_http_client_get_status_code(client);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "GET %s failed: %s (HTTP %d, %u bytes, overflow %s)",
-                 day, esp_err_to_name(err), status, (unsigned)response.used,
-                 response.overflow ? "yes" : "no");
-    } else if (response.overflow || status != 200 ||
-               !esp_http_client_is_complete_data_received(client)) {
-        ESP_LOGW(TAG, "Incomplete price response for %s (HTTP %d, %u bytes, overflow %s)",
-                 day, status, (unsigned)response.used, response.overflow ? "yes" : "no");
-        err = ESP_ERR_INVALID_RESPONSE;
-    } else if (!day_ahead_json_parse(response.body, next->days)) {
-        ESP_LOGW(TAG, "Invalid EnergyZero price data for %s (%u bytes)", day, (unsigned)response.used);
-        err = ESP_ERR_INVALID_RESPONSE;
-    } else if (next->days[0].available == 0) {
-        ESP_LOGW(TAG, "No quarters for requested date %s (%u bytes)", day, (unsigned)response.used);
-        err = ESP_ERR_INVALID_RESPONSE;
-    } else {
-        // Without this line a good fetch leaves no trace; only failures did.
-        ESP_LOGI(TAG, "Prices for %s: today %u/%u, tomorrow %u/%u quarters (%u bytes, %d ms)",
-                 day, (unsigned)next->days[0].available, (unsigned)next->days[0].count,
-                 (unsigned)next->days[1].available, (unsigned)next->days[1].count,
-                 (unsigned)response.used, (int)((esp_timer_get_time() - started_us) / 1000));
+    esp_http_client_handle_t client = esp_http_client_init (&config);
+    if (!client) {
+        free (response.body);
+        return ESP_ERR_NO_MEM;
     }
-    esp_http_client_cleanup(client);
-    free(response.body);
-    if (err == ESP_OK) next->fetched_at = time(NULL);
+    esp_err_t err = esp_http_client_perform (client);
+    int status = esp_http_client_get_status_code (client);
+    if (err != ESP_OK) {
+        ESP_LOGW (TAG, "GET %s failed: %s (HTTP %d, %u bytes, overflow %s)",
+                  day, esp_err_to_name (err), status, (unsigned) response.used,
+                  response.overflow ? "yes" : "no");
+    }
+    else
+    if (response.overflow || status != 200
+    ||  !esp_http_client_is_complete_data_received (client)) {
+        ESP_LOGW (TAG, "Incomplete price response for %s (HTTP %d, %u bytes, overflow %s)",
+                  day, status, (unsigned) response.used, response.overflow ? "yes" : "no");
+        err = ESP_ERR_INVALID_RESPONSE;
+    }
+    else
+    if (!day_ahead_json_parse (response.body, next->days)) {
+        ESP_LOGW (TAG, "Invalid EnergyZero price data for %s (%u bytes)", day, (unsigned) response.used);
+        err = ESP_ERR_INVALID_RESPONSE;
+    }
+    else
+    if (next->days [0].available == 0) {
+        ESP_LOGW (TAG, "No quarters for requested date %s (%u bytes)", day, (unsigned) response.used);
+        err = ESP_ERR_INVALID_RESPONSE;
+    }
+    else {
+        //  Without this line a good fetch leaves no trace; only failures did.
+        ESP_LOGI (TAG, "Prices for %s: today %u/%u, tomorrow %u/%u quarters (%u bytes, %d ms)",
+                  day, (unsigned) next->days [0].available, (unsigned) next->days [0].count,
+                  (unsigned) next->days [1].available, (unsigned) next->days [1].count,
+                  (unsigned) response.used, (int) ((esp_timer_get_time () - started_us) / 1000));
+    }
+    esp_http_client_cleanup (client);
+    free (response.body);
+    if (err == ESP_OK)
+        next->fetched_at = time (NULL);
     return err;
 }
 
-static void s_state(day_ahead_state_t state)
+
+//  --------------------------------------------------------------------------
+//  Change only the state of the cache, under its lock.
+
+static void
+    s_state (day_ahead_state_t state)
 {
-    xSemaphoreTake(s_lock, portMAX_DELAY);
+    xSemaphoreTake (s_lock, portMAX_DELAY);
     s_cache.state = state;
-    xSemaphoreGive(s_lock);
+    xSemaphoreGive (s_lock);
 }
 
-void day_ahead_snapshot(day_ahead_snapshot_t *out)
+
+//  --------------------------------------------------------------------------
+//  Copy the cache for a reader. Before day_ahead_init () there is no cache,
+//  and the reader gets an empty one.
+
+void
+    day_ahead_snapshot (day_ahead_snapshot_t *out)
 {
-    if (!out) return;
-    if (!s_lock) { memset(out, 0, sizeof(*out)); return; }
-    xSemaphoreTake(s_lock, portMAX_DELAY);
+    if (!out)
+        return;
+    if (!s_lock) {
+        memset (out, 0, sizeof (*out));
+        return;
+    }
+    xSemaphoreTake (s_lock, portMAX_DELAY);
     *out = s_cache;
-    xSemaphoreGive(s_lock);
+    xSemaphoreGive (s_lock);
 }
 
-static void s_task(void *argument)
+
+//  --------------------------------------------------------------------------
+//  The price task: wait for Wi-Fi and a set clock, then fetch on a schedule
+//  and whenever the date changes, with backoff after a failure.
+
+static void
+    s_task (void *argument)
 {
-    (void)argument;
+    (void) argument;
     bool clock_started = false;
     bool clock_synced = false;
     int64_t next_fetch = 0;
@@ -119,68 +179,80 @@ static void s_task(void *argument)
     unsigned failures = 0;
     bool stack_reported = false;
     while (true) {
-        if (!wifi_prov_is_connected()) {
-            s_state(DAY_AHEAD_WAIT_WIFI);
+        if (!wifi_prov_is_connected ()) {
+            s_state (DAY_AHEAD_WAIT_WIFI);
             next_fetch = 0;
-        } else {
+        }
+        else {
             if (!clock_started) {
-                esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
-                esp_err_t err = esp_netif_sntp_init(&config);
-                if (err == ESP_OK) clock_started = true;
-                else ESP_LOGW(TAG, "Could not start time synchronization: %s", esp_err_to_name(err));
+                esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG ("pool.ntp.org");
+                esp_err_t err = esp_netif_sntp_init (&config);
+                if (err == ESP_OK)
+                    clock_started = true;
+                else
+                    ESP_LOGW (TAG, "Could not start time synchronization: %s", esp_err_to_name (err));
             }
-            // A retained RTC can look plausible before SNTP has corrected it.
-            // Wait for actual synchronization before choosing a date or doing TLS.
-            if (clock_started && !clock_synced && esp_netif_sntp_sync_wait(0) == ESP_OK) {
+            //  A retained RTC can look plausible before SNTP has corrected it.
+            //  Wait for actual synchronization before choosing a date or doing TLS.
+            if (clock_started && !clock_synced && esp_netif_sntp_sync_wait (0) == ESP_OK) {
                 clock_synced = true;
-                ESP_LOGI(TAG, "Clock synchronized; ready to request prices");
+                ESP_LOGI (TAG, "Clock synchronized; ready to request prices");
             }
-            time_t now = time(NULL);
-            if (!clock_synced || now < 1735689600) {
-                s_state(DAY_AHEAD_WAIT_TIME);
-            } else {
+            time_t now = time (NULL);
+            if (!clock_synced || now < 1735689600)
+                s_state (DAY_AHEAD_WAIT_TIME);
+            else {
                 day_ahead_day_t today;
-                bool date_changed = day_ahead_day_init(&today, now, 0) && today.start != cached_day;
-                if (esp_timer_get_time() >= next_fetch || date_changed) {
-                    s_state(DAY_AHEAD_LOADING);
+                bool date_changed = day_ahead_day_init (&today, now, 0) && today.start != cached_day;
+                if (esp_timer_get_time () >= next_fetch || date_changed) {
+                    s_state (DAY_AHEAD_LOADING);
                     day_ahead_snapshot_t next = { .state = DAY_AHEAD_READY };
-                    esp_err_t err = s_fetch(&next);
+                    esp_err_t err = s_fetch (&next);
                     unsigned delay;
                     if (err == ESP_OK) {
-                        xSemaphoreTake(s_lock, portMAX_DELAY);
+                        xSemaphoreTake (s_lock, portMAX_DELAY);
                         s_cache = next;
-                        xSemaphoreGive(s_lock);
-                        cached_day = next.days[0].start;
+                        xSemaphoreGive (s_lock);
+                        cached_day = next.days [0].start;
                         failures = 0;
                         delay = REFRESH_SECONDS;
                         if (!stack_reported) {
-                            // ESP-IDF returns bytes here, not words as plain FreeRTOS does.
-                            ESP_LOGI(TAG, "Price task stack: %u bytes still free",
-                                     (unsigned)uxTaskGetStackHighWaterMark(NULL));
+                            //  ESP-IDF returns bytes here, not words as plain FreeRTOS does.
+                            ESP_LOGI (TAG, "Price task stack: %u bytes still free",
+                                      (unsigned) uxTaskGetStackHighWaterMark (NULL));
                             stack_reported = true;
                         }
-                    } else {
-                        ESP_LOGW(TAG, "Prices unavailable: %s", esp_err_to_name(err));
-                        s_state(DAY_AHEAD_ERROR);
-                        if (failures < 5) failures++;
+                    }
+                    else {
+                        ESP_LOGW (TAG, "Prices unavailable: %s", esp_err_to_name (err));
+                        s_state (DAY_AHEAD_ERROR);
+                        if (failures < 5)
+                            failures++;
                         delay = 15U << failures;
                     }
-                    next_fetch = esp_timer_get_time() +
-                        (int64_t)(delay + esp_random() % (delay / 5 + 1)) * 1000000;
-                    // A failed midnight refresh must still respect backoff.
-                    if (date_changed) cached_day = today.start;
+                    next_fetch = esp_timer_get_time ()
+                               + (int64_t) (delay + esp_random () % (delay / 5 + 1)) * 1000000;
+                    //  A failed midnight refresh must still respect backoff.
+                    if (date_changed)
+                        cached_day = today.start;
                 }
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay (pdMS_TO_TICKS (1000));
     }
 }
 
-esp_err_t day_ahead_init(void)
+
+//  --------------------------------------------------------------------------
+//  Start the price task. Calling it twice is harmless.
+
+esp_err_t
+    day_ahead_init (void)
 {
-    if (s_lock) return ESP_OK;
-    s_lock = xSemaphoreCreateMutexStatic(&s_lock_storage);
-    if (xTaskCreate(s_task, "day_ahead", 12288, NULL, 4, NULL) != pdPASS) {
+    if (s_lock)
+        return ESP_OK;
+    s_lock = xSemaphoreCreateMutexStatic (&s_lock_storage);
+    if (xTaskCreate (s_task, "day_ahead", 12288, NULL, 4, NULL) != pdPASS) {
         s_lock = NULL;
         return ESP_ERR_NO_MEM;
     }

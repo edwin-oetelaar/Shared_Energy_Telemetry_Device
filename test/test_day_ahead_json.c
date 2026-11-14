@@ -1,3 +1,8 @@
+/*  =========================================================================
+    test_day_ahead_json - the EnergyZero response
+    =========================================================================
+*/
+
 #include "inc/day_ahead_json.h"
 #undef NDEBUG
 #include <assert.h>
