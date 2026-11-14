@@ -17,6 +17,7 @@ idf_component_register(
         "src/input.c"
         "src/updater.c"
         "src/uri_decode.c"
+        "src/form_text.c"
         "src/web_page.c"
     INCLUDE_DIRS
         "."

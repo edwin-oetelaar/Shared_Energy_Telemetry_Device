@@ -6,7 +6,7 @@
 CC      ?= gcc
 CFLAGS  ?= -std=c11 -Wall -Wextra -Werror -O1 -g -I../main
 
-TESTS = test_uri_decode test_wifi_slots test_web_page test_day_ahead_model
+TESTS = test_uri_decode test_wifi_slots test_web_page test_day_ahead_model test_form_text
 CJSON_DIR ?= ../managed_components/espressif__cjson/cJSON
 
 all: check
@@ -24,6 +24,9 @@ test_wifi_slots: test_wifi_slots.c ../main/src/wifi_slots.c
 	$(CC) $(CFLAGS) -o $@ $^
 
 test_web_page: test_web_page.c ../main/src/web_page.c
+	$(CC) $(CFLAGS) -o $@ $^
+
+test_form_text: test_form_text.c ../main/src/form_text.c
 	$(CC) $(CFLAGS) -o $@ $^
 
 test_day_ahead_model: test_day_ahead_model.c ../main/src/day_ahead_model.c
