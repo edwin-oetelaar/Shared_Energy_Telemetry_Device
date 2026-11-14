@@ -68,6 +68,7 @@ static const struct {
     uint32_t    rgb;
     bool        live;
     bool        reading;
+    bool        cycles;         //  Alternates with the price screen when online
     display_arrow_t arrow;
 } s_view [STATUS_VIEW_STATE_COUNT] = {
     [STATUS_VIEW_STARTING]     = { "starting",     "powered on",
@@ -85,18 +86,18 @@ static const struct {
     //  stroom over", en dat is precies wat het apparaat niet meet.
     [STATUS_VIEW_SURPLUS]      = { "surplus",      "energy available to share",
                                    "Energie over in de groep", PAINT_COLOUR, 0x1F9E4B,
-                                   .reading = true, .arrow = DISPLAY_ARROW_UP },
+                                   .reading = true, .cycles = true, .arrow = DISPLAY_ARROW_UP },
     [STATUS_VIEW_DEFICIT]      = { "deficit",      "energy has to be bought",
                                    "Energie inkopen voor groep", PAINT_COLOUR, 0xE0A21B,
-                                   .reading = true, .arrow = DISPLAY_ARROW_DOWN },
+                                   .reading = true, .cycles = true, .arrow = DISPLAY_ARROW_DOWN },
     [STATUS_VIEW_PRICES]       = { "prices", "Dutch quarter-hour day-ahead prices",
                                    "Stroomprijzen", PAINT_PRICES, 0x14324A, .live = true },
     [STATUS_VIEW_BALANCED]     = { "balanced",     "supply and demand match",
-                                   "In balans",         PAINT_COLOUR, 0x243028, .reading = true },
+                                   "In balans",         PAINT_COLOUR, 0x243028, .reading = true, .cycles = true },
     [STATUS_VIEW_KEYS_NEEDED]  = { "keys-needed",  "no API credentials stored",
-                                   "Sleutels nodig",    PAINT_COLOUR, 0x8A5A1A },
+                                   "Sleutels nodig",    PAINT_COLOUR, 0x8A5A1A, .cycles = true },
     [STATUS_VIEW_NO_DATA]      = { "no-data",      "no fresh telemetry",
-                                   "Geen gegevens",     PAINT_COLOUR, 0x5A5A5A, .reading = true },
+                                   "Geen gegevens",     PAINT_COLOUR, 0x5A5A5A, .reading = true, .cycles = true },
     [STATUS_VIEW_REPORT]       = { "report",       "what the device knows about itself",
                                    "Status",            PAINT_REPORT, 0x243028, .live = true },
     [STATUS_VIEW_ABOUT]        = { "about",        "who made this and which build it is",
@@ -147,21 +148,89 @@ static int64_t s_bringup_since_us = 0;
 //  What the telemetry last said, kept while somebody is browsing so the device
 //  can go straight back to it.
 static status_view_state_t s_auto_state = STATUS_VIEW_STARTING;
-static bool s_cycle_prices = false;
-static int64_t s_cycle_until_us = 0;
-static bool s_browsing = false;
 static size_t s_browse_row = 0;
-static int64_t s_browse_until_us = 0;
 
 //  Whether the corner mark is up. Remembered so the rule may be applied on
 //  every pass without taking the display lock for an answer that has not
 //  changed.
 static bool s_preview_marked = false;
 
+
+//  --------------------------------------------------------------------------
+//  How the view chooses what to show is a state machine. Before it was one,
+//  four flags and three deadlines decided together, in 35 places; nothing
+//  stopped two of them from disagreeing. Now there is one mode, one deadline,
+//  and one function that changes them.
+//
 //  An announcement outranks browsing: news about what just happened matters
-//  more than whatever somebody was paging through.
-static bool s_announcing = false;
-static int64_t s_announce_until_us = 0;
+//  more than whatever somebody was paging through. So a touch during an
+//  announcement is ignored, and the main button ends it.
+
+typedef enum {
+    MODE_HOLD = 0,              //  Follow the state; it does not alternate
+    MODE_LIVE,                  //  Alternate; now showing the state
+    MODE_PRICES,                //  Alternate; now showing the prices
+    MODE_BROWSING,              //  Somebody is paging through the views
+    MODE_ANNOUNCING,            //  An announcement is on screen
+    MODE_COUNT,
+    MODE_STAY = MODE_COUNT      //  In the table: stay, and do nothing
+} view_mode_t;
+
+typedef enum {
+    MODE_EV_TOUCH = 0,          //  A finger, an arrow, or a button on a view
+    MODE_EV_ANNOUNCE,           //  Something happened that must be said
+    MODE_EV_RESUME,             //  The main button: back to the live state
+    MODE_EV_TIMEOUT,            //  The mode's deadline has passed
+    MODE_EV_TIMEOUT_ON_PRICES,  //  The same, while the price screen is up
+    MODE_EV_CYCLABLE,           //  The state may alternate with the prices
+    MODE_EV_NOT_CYCLABLE,       //  The state must stay on screen
+    MODE_EV_COUNT
+} view_event_t;
+
+//  Every combination has an answer. MODE_STAY means nothing happens. Naming
+//  the mode the view is already in means: enter it again, which restarts its
+//  deadline. That is how a second touch extends browsing, and how the main
+//  button restarts the fifteen seconds.
+
+#define HOLD    MODE_HOLD
+#define LIVE    MODE_LIVE
+#define PRICES  MODE_PRICES
+#define BROWSE  MODE_BROWSING
+#define ANNOUNCE MODE_ANNOUNCING
+#define STAY    MODE_STAY
+
+static const view_mode_t s_mode_next [MODE_COUNT][MODE_EV_COUNT] = {
+    /*              TOUCH   ANNOUNCE  RESUME  TIMEOUT  TIMEOUT_ON_PRICES  CYCLABLE  NOT_CYCLABLE */
+    [HOLD]     = { BROWSE, ANNOUNCE, LIVE,   STAY,    STAY,              LIVE,     STAY },
+    [LIVE]     = { BROWSE, ANNOUNCE, LIVE,   PRICES,  PRICES,            STAY,     HOLD },
+    [PRICES]   = { BROWSE, ANNOUNCE, LIVE,   LIVE,    LIVE,              STAY,     HOLD },
+    [BROWSE]   = { BROWSE, ANNOUNCE, LIVE,   LIVE,    PRICES,            STAY,     STAY },
+    [ANNOUNCE] = { STAY,   ANNOUNCE, LIVE,   LIVE,    LIVE,              STAY,     STAY }
+};
+
+#undef HOLD
+#undef LIVE
+#undef PRICES
+#undef BROWSE
+#undef ANNOUNCE
+#undef STAY
+
+static const char *s_mode_name [MODE_COUNT] = {
+    "hold", "live", "prices", "browsing", "announcing"
+};
+
+static const char *s_mode_event_name [MODE_EV_COUNT] = {
+    "touch", "announce", "resume", "timeout", "timeout-on-prices",
+    "cyclable", "not-cyclable"
+};
+
+//  Only s_mode_handle () writes these two.
+static view_mode_t s_mode = MODE_HOLD;
+static int64_t s_mode_until_us = 0;     //  Meaningless in MODE_HOLD
+
+//  How long the next announcement lasts. Set by status_view_announce () just
+//  before it raises the event, read by the entry action.
+static int s_announce_ms = 0;
 
 //  Built when a state is drawn, so the screen never holds a pointer into
 //  something that has since changed.
@@ -456,8 +525,8 @@ esp_err_t status_view_init(void)
     s_shown = false;
     s_bringup_since_us = 0;
     s_preview_marked = false;   //  display_init () builds the mark hidden
-    s_cycle_prices = false;
-    s_cycle_until_us = 0;
+    s_mode = MODE_HOLD;
+    s_mode_until_us = 0;
 
     return ESP_OK;
 }
@@ -638,21 +707,82 @@ static size_t s_row_of(status_view_state_t state)
 }
 
 
-static void s_start_browsing(void)
+//  --------------------------------------------------------------------------
+//  The only function that changes the mode. Runs the entry action of the mode
+//  it goes to, also when that is the mode it is in, and logs the transition.
+//  Two kinds are logged at debug level: the routine fifteen-second alternation,
+//  four times a minute for as long as the device runs, and entering the mode
+//  the view is already in, which every arrow press does. The screen log
+//  already shows every view that comes up.
+
+static void s_mode_handle(view_event_t event)
 {
-    if (!s_browsing) {
-        s_browsing = true;
-        s_browse_row = s_row_of(s_current);
-        display_show_browse_controls(true);
+    assert (event < MODE_EV_COUNT);     //  Caller's contract
+
+    view_mode_t next = s_mode_next [s_mode][event];
+    if (next == MODE_STAY) {
+        return;
     }
 
-    s_browse_until_us = esp_timer_get_time() + (int64_t) BROWSE_TIMEOUT_MS * 1000;
+    view_mode_t previous = s_mode;
+    bool routine = next == previous
+                || ((previous == MODE_LIVE || previous == MODE_PRICES)
+                    && (event == MODE_EV_TIMEOUT || event == MODE_EV_TIMEOUT_ON_PRICES));
+    if (routine) {
+        ESP_LOGD(TAG, "view: %s --%s--> %s", s_mode_name [previous],
+                 s_mode_event_name [event], s_mode_name [next]);
+    }
+    else {
+        ESP_LOGI(TAG, "view: %s --%s--> %s", s_mode_name [previous],
+                 s_mode_event_name [event], s_mode_name [next]);
+    }
+
+    s_mode = next;
+    int64_t now = esp_timer_get_time();
+
+    if (previous == MODE_BROWSING && next != MODE_BROWSING) {
+        display_show_browse_controls(false);
+    }
+
+    switch (next) {
+        case MODE_HOLD:
+            break;
+
+        case MODE_LIVE:
+        case MODE_PRICES:
+            s_mode_until_us = now + (int64_t) AUTO_SCREEN_INTERVAL_MS * 1000;
+            break;
+
+        case MODE_BROWSING:
+            //  Arriving starts at the view already on screen; a further touch
+            //  only extends the time.
+            if (previous != MODE_BROWSING) {
+                s_browse_row = s_row_of(s_current);
+                display_show_browse_controls(true);
+            }
+            s_mode_until_us = now + (int64_t) BROWSE_TIMEOUT_MS * 1000;
+            break;
+
+        case MODE_ANNOUNCING:
+            assert (s_announce_ms > 0);
+            s_mode_until_us = now + (int64_t) s_announce_ms * 1000;
+            break;
+
+        case MODE_COUNT:
+            break;
+    }
+}
+
+
+static void s_start_browsing(void)
+{
+    s_mode_handle(MODE_EV_TOUCH);
 }
 
 
 void status_view_touched(void)
 {
-    s_start_browsing();
+    s_mode_handle(MODE_EV_TOUCH);
 }
 
 
@@ -661,11 +791,8 @@ void status_view_announce(status_view_state_t state, int milliseconds)
     assert (state < STATUS_VIEW_STATE_COUNT);   //  Caller's contract
     assert (milliseconds > 0);
 
-    s_browsing = false;
-    display_show_browse_controls(false);
-
-    s_announcing = true;
-    s_announce_until_us = esp_timer_get_time() + (int64_t) milliseconds * 1000;
+    s_announce_ms = milliseconds;
+    s_mode_handle(MODE_EV_ANNOUNCE);
 
     s_draw(state);
 }
@@ -716,13 +843,7 @@ void status_view_action(void)
 
 void status_view_resume_auto(void)
 {
-    ESP_LOGI(TAG, "Back to the live screen; automatic alternation resumes");
-
-    s_browsing = false;
-    s_cycle_prices = false;
-    s_cycle_until_us = esp_timer_get_time() + (int64_t)AUTO_SCREEN_INTERVAL_MS * 1000;
-    display_show_browse_controls(false);
-
+    s_mode_handle(MODE_EV_RESUME);
     s_draw(s_auto_state);
 }
 
@@ -731,7 +852,10 @@ void status_view_browse(int direction)
 {
     assert (direction == -1 || direction == 1);     //  Caller's contract
 
-    s_start_browsing();
+    s_mode_handle(MODE_EV_TOUCH);
+    if (s_mode != MODE_BROWSING) {
+        return;                 //  An announcement is up; it goes first
+    }
 
     //  Wrap around in both directions without going negative on a size_t.
     s_browse_row = (s_browse_row + BROWSABLE_COUNT + (size_t) (direction > 0 ? 1 : -1))
@@ -754,39 +878,34 @@ esp_err_t status_view_show(status_view_state_t state)
 
     s_auto_state = state;
 
-    if (s_announcing) {
-        if (esp_timer_get_time() < s_announce_until_us) {
-            return ESP_OK;
-        }
+    //  The events this pass brings: a deadline that has passed, and whether
+    //  the state may alternate. The table decides what they mean in this mode.
+    if (s_mode != MODE_HOLD && esp_timer_get_time() >= s_mode_until_us) {
+        s_mode_handle(s_current == STATUS_VIEW_PRICES
+                      ? MODE_EV_TIMEOUT_ON_PRICES : MODE_EV_TIMEOUT);
+    }
+    bool cycles = s_view [state].cycles && wifi_prov_is_connected();
+    s_mode_handle(cycles ? MODE_EV_CYCLABLE : MODE_EV_NOT_CYCLABLE);
 
-        s_announcing = false;
-        s_cycle_prices = false;
-        s_cycle_until_us = 0;
+    if (s_mode == MODE_ANNOUNCING) {
+        return ESP_OK;          //  The announcement stays until its time is up
     }
 
-    if (s_browsing) {
-        if (esp_timer_get_time() < s_browse_until_us) {
-            // The live entry follows telemetry changes even during browsing.
-            if (s_browse_row == 0) return s_draw(state);
-            //  The telemetry may have moved while somebody is looking at
-            //  something else, so the mark is decided again here, whether or
-            //  not this view repaints.
-            s_mark_preview(s_current);
+    if (s_mode == MODE_BROWSING) {
+        //  The live entry follows telemetry changes even during browsing.
+        if (s_browse_row == 0) return s_draw(state);
 
-            //  A live view ages while somebody looks at it, so it is painted
-            //  again rather than left standing with a stale "42 s geleden".
-            if (s_view [s_current].live) {
-                s_paint(s_current);
-            }
-            return ESP_OK;
+        //  The telemetry may have moved while somebody is looking at
+        //  something else, so the mark is decided again here, whether or
+        //  not this view repaints.
+        s_mark_preview(s_current);
+
+        //  A live view ages while somebody looks at it, so it is painted
+        //  again rather than left standing with a stale "42 s geleden".
+        if (s_view [s_current].live) {
+            s_paint(s_current);
         }
-
-        ESP_LOGI(TAG, "Browsing timed out, resuming automatic alternation");
-        s_browsing = false;
-        display_show_browse_controls(false);
-        // Give the chosen live/price screen a full interval before switching.
-        s_cycle_prices = s_current == STATUS_VIEW_PRICES;
-        s_cycle_until_us = esp_timer_get_time() + (int64_t)AUTO_SCREEN_INTERVAL_MS * 1000;
+        return ESP_OK;
     }
 
     //  Hold the bring-up image its minimum time, but only on the automatic
@@ -799,21 +918,5 @@ esp_err_t status_view_show(status_view_state_t state)
         return ESP_OK;
     }
 
-    // Setup, connection failures and updates remain visible immediately.
-    // Once online, alternate the actual state with pricing; browsing pauses it.
-    bool can_cycle = wifi_prov_is_connected() &&
-        (state == STATUS_VIEW_SURPLUS || state == STATUS_VIEW_DEFICIT ||
-         state == STATUS_VIEW_BALANCED || state == STATUS_VIEW_NO_DATA ||
-         state == STATUS_VIEW_KEYS_NEEDED);
-    int64_t now = esp_timer_get_time();
-    if (!can_cycle) {
-        s_cycle_prices = false;
-        s_cycle_until_us = 0;
-    } else if (s_cycle_until_us == 0) {
-        s_cycle_until_us = now + (int64_t)AUTO_SCREEN_INTERVAL_MS * 1000;
-    } else if (now >= s_cycle_until_us) {
-        s_cycle_prices = !s_cycle_prices;
-        s_cycle_until_us = now + (int64_t)AUTO_SCREEN_INTERVAL_MS * 1000;
-    }
-    return s_draw(can_cycle && s_cycle_prices ? STATUS_VIEW_PRICES : state);
+    return s_draw(s_mode == MODE_PRICES ? STATUS_VIEW_PRICES : state);
 }
