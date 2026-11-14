@@ -4,6 +4,8 @@
 */
 
 #include "inc/day_ahead_view.h"
+
+#include <assert.h>
 #include "inc/day_ahead.h"
 #include "inc/display.h"
 #include <math.h>
@@ -16,6 +18,22 @@ static atomic_bool s_tomorrow;
 static lv_obj_t *s_panel, *s_heading, *s_now, *s_chart, *s_scale, *s_cheapest, *s_note;
 static lv_chart_series_t *s_prices;
 static lv_obj_t *s_y_ticks [3], *s_x_ticks [3];
+
+//  What the screen says in each state of the price task. `waiting` replaces
+//  the graph when there is no day to show; `note` goes next to the current
+//  price when there is one. One table, so the two can never disagree about
+//  what a state means.
+
+static const struct {
+    const char *waiting;
+    const char *note;
+} s_text [DAY_AHEAD_STATE_COUNT] = {
+    [DAY_AHEAD_WAIT_WIFI] = { "Wachten op wifi",                      "Offline (bewaard)" },
+    [DAY_AHEAD_WAIT_TIME] = { "Tijd synchroniseren...",               ""                  },
+    [DAY_AHEAD_LOADING]   = { "Prijzen ophalen...",                   ""                  },
+    [DAY_AHEAD_READY]     = { "Nog niet gepubliceerd",                ""                  },
+    [DAY_AHEAD_ERROR]     = { "Ophalen mislukt; nieuwe poging volgt", "Update mislukt"    }
+};
 
 //  Leave the bottom 60 pixels for the existing navigation and day button.
 #define CHART_X 52
@@ -138,6 +156,7 @@ esp_err_t
 {
     day_ahead_snapshot_t snapshot;
     day_ahead_snapshot (&snapshot);
+    assert (snapshot.state < DAY_AHEAD_STATE_COUNT);    //  The task's contract
     bool tomorrow = atomic_load (&s_tomorrow);
     time_t now = time (NULL);
     day_ahead_day_t expected;
@@ -220,19 +239,10 @@ esp_err_t
     else {
         lv_obj_remove_flag (s_scale, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag (s_chart, LV_OBJ_FLAG_HIDDEN);
-        const char *message = "Nog niet gepubliceerd";
-        if (!clock_ok || snapshot.state == DAY_AHEAD_WAIT_TIME)
-            message = "Tijd synchroniseren...";
-        else
-        if (snapshot.state == DAY_AHEAD_WAIT_WIFI)
-            message = "Wachten op wifi";
-        else
-        if (snapshot.state == DAY_AHEAD_LOADING)
-            message = "Prijzen ophalen...";
-        else
-        if (snapshot.state == DAY_AHEAD_ERROR)
-            message = "Ophalen mislukt; nieuwe poging volgt";
-        lv_label_set_text (s_scale, message);
+        //  Without a usable clock the screen cannot know which day it is,
+        //  whatever the task says.
+        day_ahead_state_t shown = clock_ok ? snapshot.state : DAY_AHEAD_WAIT_TIME;
+        lv_label_set_text (s_scale, s_text [shown].waiting);
     }
     int best = has_day ? day_ahead_cheapest (day, now) : -1;
     if (best >= 0) {
@@ -247,15 +257,14 @@ esp_err_t
     }
     else
         lv_label_set_text (s_cheapest, "");
+    //  A note about the task goes first; only without one is an incomplete
+    //  day worth saying.
     const char *note = "";
-    if (has_day && snapshot.state == DAY_AHEAD_WAIT_WIFI)
-        note = "Offline (bewaard)";
-    else
-    if (has_day && snapshot.state == DAY_AHEAD_ERROR)
-        note = "Update mislukt";
-    else
-    if (has_day && day->available < day->count)
-        note = "Onvolledig";
+    if (has_day) {
+        note = s_text [snapshot.state].note;
+        if (note [0] == '\0' && day->available < day->count)
+            note = "Onvolledig";
+    }
     lv_label_set_text (s_note, note);
     bsp_display_unlock ();
     return ESP_OK;

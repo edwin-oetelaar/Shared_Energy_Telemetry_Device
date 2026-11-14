@@ -16,9 +16,17 @@
 extern "C" {
 #endif
 
+//  Where the price task is. The task is a state machine over exactly these
+//  states; the cache reports the current one, and the screen chooses its text
+//  from a table indexed by it.
+
 typedef enum {
-    DAY_AHEAD_WAIT_WIFI, DAY_AHEAD_WAIT_TIME, DAY_AHEAD_LOADING,
-    DAY_AHEAD_READY, DAY_AHEAD_ERROR
+    DAY_AHEAD_WAIT_WIFI = 0,    //  No network
+    DAY_AHEAD_WAIT_TIME,        //  Network, but the clock has not been set yet
+    DAY_AHEAD_LOADING,          //  A request is under way
+    DAY_AHEAD_READY,            //  Prices are in; waiting for the next request
+    DAY_AHEAD_ERROR,            //  The last request failed; waiting to try again
+    DAY_AHEAD_STATE_COUNT       //  Not a state; the size of the tables
 } day_ahead_state_t;
 
 typedef struct {
