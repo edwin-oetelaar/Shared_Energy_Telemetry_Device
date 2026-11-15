@@ -15,6 +15,7 @@
 #include "bsp/esp-box-3.h"
 #include "lvgl.h"
 
+#include "inc/embedded.h"
 #include "inc/display.h"
 
 static const char *TAG = "[display]";
@@ -23,8 +24,8 @@ static const char *TAG = "[display]";
 //  tools/png_to_lvgl.py and embedded by main/CMakeLists.txt. It is raw RGB565
 //  in the screen's own size, so LVGL draws it without decoding or scaling.
 
-extern const uint8_t bringup_start[] asm("_binary_energy_owl_bringup_bin_start");
-extern const uint8_t bringup_end[]   asm("_binary_energy_owl_bringup_bin_end");
+extern const uint8_t bringup_start[] EMBEDDED_AS ("_binary_energy_owl_bringup_bin_start");
+extern const uint8_t bringup_end[]   EMBEDDED_AS ("_binary_energy_owl_bringup_bin_end");
 
 #define BRINGUP_WIDTH   320
 #define BRINGUP_HEIGHT  240
@@ -357,7 +358,7 @@ static esp_err_t s_build_screen(void)
     //  The linker places these two symbols around one embedded file, so the
     //  subtraction is its length. cppcheck cannot see that and takes them for
     //  pointers into unrelated objects.
-    //  cppcheck-suppress comparePointers
+    //  cppcheck-suppress [comparePointers, subtractPointers]
     s_bringup.data_size     = (uint32_t) (bringup_end - bringup_start);
 
     if (s_bringup.data_size != BRINGUP_WIDTH * BRINGUP_HEIGHT * 2) {
