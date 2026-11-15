@@ -99,10 +99,10 @@ static esp_err_t favicon_get_handler(httpd_req_t *req)
     =========================================================================
 */
 
-extern const char wifi_html_start[]       asm("_binary_wifi_html_start");
-extern const char wifi_html_end[]         asm("_binary_wifi_html_end");
-extern const char api_setup_html_start[]  asm("_binary_api_setup_html_start");
-extern const char api_setup_html_end[]    asm("_binary_api_setup_html_end");
+extern const char wifi_html_start[]       __asm__("_binary_wifi_html_start");
+extern const char wifi_html_end[]         __asm__("_binary_wifi_html_end");
+extern const char api_setup_html_start[]  __asm__("_binary_api_setup_html_start");
+extern const char api_setup_html_end[]    __asm__("_binary_api_setup_html_end");
 
 
 //  Eén stuk de deur uit. web_page_render () stuurt nooit iets van lengte nul,

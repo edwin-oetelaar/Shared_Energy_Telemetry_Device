@@ -35,6 +35,8 @@ static const struct {
 //  The action travels as the callback's user data, so one handler serves all
 //  three buttons.
 
+//  The signature is the button component's; a const pointer would need a cast.
+//  cppcheck-suppress constParameterCallback
 static void s_button_clicked(void *handle, void *user_data)
 {
     (void) handle;

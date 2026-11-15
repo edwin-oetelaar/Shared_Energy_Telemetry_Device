@@ -23,8 +23,8 @@ static const char *TAG = "[display]";
 //  tools/png_to_lvgl.py and embedded by main/CMakeLists.txt. It is raw RGB565
 //  in the screen's own size, so LVGL draws it without decoding or scaling.
 
-extern const uint8_t bringup_start[] asm("_binary_energy_owl_bringup_bin_start");
-extern const uint8_t bringup_end[]   asm("_binary_energy_owl_bringup_bin_end");
+extern const uint8_t bringup_start[] __asm__("_binary_energy_owl_bringup_bin_start");
+extern const uint8_t bringup_end[]   __asm__("_binary_energy_owl_bringup_bin_end");
 
 #define BRINGUP_WIDTH   320
 #define BRINGUP_HEIGHT  240

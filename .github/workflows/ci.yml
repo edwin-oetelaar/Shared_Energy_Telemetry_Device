@@ -11,9 +11,14 @@ on:
   workflow_dispatch:
 
 jobs:
+  # The two jobs below take their tools from the runner image: gcc for the
+  # host tests, apt's cppcheck for the analysis. ubuntu-latest moved to 26.04
+  # between September and November 2026, cppcheck went to 2.19 with it, and
+  # main turned red without a single change to the code. Pinned for the same
+  # reason as the ESP-IDF container: raise it on purpose, not by surprise.
   host-tests:
     name: Host tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
 
@@ -24,7 +29,7 @@ jobs:
 
   static-analysis:
     name: cppcheck
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
 
