@@ -11,9 +11,14 @@ on:
   workflow_dispatch:
 
 jobs:
+  # The two jobs below take their tools from the runner image: gcc for the
+  # host tests, apt's cppcheck for the analysis. ubuntu-latest moved to 26.04
+  # between September and November 2026, cppcheck went to 2.19 with it, and
+  # main turned red without a single change to the code. Pinned for the same
+  # reason as the ESP-IDF container: raise it on purpose, not by surprise.
   host-tests:
     name: Host tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
 
@@ -24,13 +29,18 @@ jobs:
 
   static-analysis:
     name: cppcheck
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
 
       - name: Install cppcheck
         run: sudo apt-get update && sudo apt-get install -y cppcheck
 
+      # -D__CPPCHECK__: cppcheck defines it itself, but on its own it also tries
+      # the other branch of every #ifdef. inc/embedded.h hides the asm labels
+      # behind exactly that symbol, and cppcheck 2.19 cannot parse the labels.
+      # With -D it analyses only the configuration it really is.
+      #
       # dns_server.c is Espressif's captive-portal example, taken verbatim with
       # its original licence header. Its style findings are not ours to fix, so
       # it is excluded rather than silently tolerated across the whole project.
@@ -39,6 +49,7 @@ jobs:
           cppcheck --error-exitcode=1 \
                    --enable=warning,performance,style \
                    --inline-suppr --std=c11 --quiet \
+                   -D__CPPCHECK__ \
                    --suppress=missingInclude \
                    --suppress=missingIncludeSystem \
                    --suppress=unusedFunction \
