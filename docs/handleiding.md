@@ -60,8 +60,18 @@ Het scherm is een aanraakscherm. Onder het scherm zitten drie knoppen.
 | Vijftien seconden niets doen | Het apparaat toont weer de actuele toestand |
 | De knop `main` op het paneel | Meteen terug naar de actuele toestand |
 
-U kunt door zeven beelden bladeren: het statusscherm, de About-pagina, het uilbeeld en de vier
-energiebeelden.
+De actuele energietoestand en de stroomprijzen staan naast elkaar. Daarna volgen het
+statusscherm, de About-pagina, het uilbeeld en de vier energievoorbeelden.
+Zonder bediening wisselen de actuele toestand en de stroomprijzen elke vijftien seconden.
+Aanraken pauzeert het wisselen; na vijftien seconden zonder aanraking gaat het verder.
+Met de knop `main` ziet u meteen de actuele toestand; vijftien seconden later volgen de prijzen.
+
+**Stroomprijzen.** Dit beeld toont een daggrafiek met Nederlandse stroomprijzen per kwartier,
+de huidige prijs en het goedkoopste nog komende volledige kwartier. Met **Morgen** kijkt u naar
+de volgende dag en met **Vandaag** gaat u terug. Zijn de prijzen voor morgen nog niet bekend,
+dan staat dat op het scherm. De bedragen zijn basisprijzen van EnergyZero in cent per kWh,
+zonder btw en toeslagen. Uw uiteindelijke stroomtarief kan daarvan afwijken.
+Deze pagina werkt met wifi, ook als er nog geen Energyboxx-sleutels zijn ingevoerd.
 
 **Een gebladerd beeld is geen meting.** Staat er linksboven **voorbeeld**, dan kijkt u naar een
 beeld dat u zelf hebt opgezocht en niet naar de toestand van dit moment.
@@ -70,7 +80,7 @@ beeld dat u zelf hebt opgezocht en niet naar de toestand van dit moment.
 
 ## 4. Het statusscherm
 
-Het eerste beeld in de bladerlijst toont wat het apparaat over zichzelf weet:
+Het statusscherm toont wat het apparaat over zichzelf weet:
 
 ```text
 Wifi      OETELX (2 van 3)

@@ -12,6 +12,7 @@
 #include "inc/energyboxx_api.h"
 #include "inc/api_storage.h"
 #include "inc/embedded.h"
+#include "inc/form_text.h"
 #include "inc/uri_decode.h"
 #include "inc/wifi_storage.h"
 #include "inc/web_page.h"
@@ -490,15 +491,48 @@ static esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err)
 }
 
 //  --------------------------------------------------------------------------
-//  Pull the two credential fields out of the body and decode them. Returns an
-//  error code and nothing else: the caller owns the response, because it
-//  answers in JSON and two responses on one request corrupt the exchange.
+//  What can come of reading the two key fields, and what the page then says.
+//  The page shows the message under its button, so the text is Dutch. Each
+//  outcome has exactly one answer; there is no second place that decides.
 
-static esp_err_t parse_api_credentials(httpd_req_t *req,
-                                       char *client_id,
-                                       size_t client_id_len,
-                                       char *client_secret,
-                                       size_t client_secret_len)
+typedef enum {
+    KEYS_PARSED = 0,
+    KEYS_BAD_REQUEST,           //  Body unreadable, a field missing, bad escape
+    KEYS_EMPTY,                 //  Nothing left of a field after cleaning
+    KEYS_TOO_LONG,              //  Longer than the device stores
+    KEYS_BAD_CHARACTER,         //  A line break or control character inside
+    KEYS_OUTCOME_COUNT
+} keys_outcome_t;
+
+static const struct {
+    const char *name;           //  For the log; the keys themselves never are
+    const char *answer;         //  The JSON the page receives
+} s_keys_outcome [KEYS_OUTCOME_COUNT] = {
+    [KEYS_PARSED]        = { "parsed",        NULL },
+    [KEYS_BAD_REQUEST]   = { "bad request",
+        "{\"ok\":false,\"message\":\"Ongeldig verzoek\"}" },
+    [KEYS_EMPTY]         = { "empty field",
+        "{\"ok\":false,\"message\":\"Vul beide velden in\"}" },
+    [KEYS_TOO_LONG]      = { "too long",
+        "{\"ok\":false,\"message\":\"Een sleutel is te lang\"}" },
+    [KEYS_BAD_CHARACTER] = { "bad character",
+        "{\"ok\":false,\"message\":\"Een sleutel bevat een ongeldig teken, zoals een regeleinde\"}" }
+};
+
+
+//  --------------------------------------------------------------------------
+//  Pull the two credential fields out of the body, decode them and clean them.
+//  Returns an outcome and nothing else: the caller owns the response, because
+//  it answers in JSON and two responses on one request corrupt the exchange.
+//
+//  Cleaning comes before the length check, so a key that is nothing but the
+//  line break a paste brought along counts as empty, not as a key.
+
+static keys_outcome_t parse_api_credentials(httpd_req_t *req,
+                                            char *client_id,
+                                            size_t client_id_len,
+                                            char *client_secret,
+                                            size_t client_secret_len)
 {
     assert (req);               //  Caller's contract, not client input
     assert (client_id);
@@ -508,32 +542,38 @@ static esp_err_t parse_api_credentials(httpd_req_t *req,
     char id_field[API_FIELD_ID_MAX] = {0};
     char secret_field[API_FIELD_SECRET_MAX] = {0};
 
-    esp_err_t err = s_receive_body(req, body, sizeof(body));
-    if (err != ESP_OK) {
-        return err;
+    if (s_receive_body(req, body, sizeof(body)) != ESP_OK) {
+        return KEYS_BAD_REQUEST;
     }
 
     if (httpd_query_key_value(body, "client_id", id_field, sizeof(id_field)) != ESP_OK ||
         httpd_query_key_value(body, "client_secret", secret_field, sizeof(secret_field)) != ESP_OK) {
-        return ESP_ERR_INVALID_ARG;
+        return KEYS_BAD_REQUEST;
     }
 
     if (!uri_decode(id_field) || !uri_decode(secret_field)) {
-        return ESP_ERR_INVALID_ARG;
+        return KEYS_BAD_REQUEST;
+    }
+
+    if (!form_text_clean(id_field) || !form_text_clean(secret_field)) {
+        return KEYS_BAD_CHARACTER;
     }
 
     size_t id_length = strlen(id_field);
     size_t secret_length = strlen(secret_field);
 
-    if (id_length == 0 || id_length >= client_id_len ||
-        secret_length == 0 || secret_length >= client_secret_len) {
-        return ESP_ERR_INVALID_SIZE;
+    if (id_length == 0 || secret_length == 0) {
+        return KEYS_EMPTY;
+    }
+
+    if (id_length >= client_id_len || secret_length >= client_secret_len) {
+        return KEYS_TOO_LONG;
     }
 
     memcpy(client_id, id_field, id_length + 1);
     memcpy(client_secret, secret_field, secret_length + 1);
 
-    return ESP_OK;
+    return KEYS_PARSED;
 }
 
 //  --------------------------------------------------------------------------
@@ -564,19 +604,16 @@ static esp_err_t api_check_post_handler(httpd_req_t *req)
     char client_id[128] = {0};
     char client_secret[256] = {0};
 
-    if (parse_api_credentials(req, client_id, sizeof(client_id), client_secret, sizeof(client_secret)) != ESP_OK) {
+    //  The page will not submit empty fields or line breaks, but a request can
+    //  come from anywhere. Whatever is refused here never reaches the API and
+    //  never pushes working credentials out of the way.
+    keys_outcome_t outcome = parse_api_credentials(req, client_id, sizeof(client_id),
+                                                   client_secret, sizeof(client_secret));
+    assert (outcome < KEYS_OUTCOME_COUNT);
+    if (outcome != KEYS_PARSED) {
+        ESP_LOGW(TAG, "API keys refused: %s", s_keys_outcome [outcome].name);
         httpd_resp_set_type(req, "application/json");
-        return httpd_resp_sendstr(req,
-            "{\"ok\":false,\"message\":\"Invalid request\"}");
-    }
-
-    //  The page will not submit empty fields, but a request can come from
-    //  anywhere. An empty key is never a valid one, so it is refused here
-    //  before it can push working credentials out of the way.
-    if (client_id [0] == '\0' || client_secret [0] == '\0') {
-        httpd_resp_set_type(req, "application/json");
-        return httpd_resp_sendstr(req,
-            "{\"ok\":false,\"message\":\"Vul beide velden in\"}");
+        return httpd_resp_sendstr(req, s_keys_outcome [outcome].answer);
     }
 
     esp_err_t err = energyboxx_api_setup(client_id, client_secret);

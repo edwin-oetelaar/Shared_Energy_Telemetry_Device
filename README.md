@@ -149,9 +149,12 @@ afhankelijkheid in `main/idf_component.yml` en brengt LVGL mee.
 | Knop `mute` | een beeld verder |
 | Knop `main` op het paneel | meteen terug naar de telemetrie |
 
-Bladeren gaat door zeven beelden: het statusscherm, de About-pagina, de Energy Owl en de
-vier energietoestanden. Na vijftien seconden zonder aanraking volgt het apparaat de telemetrie
-weer.
+De actuele energietoestand en de stroomprijzen staan naast elkaar in de bladerlijst.
+Daarna volgen het statusscherm, de About-pagina, de Energy Owl en de vier energievoorbeelden.
+Zonder bediening wisselt het apparaat elke vijftien seconden tussen de actuele toestand en de
+stroomprijzen. Aanraken pauzeert dat wisselen; na vijftien seconden zonder bediening gaat het
+weer verder. De knop `main` toont direct de actuele toestand en begint die periode opnieuw.
+Instellen, verbindingsproblemen en bijwerken onderbreken het automatisch wisselen.
 
 Zonder merkteken is een gebladerd beeld niet van een meting te onderscheiden. Het merkteken
 **voorbeeld** linksboven zegt daarom precies één ding: wat u ziet is niet wat het apparaat nu
@@ -165,9 +168,53 @@ meet. Alleen beelden die een meting beweren kunnen het dragen.
 Het merkteken volgt de telemetrie. Wie op "Energie over in de groep" blijft staan terwijl de gemeenschap
 overgaat op inkopen, ziet het merkteken alsnog verschijnen.
 
+### Stroomprijzen
+
+Het beeld **Stroomprijzen** toont de Nederlandse day-aheadprijzen per kwartier van EnergyZero.
+De grafiek loopt van middernacht tot middernacht; daarboven staat de huidige prijs en eronder
+het goedkoopste nog komende volledige kwartier. Met **Morgen** en **Vandaag** wisselt u de dag.
+Nog niet gepubliceerde prijzen worden niet geschat. De prijzen zijn de `base`-reeks in ct/kWh,
+zonder btw en toeslagen; dit is geen berekening van het huishoudelijke eindtarief.
+
+Deze functie heeft een eigen taak en cache en werkt zodra wifi en tijdsynchronisatie beschikbaar
+zijn, ook zonder Energyboxx-sleutels. De datum volgt de Nederlandse zomer- en wintertijd,
+inclusief dagen met 92 of 100 kwartieren. Bij een netwerkstoring blijven opgehaalde prijzen voor
+de juiste datum zichtbaar, met een melding dat ze bewaard zijn.
+
+Eén aanvraag geeft gisteren, vandaag en, zodra die gepubliceerd zijn, morgen. De prijzen
+veranderen één keer per dag, dus het apparaat vraagt alleen als er iets nieuws kan zijn:
+
+| Na een geslaagde aanvraag | Volgende aanvraag |
+| --- | --- |
+| De prijzen van morgen zijn compleet | Morgen om 13:05 |
+| Het is vóór 13:00 | Vandaag om 13:05 |
+| Na 13:00, de prijzen van morgen ontbreken | Over 30 tot 36 minuten |
+
+Bij het opstarten vraagt het apparaat meteen. Elk apparaat telt er één vaste spreiding van 0 tot
+10 minuten bij op, zodat niet alle apparaten om 13:05 tegelijk vragen. Middernacht is geen
+aanvraagmoment: de nieuwe dag zit al in het vorige antwoord. Na een fout volgen oplopende
+wachttijden met spreiding. Dat is 1 tot 3 aanvragen per dag in plaats van 48.
+
+De taak is een toestandsmachine. Het log toont elke overgang en de reden van de volgende aanvraag:
+
+```text
+[day_ahead]: prices: wait-time --clock-set--> loading
+[day_ahead]: Prices for 15-11-2026: today 96/96, tomorrow 0/96 quarters (93820 bytes, 2103 ms)
+[day_ahead]: Next price request in 12h45m (before today's publication)
+```
+
+De implementatie staat los in `day_ahead.c` (netwerk, SNTP en cache), `day_ahead_json.c`
+(EnergyZero-formaat), `day_ahead_model.c` (tijd en kwartierselectie) en `day_ahead_view.c`
+(scherm). De taak begint vóór het wachten op provisioning. Prijzen veranderen de automatische
+energietoestand en de OTA-proeftijd niet.
+
+TLS gebruikt PSRAM (`CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC`), zodat gelijktijdige HTTPS-aanvragen
+van Energyboxx en de prijzen de interne RAM bij het opstarten niet uitputten. Bij een bestaande
+`sdkconfig` moet deze keuze daar ook aanstaan; `sdkconfig.defaults` geldt voor nieuwe configuraties.
+
 ### Het statusscherm
 
-Het eerste beeld in de bladerlijst toont wat het apparaat over zichzelf weet:
+Het statusscherm toont wat het apparaat over zichzelf weet:
 
 ```text
 Wifi      OETELX (2 van 3)
@@ -187,7 +234,7 @@ Onderaan staat de knop **Sleutels invoeren**. Zie "Sleutels opnieuw invoeren".
 
 ### De About-pagina
 
-Het tweede beeld noemt de makers en de herkomst, en zegt welke build er draait:
+De About-pagina noemt de makers en de herkomst, en zegt welke build er draait:
 
 ```text
 Energy Owl
