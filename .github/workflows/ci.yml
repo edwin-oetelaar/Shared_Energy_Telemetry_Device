@@ -36,6 +36,11 @@ jobs:
       - name: Install cppcheck
         run: sudo apt-get update && sudo apt-get install -y cppcheck
 
+      # -D__CPPCHECK__: cppcheck defines it itself, but on its own it also tries
+      # the other branch of every #ifdef. inc/embedded.h hides the asm labels
+      # behind exactly that symbol, and cppcheck 2.19 cannot parse the labels.
+      # With -D it analyses only the configuration it really is.
+      #
       # dns_server.c is Espressif's captive-portal example, taken verbatim with
       # its original licence header. Its style findings are not ours to fix, so
       # it is excluded rather than silently tolerated across the whole project.
@@ -44,6 +49,7 @@ jobs:
           cppcheck --error-exitcode=1 \
                    --enable=warning,performance,style \
                    --inline-suppr --std=c11 --quiet \
+                   -D__CPPCHECK__ \
                    --suppress=missingInclude \
                    --suppress=missingIncludeSystem \
                    --suppress=unusedFunction \

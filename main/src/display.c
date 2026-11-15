@@ -358,7 +358,7 @@ static esp_err_t s_build_screen(void)
     //  The linker places these two symbols around one embedded file, so the
     //  subtraction is its length. cppcheck cannot see that and takes them for
     //  pointers into unrelated objects.
-    //  cppcheck-suppress comparePointers
+    //  cppcheck-suppress [comparePointers, subtractPointers]
     s_bringup.data_size     = (uint32_t) (bringup_end - bringup_start);
 
     if (s_bringup.data_size != BRINGUP_WIDTH * BRINGUP_HEIGHT * 2) {
