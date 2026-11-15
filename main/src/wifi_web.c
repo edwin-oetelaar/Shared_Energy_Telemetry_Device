@@ -11,6 +11,7 @@
 #include "inc/wifi_provisioning.h"
 #include "inc/energyboxx_api.h"
 #include "inc/api_storage.h"
+#include "inc/embedded.h"
 #include "inc/uri_decode.h"
 #include "inc/wifi_storage.h"
 #include "inc/web_page.h"
@@ -99,10 +100,10 @@ static esp_err_t favicon_get_handler(httpd_req_t *req)
     =========================================================================
 */
 
-extern const char wifi_html_start[]       __asm__("_binary_wifi_html_start");
-extern const char wifi_html_end[]         __asm__("_binary_wifi_html_end");
-extern const char api_setup_html_start[]  __asm__("_binary_api_setup_html_start");
-extern const char api_setup_html_end[]    __asm__("_binary_api_setup_html_end");
+extern const char wifi_html_start[]       EMBEDDED_AS ("_binary_wifi_html_start");
+extern const char wifi_html_end[]         EMBEDDED_AS ("_binary_wifi_html_end");
+extern const char api_setup_html_start[]  EMBEDDED_AS ("_binary_api_setup_html_start");
+extern const char api_setup_html_end[]    EMBEDDED_AS ("_binary_api_setup_html_end");
 
 
 //  Eén stuk de deur uit. web_page_render () stuurt nooit iets van lengte nul,
