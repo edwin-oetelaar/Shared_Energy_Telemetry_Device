@@ -91,7 +91,7 @@ te repareren.
 - [x] **M11** Een gebladerd voorbeeld is niet te onderscheiden van een echte meting — opgelost
 - [x] **M8** Twee responses op één request in het API-check pad — opgelost
 - [x] **M9** De ESP-IDF-versie ligt nergens vast — opgelost, vastgelegd op v6.1
-- [ ] **M14** Een updatecontrole neemt het scherm over — open, gezien bij de review van PR #41
+- [x] **M14** Een updatecontrole neemt het scherm over — opgelost, alleen downloaden en installeren nemen het scherm over
 
 ### Klein
 - [x] **L1** Geen tests, geen CI, geen static analysis — opgezet
@@ -1038,6 +1038,21 @@ elk uur, ongeveer 5 s "Bijwerken", ook als er niets nieuws is. Gezien op 2026-11
 review van PR #41; zie [REVIEW-PR41.md](REVIEW-PR41.md).
 
 **Fix:** het scherm alleen overnemen bij `downloading` en `ready`.
+
+> **Opgelost op 2026-11-15.** Een tabel `s_update_takes_screen` in `main.c`, geïndexeerd op de
+> toestand van de updater, zegt welke toestanden het scherm overnemen: alleen `downloading` en
+> `ready`. Wie op **Nu bijwerken** drukt, ziet het zoeken nog steeds op de About-pagina
+> ("zoeken").
+>
+> **Op hardware bevestigd.** Een build als `v0.3.9-m14` deed vijf minuten na de start zijn
+> automatische controle. Gedurende 4,6 s zoeken bleef het scherm staan. Zodra de updater v0.4.0
+> vond en ging downloaden, stond 130 ms later "Bijwerken" in beeld:
+>
+> ```text
+> [302.0] update: idle --check--> checking
+> [306.7] update: checking --found--> downloading
+> [307.0] updating - installing new firmware
+> ```
 
 ## Klein
 
