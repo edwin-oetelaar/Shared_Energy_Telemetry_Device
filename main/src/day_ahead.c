@@ -48,7 +48,9 @@ typedef struct {
 //  Collect the response body. The size comes from outside, so it is checked
 //  against what is left of the buffer before anything is copied.
 
+//  The signature is esp_http_client's; a const pointer would need a cast.
 static esp_err_t
+    //  cppcheck-suppress constParameterCallback
     s_receive (esp_http_client_event_t *event)
 {
     response_t *response = event->user_data;

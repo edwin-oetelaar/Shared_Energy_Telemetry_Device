@@ -70,8 +70,8 @@ bool
     memmove (value, first, length);
     value [length] = '\0';
 
-    for (size_t index = 0; index < length; index++) {
-        char_class_t kind = (char_class_t) CLASS_OF (value [index]);
+    for (const char *scan = value; *scan; scan++) {
+        char_class_t kind = (char_class_t) CLASS_OF (*scan);
         if (kind == CHAR_BREAK || kind == CHAR_CONTROL)
             return false;       //  A line break or control character inside
     }
