@@ -76,6 +76,7 @@ te repareren.
 - [x] **H15** De migratie wist de sleutels die een terugval nodig heeft — opgelost in v0.3.1
 - [x] **H16** Een kapotte uitgave kan een apparaat in een updatelus zetten die een
   fabrieksreset niet doorbreekt — opgelost, een versie die niet blijft staan wordt geweigerd
+- [x] **H17** Na weken draaien mislukt elke update — opgelost: TLS in PSRAM (v0.4.0), vaste updatetaak en nachtelijk herstel (v0.4.1); lek of versnippering nog niet onderscheiden
 - [~] **H5** Credentials liggen leesbaar in flash — bewust niet opgelost; hergebruik weegt zwaarder, zie [BESLUIT-c5-h5.md](BESLUIT-c5-h5.md)
 
 ### Middel
@@ -91,7 +92,7 @@ te repareren.
 - [x] **M11** Een gebladerd voorbeeld is niet te onderscheiden van een echte meting — opgelost
 - [x] **M8** Twee responses op één request in het API-check pad — opgelost
 - [x] **M9** De ESP-IDF-versie ligt nergens vast — opgelost, vastgelegd op v6.1
-- [ ] **M14** Een updatecontrole neemt het scherm over — open, gezien bij de review van PR #41
+- [x] **M14** Een updatecontrole neemt het scherm over — opgelost, alleen downloaden en installeren nemen het scherm over
 
 ### Klein
 - [x] **L1** Geen tests, geen CI, geen static analysis — opgezet
@@ -627,6 +628,47 @@ scherm gebruikte.
 > Er is nu een `wifi_prov_link_state()` voor de tweede vraag. Zie de achtste ronde onder
 > "Bevestigd op hardware".
 
+### H17 — Na weken draaien mislukt elke update
+
+Klanten op v0.3.4 zagen op 2026-11-17 op de About-pagina `Update mislukt`. Hun apparaten stonden
+nog op v0.3.4, terwijl v0.4.0 al twee dagen klaarstond. Apparaat A8B1CC faalde elk uur; na één
+keer de stekker eruit kwam v0.4.0 er meteen op. Op ons testbord lukte dezelfde stap, van het echte
+binaire bestand van v0.3.4 naar v0.4.0, wel, maar dat bord draaide pas vijf minuten.
+
+**Oorzaak.** v0.3.4 zet TLS in het interne geheugen. Een updatecontrole gebruikt daar 50–53 KB
+van, een volledige download 57–59 KB, terwijl er in rust ~86 KB vrij is. Vallen een update en
+een telemetrieaanvraag samen, dan krijgt de tweede TLS-verbinding geen geheugen:
+`mbedtls_ssl_setup returned -0x008D` (`MBEDTLS_ERR_SSL_ALLOC_FAILED`). Over weken hoopt zich iets
+op, waarna ook een update alleen niet meer past; een herstart ruimt het op. Of dat versnippering
+is of een lek, is niet onderscheiden.
+
+**Gemeten**, met de duurtest (`ENDURANCE_TEST=1`), één uur per variant:
+
+| | v0.3.4 (TLS intern) | v0.4.x (TLS in PSRAM) |
+| --- | --- | --- |
+| Mislukte updatecontroles | 4 van 31 | 0 van 29 |
+| `ALLOC_FAILED` | 18 | 0 |
+| Intern gebruikt bij een download | 57–59 KB | 39–41 KB |
+| Kleinste vrije blok in één stuk | 11.264 | 25.600 |
+
+**Waarom de tests het niet vonden.** Alle updatetests liepen met de updater van nieuwe code, op
+een vers opgestart bord. Het pad van de klant, de updater van de vorige release na weken
+draaien, is nooit beproefd.
+
+**Fix.**
+
+| Waar | Wat |
+| --- | --- |
+| v0.4.0 | TLS in PSRAM (`CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC`, uit PR #41) |
+| v0.4.1 | De updatetaak bestaat één keer, met een vaste stack van 8 KB, en vraagt niet meer elk uur 8 KB aan één stuk |
+| v0.4.1 | Na drie mislukte pogingen op rij herstart het apparaat 's nachts één keer zelf (`recovery.c`) |
+| v0.4.1 | Het statusscherm zegt waarom de laatste poging mislukte; het log geeft het geheugen |
+| `docs/OTA.md` | Stap 8: het testbord krijgt het binaire bestand van de vorige release. En een duurtest |
+
+**Nog open.** Of het een lek is of versnippering. De geheugenregels in het log van v0.4.1 moeten
+dat over weken laten zien. Apparaten die nog op v0.3.4 staan, komen er alleen uit met een
+stekker of een kabel.
+
 ### H16 — Een kapotte uitgave kan een apparaat in een updatelus zetten
 `main/src/updater.c`
 
@@ -1038,6 +1080,21 @@ elk uur, ongeveer 5 s "Bijwerken", ook als er niets nieuws is. Gezien op 2026-11
 review van PR #41; zie [REVIEW-PR41.md](REVIEW-PR41.md).
 
 **Fix:** het scherm alleen overnemen bij `downloading` en `ready`.
+
+> **Opgelost op 2026-11-15.** Een tabel `s_update_takes_screen` in `main.c`, geïndexeerd op de
+> toestand van de updater, zegt welke toestanden het scherm overnemen: alleen `downloading` en
+> `ready`. Wie op **Nu bijwerken** drukt, ziet het zoeken nog steeds op de About-pagina
+> ("zoeken").
+>
+> **Op hardware bevestigd.** Een build als `v0.3.9-m14` deed vijf minuten na de start zijn
+> automatische controle. Gedurende 4,6 s zoeken bleef het scherm staan. Zodra de updater v0.4.0
+> vond en ging downloaden, stond 130 ms later "Bijwerken" in beeld:
+>
+> ```text
+> [302.0] update: idle --check--> checking
+> [306.7] update: checking --found--> downloading
+> [307.0] updating - installing new firmware
+> ```
 
 ## Klein
 

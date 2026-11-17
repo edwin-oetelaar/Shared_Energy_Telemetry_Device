@@ -20,6 +20,9 @@
 #include "esp_timer.h"
 #include "nvs.h"
 
+#include "inc/day_ahead_model.h"
+#include "inc/heap_report.h"
+#include "inc/recovery.h"
 #include "inc/updater.h"
 #include "inc/wifi_provisioning.h"
 
@@ -32,13 +35,22 @@ static const char *TAG = "[updater]";
     "https://github.com/edwin-oetelaar/Shared_Energy_Telemetry_Device" \
     "/releases/latest/download/energy-owl.bin"
 
+#ifdef ENDURANCE_TEST
+//  Weeks in a night: a check every two minutes, and every tenth one a full
+//  download that is thrown away instead of installed. An endurance build
+//  never installs anything. See "Duurtest" in docs/OTA.md.
+#   define CHECK_INTERVAL_MS    (2 * 60 * 1000)
+#   define FIRST_CHECK_DELAY_MS (60 * 1000)
+#   define FULL_DOWNLOAD_EVERY  10
+#else
 //  How often to look. An hour is often enough that a fix reaches five testers
 //  the same afternoon, and rare enough to be invisible.
-#define CHECK_INTERVAL_MS   (60 * 60 * 1000)
+#   define CHECK_INTERVAL_MS   (60 * 60 * 1000)
 
 //  Not straight away: a device caught in a restart loop should not spend its
 //  life downloading, and the first minutes are for connecting and reporting.
-#define FIRST_CHECK_DELAY_MS (5 * 60 * 1000)
+#   define FIRST_CHECK_DELAY_MS (5 * 60 * 1000)
+#endif
 
 //  A fresh image proves itself by fetching telemetry. When the API is down
 //  that never happens, and an image that is otherwise perfect would be rolled
@@ -94,6 +106,32 @@ static const struct {
     { 429, "GitHub is turning us away for asking too often" },
     {   0, "GitHub gave no usable answer" }
 };
+
+//  Where the last attempt failed. Set by the update task where it gives up,
+//  read by the screen. One table turns it into words.
+
+typedef enum {
+    FAILURE_NONE = 0,
+    FAILURE_CONNECT,            //  No answer at all: network, DNS or TLS
+    FAILURE_SERVER,             //  An answer, but not the file
+    FAILURE_UNREADABLE,         //  The file has no readable description
+    FAILURE_DOWNLOAD,           //  The download broke off
+    FAILURE_REFUSED,            //  The file arrived but did not check out
+    FAILURE_COUNT
+} failure_t;
+
+static const char *s_failure_words [FAILURE_COUNT] = {
+    [FAILURE_NONE]       = "",
+    [FAILURE_CONNECT]    = "verbinding",
+    [FAILURE_SERVER]     = "server",
+    [FAILURE_UNREADABLE] = "onleesbaar",
+    [FAILURE_DOWNLOAD]   = "download",
+    [FAILURE_REFUSED]    = "geweigerd"
+};
+
+static failure_t s_failure = FAILURE_NONE;
+static int s_failure_detail = 0;        //  HTTP status, or percent downloaded
+static char s_failure_text [32];
 
 //  The status of the last answer from GitHub, or zero when there was none.
 //  --------------------------------------------------------------------------
@@ -320,6 +358,28 @@ int updater_progress_percent(void)
 }
 
 
+const char *updater_failure_text(void)
+{
+    failure_t failure = s_failure;
+    assert (failure < FAILURE_COUNT);
+
+    switch (failure) {
+        case FAILURE_SERVER:
+            snprintf(s_failure_text, sizeof(s_failure_text), "%s %d",
+                     s_failure_words [failure], s_failure_detail);
+            break;
+        case FAILURE_DOWNLOAD:
+            snprintf(s_failure_text, sizeof(s_failure_text), "%s %d%%",
+                     s_failure_words [failure], s_failure_detail);
+            break;
+        default:
+            snprintf(s_failure_text, sizeof(s_failure_text), "%s", s_failure_words [failure]);
+            break;
+    }
+    return s_failure_text;
+}
+
+
 bool updater_image_on_probation(void)
 {
     return s_on_probation;
@@ -405,10 +465,22 @@ static void s_run_update(void)
     esp_https_ota_handle_t handle = NULL;
 
     s_http_status = 0;
+    s_failure = FAILURE_NONE;
+    s_failure_detail = 0;
+
+    //  What memory looked like before, and how far the check pushed it down.
+    //  When an update fails after weeks, these two lines say whether memory
+    //  was the reason.
+    heap_report("update check");
+    heap_low_t low;
+    heap_low_start(&low);
 
     esp_err_t err = esp_https_ota_begin(&config, &handle);
     if (err != ESP_OK || handle == NULL) {
         s_report_failure(err);
+        s_failure = s_http_status == 0 ? FAILURE_CONNECT : FAILURE_SERVER;
+        s_failure_detail = s_http_status;
+        heap_low_report(&low, "update check failed");
         updater_handle(UPDATER_EV_TROUBLE);
         return;
     }
@@ -417,6 +489,7 @@ static void s_run_update(void)
     err = esp_https_ota_get_img_desc(handle, &offered);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Update has no description: %s", esp_err_to_name(err));
+        s_failure = FAILURE_UNREADABLE;
         esp_https_ota_abort(handle);
         updater_handle(UPDATER_EV_TROUBLE);
         return;
@@ -437,9 +510,23 @@ static void s_run_update(void)
         ESP_LOGI(TAG, "Running %s, offered %s: nothing to do",
                  running->version, offered.version);
         esp_https_ota_abort(handle);
+        heap_low_report(&low, "update check");
         updater_handle(UPDATER_EV_NOTHING);
         return;
     }
+
+#ifdef ENDURANCE_TEST
+    static unsigned s_endurance_round = 0;
+    s_endurance_round++;
+    if (s_endurance_round % FULL_DOWNLOAD_EVERY != 0) {
+        ESP_LOGW(TAG, "Endurance check %u: header only", s_endurance_round);
+        esp_https_ota_abort(handle);
+        heap_low_report(&low, "update check");
+        updater_handle(UPDATER_EV_NOTHING);
+        return;
+    }
+    ESP_LOGW(TAG, "Endurance check %u: full download, then thrown away", s_endurance_round);
+#endif
 
     ESP_LOGW(TAG, "Updating from %s to %s", running->version, offered.version);
     updater_handle(UPDATER_EV_FOUND);
@@ -456,14 +543,27 @@ static void s_run_update(void)
         ESP_LOGE(TAG, "Update did not arrive whole: %s (HTTP %d, %d of %d bytes)",
                  esp_err_to_name(err), s_http_status,
                  esp_https_ota_get_image_len_read(handle), total);
+        s_failure = FAILURE_DOWNLOAD;
+        s_failure_detail = s_percent;
         esp_https_ota_abort(handle);
+        heap_low_report(&low, "update download failed");
         updater_handle(UPDATER_EV_TROUBLE);
         return;
     }
 
+#ifdef ENDURANCE_TEST
+    esp_https_ota_abort(handle);
+    heap_low_report(&low, "update download");
+    updater_handle(UPDATER_EV_NOTHING);
+    return;
+#endif
+
+    heap_low_report(&low, "update download");
+
     err = esp_https_ota_finish(handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Update refused: %s", esp_err_to_name(err));
+        s_failure = FAILURE_REFUSED;
         updater_handle(UPDATER_EV_TROUBLE);
         return;
     }
@@ -484,13 +584,87 @@ static void s_run_update(void)
 }
 
 
+//  --------------------------------------------------------------------------
+//  The update task exists once, from start-up, and sleeps until a check is
+//  asked for. Its stack is reserved here, in internal RAM, for good.
+//
+//  It used to be created for every check and deleted afterwards. That asked
+//  the heap for 8 KB in one piece every hour, and after weeks of running the
+//  heap could no longer give it. The stack must be internal in any case: this
+//  task writes flash, and while it does the cache is off and PSRAM cannot be
+//  reached.
+
+#define UPDATE_STACK_BYTES  8192
+
+static StackType_t s_update_stack [UPDATE_STACK_BYTES];
+
+//  Failed attempts in a row since start-up. A restart starts it over, and
+//  that is the point: see s_consider_recovery ().
+static unsigned s_failures_in_row = 0;
+
+
+//  --------------------------------------------------------------------------
+//  After a failed attempt: ask the rules in recovery.c whether this is the
+//  moment to restart. A customer's device failed every hour for two days and
+//  updated straight after one pull of the plug. This does the same, without
+//  the plug: at night, after three failures in a row, and at most once a
+//  night, because after the restart the count begins again at zero.
+//
+//  A software restart does not count towards the three power cycles that
+//  clear the settings; see the reset reason table in main.c.
+
+static void s_consider_recovery(void)
+{
+    recovery_input_t input = {
+        .failures = s_failures_in_row,
+        .clock_known = time(NULL) >= DAY_AHEAD_EARLIEST_TIME,
+        .now = time(NULL),
+        .busy = wifi_prov_portal_is_open()
+    };
+    const char *rule = NULL;
+    recovery_action_t action = recovery_decide(&input, &rule);
+
+    ESP_LOGW(TAG, "Recovery: %u update attempts failed in a row; %s",
+             s_failures_in_row, rule);
+
+    if (action == RECOVERY_RESTART) {
+        heap_report("before recovery restart");
+        ESP_LOGE(TAG, "Recovery: restarting for fresh memory; "
+                      "the first check after start-up comes %d minutes later",
+                 FIRST_CHECK_DELAY_MS / 60000);
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        esp_restart();
+    }
+}
+static StaticTask_t s_update_tcb;
+static TaskHandle_t s_update_task_handle = NULL;
+
 static void s_update_task(void *arguments)
 {
     (void) arguments;
+    bool stack_reported = false;
 
-    s_run_update();
+    while (true) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        s_run_update();
 
-    vTaskDelete(NULL);
+        //  s_run_update () only comes back when nothing was installed. Count
+        //  the failures in a row; anything else starts the count over.
+        if (s_state == UPDATER_FAILED) {
+            s_failures_in_row++;
+            s_consider_recovery();
+        }
+        else {
+            s_failures_in_row = 0;
+        }
+
+        if (!stack_reported) {
+            //  ESP-IDF returns bytes here, not words as plain FreeRTOS does.
+            ESP_LOGI(TAG, "Update task stack: %u bytes still free",
+                     (unsigned) uxTaskGetStackHighWaterMark(NULL));
+            stack_reported = true;
+        }
+    }
 }
 
 
@@ -507,14 +681,16 @@ void updater_check_now(void)
         return;
     }
 
+    if (s_update_task_handle == NULL) {
+        ESP_LOGE(TAG, "No update task; updater_init () has not run");
+        return;
+    }
+
     updater_handle(UPDATER_EV_CHECK);
 
-    //  Its own task: downloading takes minutes and must not hold up whatever
-    //  called this, which may be a button on the screen.
-    if (xTaskCreate(s_update_task, "updater", 8192, NULL, 4, NULL) != pdPASS) {
-        ESP_LOGE(TAG, "No room for the update task");
-        updater_handle(UPDATER_EV_TROUBLE);
-    }
+    //  The task does the work: downloading takes minutes and must not hold up
+    //  whatever called this, which may be a button on the screen.
+    xTaskNotifyGive(s_update_task_handle);
 }
 
 
@@ -629,6 +805,12 @@ esp_err_t updater_init(void)
             ESP_LOGE(TAG, "No room for the probation task");
         }
     }
+
+    //  Static: it cannot fail for want of memory, now or after weeks.
+    s_update_task_handle = xTaskCreateStatic(s_update_task, "updater",
+                                             sizeof(s_update_stack), NULL, 4,
+                                             s_update_stack, &s_update_tcb);
+    assert (s_update_task_handle);
 
     const esp_timer_create_args_t args = {
         .callback = s_timer_fired,

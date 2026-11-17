@@ -90,10 +90,15 @@ Meting    42 s geleden
           +0,3 kW netto
           4,1 in, 4,4 uit
 Portaal   dicht
+Update    niets te doen
 ```
 
 `(2 van 3)` betekent: het apparaat kent drie netwerken en gebruikt op dit moment het tweede.
 Kent het er maar één, dan staat er niets achter.
+
+`Update` zegt wat het bijwerken doet. Is het bijwerken mislukt, dan staat de reden erachter,
+bijvoorbeeld `mislukt: verbinding`. Stuurt u ons een foto van dit scherm, dan zien wij meteen wat
+er aan de hand is.
 
 Onderaan staat de knop **Sleutels invoeren**. Zie hoofdstuk 6.
 
@@ -177,6 +182,14 @@ apparaat opnieuw op. Dat duurt ongeveer een halve minuut.
 
 Gaat er iets mis met een nieuwe versie, dan valt het apparaat vanzelf terug op de vorige. U
 hoeft daar niets voor te doen.
+
+Lukt het bijwerken een paar keer achter elkaar niet, dan start het apparaat **'s nachts één keer
+opnieuw op**, tussen 03:00 en 05:00. Daarna lukt het bijwerken meestal wel. Het scherm is dan een
+paar seconden donker. Uw instellingen blijven bewaard.
+
+Ziet u overdag toch `Update mislukt` op de About-pagina? Haal dan **één keer** de stekker eruit,
+wacht 10 seconden en steek hem er weer in. Doe dit niet drie keer snel achter elkaar: dat wist de
+instellingen.
 
 Op de About-pagina staat de knop **Nu bijwerken** voor wie niet wil wachten.
 

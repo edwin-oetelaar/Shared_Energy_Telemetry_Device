@@ -40,6 +40,11 @@ esp_err_t updater_init(void);
 //  check or a download is already running.
 void updater_check_now(void);
 
+//  Why the last attempt failed, in a few Dutch words for the status screen:
+//  "verbinding", "server 404", "download 37%", "onleesbaar" or "geweigerd".
+//  Empty when the last attempt did not fail.
+const char *updater_failure_text(void);
+
 //  Where the updater is, and how far a download has come, for the screen.
 updater_state_t updater_get_state(void);
 int updater_progress_percent(void);

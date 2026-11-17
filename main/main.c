@@ -1,3 +1,5 @@
+#include <assert.h>
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -21,6 +23,7 @@
 #include "inc/status_view.h"
 #include "inc/updater.h"
 #include "inc/day_ahead.h"
+#include "inc/heap_report.h"
 #include "soc/gpio_num.h"
 
 static const char *TAG = "[main]";
@@ -44,7 +47,16 @@ static const uint32_t s_api_retry_delay_ms [] = {
 
 #define API_RETRY_ROWS  (sizeof (s_api_retry_delay_ms) / sizeof (s_api_retry_delay_ms [0]))
 
-#define TELEMETRY_INTERVAL_MS   (60 * 1000)
+#ifdef ENDURANCE_TEST
+//  Weeks in a night: six times the normal pace towards Energyboxx, and a
+//  memory line every minute. See "Duurtest" in docs/OTA.md.
+#   define TELEMETRY_INTERVAL_MS   (10 * 1000)
+#   define HEAP_REPORT_ROUNDS      120
+#else
+#   define TELEMETRY_INTERVAL_MS   (60 * 1000)
+//  A memory line every ten minutes: two rounds of the status loop a second.
+#   define HEAP_REPORT_ROUNDS      1200
+#endif
 #define WIFI_WAIT_POLL_MS       10000
 
 static volatile bool data_connection_ok = false;
@@ -130,12 +142,22 @@ static bool
 //  first: without a network the energy state says nothing about the community,
 //  only about how stale our last answer is.
 
+//  Which updater states take over the screen. Only the two that end in a
+//  restart: somebody standing in front of the device should know that before
+//  the screen goes dark rather than after. Checking does not. It happens every
+//  hour on every device and nearly always finds nothing, and the About page
+//  already says "zoeken" for whoever pressed the button (M14).
+
+static const bool s_update_takes_screen [UPDATER_STATE_COUNT] = {
+    [UPDATER_DOWNLOADING] = true,
+    [UPDATER_READY]       = true
+};
+
 static status_view_state_t s_state_to_show(void)
 {
-    //  An update takes over the screen. It ends in a restart, and somebody
-    //  standing in front of the device should know that before the screen goes
-    //  dark rather than after.
-    if (updater_get_state() != UPDATER_IDLE && updater_get_state() != UPDATER_FAILED) {
+    updater_state_t update = updater_get_state();
+    assert (update < UPDATER_STATE_COUNT);      //  The updater's contract
+    if (s_update_takes_screen [update]) {
         return STATUS_VIEW_UPDATING;
     }
 
@@ -207,6 +229,10 @@ static void status_view_task(void *pvParameters)
         //  to flash here, in a task that may block, rather than in the event
         //  loop where it used to happen. See M5 in docs/REVIEW.md.
         wifi_prov_tick();
+
+        if ((rounds + 1) % HEAP_REPORT_ROUNDS == 0) {
+            heap_report("periodic");
+        }
 
         if (++rounds == 20) {
             //  ESP-IDF geeft dit in bytes terug, anders dan het gewone
@@ -418,6 +444,10 @@ void app_main(void);
 
 void app_main(void)
 {
+#ifdef ENDURANCE_TEST
+    ESP_LOGE(TAG, "ENDURANCE TEST BUILD: weeks in a night, never installs. Not for a release.");
+#endif
+
     ESP_ERROR_CHECK(wifi_storage_init());
     ESP_ERROR_CHECK(energyboxx_api_init());
     ESP_ERROR_CHECK(status_view_init());

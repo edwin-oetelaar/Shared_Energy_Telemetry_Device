@@ -245,7 +245,21 @@ static char s_qr [96];
 
 //  Zes regels sinds de meting er met vermogen bij staat, en die moeten er
 //  allemaal in passen; wat niet past wordt stil afgekapt.
-static char s_report [384];
+//  What the updater is doing, in words a tester can read out over the phone.
+//  One row per state, so the enum and the screen cannot drift apart.
+
+static const char *s_update_words [UPDATER_STATE_COUNT] = {
+    [UPDATER_IDLE]        = "niets te doen",
+    [UPDATER_CHECKING]    = "zoeken",
+    [UPDATER_DOWNLOADING] = "bezig",
+    [UPDATER_READY]       = "klaar, herstart",
+    [UPDATER_FAILED]      = "mislukt"
+};
+
+//  Wifi 127, keys 47, data 127, portal 15 and update 47 characters, with the
+//  line breaks. 512 holds all of them at their longest, so nothing is cut off
+//  and the compiler can prove it.
+static char s_report [512];
 
 //  Verderop gedefinieerd, bij de andere getallen op het scherm.
 static void s_dutch_decimals(char *text);
@@ -311,9 +325,26 @@ static void s_build_report(void)
         snprintf(data_line, sizeof(data_line), "Meting    %d s geleden", since_data);
     }
 
-    snprintf(s_report, sizeof(s_report), "%s\n%s\n%s\nPortaal   %s",
+    //  The last line is for whoever has to work out from a photo why an update
+    //  did not arrive: what the updater is doing, and why the last attempt
+    //  failed. One line only: with the wifi and meter lines running over two
+    //  and three lines, this makes eight, which ends at y=176, just above the
+    //  arrow strip at 180. Memory figures go to the log (heap_report).
+    char update_line [48];
+    const char *failure = updater_failure_text();
+    if (updater_get_state() == UPDATER_FAILED && failure [0] != '\0') {
+        snprintf(update_line, sizeof(update_line), "Update    %s: %s",
+                 s_update_words [UPDATER_FAILED], failure);
+    }
+    else {
+        snprintf(update_line, sizeof(update_line), "Update    %s",
+                 s_update_words [updater_get_state()]);
+    }
+
+    snprintf(s_report, sizeof(s_report), "%s\n%s\n%s\nPortaal   %s\n%s",
              wifi_line, keys_line, data_line,
-             wifi_prov_portal_is_open() ? "open" : "dicht");
+             wifi_prov_portal_is_open() ? "open" : "dicht",
+             update_line);
 }
 
 
@@ -332,16 +363,6 @@ static void s_build_report(void)
 
 static char s_about [384];
 
-//  What the updater is doing, in words a tester can read out over the phone.
-//  One row per state, so the enum and the screen cannot drift apart.
-
-static const char *s_update_words [UPDATER_STATE_COUNT] = {
-    [UPDATER_IDLE]        = "niets te doen",
-    [UPDATER_CHECKING]    = "zoeken",
-    [UPDATER_DOWNLOADING] = "bezig",
-    [UPDATER_READY]       = "klaar, herstart",
-    [UPDATER_FAILED]      = "mislukt"
-};
 
 static char s_update_line [40];
 

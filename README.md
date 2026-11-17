@@ -224,7 +224,12 @@ Meting    42 s geleden
           +0,3 kW netto
           4,1 in, 4,4 uit
 Portaal   dicht
+Update    niets te doen
 ```
+
+De regel `Update` zegt wat de updater doet, en na een mislukte poging waarom: `verbinding`,
+`server 404`, `download 37%`, `onleesbaar` of `geweigerd`. Een foto van dit scherm volstaat dan
+voor de diagnose. Zie [docs/OTA.md](docs/OTA.md).
 
 Hier staat het teken er wél bij, en staan alle drie de getallen. Dit beeld gaat over het
 apparaat, en wie ernaar kijkt wil kunnen zien waar het getal vandaan komt: netto is invoer min
@@ -411,6 +416,12 @@ Een update duurt ongeveer een halve minuut. Gemeten op 2026-09-01: 20 seconden v
 
 De knop **Nu bijwerken** op de About-pagina laat het apparaat meteen kijken. Die knop versnelt
 alleen; hij is niet de enige weg.
+
+**Het apparaat kan ook zichzelf herstarten, en ook dat is niet vrijwillig.** Mislukt het bijwerken
+drie keer of vaker achter elkaar, dan start het apparaat tussen 03:00 en 05:00 Nederlandse tijd
+één keer opnieuw op. Na weken draaien kan het geheugen zo versnipperd raken dat een update niet
+meer past; na een herstart is dat weg. Hooguit één keer per nacht; de instellingen blijven
+bewaard. Zie "Het vangnet" in [docs/OTA.md](docs/OTA.md).
 
 ### Waarom het zo werkt
 
