@@ -20,7 +20,9 @@
 #include "esp_timer.h"
 #include "nvs.h"
 
+#include "inc/day_ahead_model.h"
 #include "inc/heap_report.h"
+#include "inc/recovery.h"
 #include "inc/updater.h"
 #include "inc/wifi_provisioning.h"
 
@@ -595,6 +597,45 @@ static void s_run_update(void)
 #define UPDATE_STACK_BYTES  8192
 
 static StackType_t s_update_stack [UPDATE_STACK_BYTES];
+
+//  Failed attempts in a row since start-up. A restart starts it over, and
+//  that is the point: see s_consider_recovery ().
+static unsigned s_failures_in_row = 0;
+
+
+//  --------------------------------------------------------------------------
+//  After a failed attempt: ask the rules in recovery.c whether this is the
+//  moment to restart. A customer's device failed every hour for two days and
+//  updated straight after one pull of the plug. This does the same, without
+//  the plug: at night, after three failures in a row, and at most once a
+//  night, because after the restart the count begins again at zero.
+//
+//  A software restart does not count towards the three power cycles that
+//  clear the settings; see the reset reason table in main.c.
+
+static void s_consider_recovery(void)
+{
+    recovery_input_t input = {
+        .failures = s_failures_in_row,
+        .clock_known = time(NULL) >= DAY_AHEAD_EARLIEST_TIME,
+        .now = time(NULL),
+        .busy = wifi_prov_portal_is_open()
+    };
+    const char *rule = NULL;
+    recovery_action_t action = recovery_decide(&input, &rule);
+
+    ESP_LOGW(TAG, "Recovery: %u update attempts failed in a row; %s",
+             s_failures_in_row, rule);
+
+    if (action == RECOVERY_RESTART) {
+        heap_report("before recovery restart");
+        ESP_LOGE(TAG, "Recovery: restarting for fresh memory; "
+                      "the first check after start-up comes %d minutes later",
+                 FIRST_CHECK_DELAY_MS / 60000);
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        esp_restart();
+    }
+}
 static StaticTask_t s_update_tcb;
 static TaskHandle_t s_update_task_handle = NULL;
 
@@ -606,6 +647,16 @@ static void s_update_task(void *arguments)
     while (true) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         s_run_update();
+
+        //  s_run_update () only comes back when nothing was installed. Count
+        //  the failures in a row; anything else starts the count over.
+        if (s_state == UPDATER_FAILED) {
+            s_failures_in_row++;
+            s_consider_recovery();
+        }
+        else {
+            s_failures_in_row = 0;
+        }
 
         if (!stack_reported) {
             //  ESP-IDF returns bytes here, not words as plain FreeRTOS does.
