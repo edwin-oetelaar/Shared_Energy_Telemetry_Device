@@ -20,6 +20,7 @@
 #include "esp_timer.h"
 #include "nvs.h"
 
+#include "inc/heap_report.h"
 #include "inc/updater.h"
 #include "inc/wifi_provisioning.h"
 
@@ -32,13 +33,22 @@ static const char *TAG = "[updater]";
     "https://github.com/edwin-oetelaar/Shared_Energy_Telemetry_Device" \
     "/releases/latest/download/energy-owl.bin"
 
+#ifdef ENDURANCE_TEST
+//  Weeks in a night: a check every two minutes, and every tenth one a full
+//  download that is thrown away instead of installed. An endurance build
+//  never installs anything. See "Duurtest" in docs/OTA.md.
+#   define CHECK_INTERVAL_MS    (2 * 60 * 1000)
+#   define FIRST_CHECK_DELAY_MS (60 * 1000)
+#   define FULL_DOWNLOAD_EVERY  10
+#else
 //  How often to look. An hour is often enough that a fix reaches five testers
 //  the same afternoon, and rare enough to be invisible.
-#define CHECK_INTERVAL_MS   (60 * 60 * 1000)
+#   define CHECK_INTERVAL_MS   (60 * 60 * 1000)
 
 //  Not straight away: a device caught in a restart loop should not spend its
 //  life downloading, and the first minutes are for connecting and reporting.
-#define FIRST_CHECK_DELAY_MS (5 * 60 * 1000)
+#   define FIRST_CHECK_DELAY_MS (5 * 60 * 1000)
+#endif
 
 //  A fresh image proves itself by fetching telemetry. When the API is down
 //  that never happens, and an image that is otherwise perfect would be rolled
@@ -406,9 +416,17 @@ static void s_run_update(void)
 
     s_http_status = 0;
 
+    //  What memory looked like before, and how far the check pushed it down.
+    //  When an update fails after weeks, these two lines say whether memory
+    //  was the reason.
+    heap_report("update check");
+    heap_low_t low;
+    heap_low_start(&low);
+
     esp_err_t err = esp_https_ota_begin(&config, &handle);
     if (err != ESP_OK || handle == NULL) {
         s_report_failure(err);
+        heap_low_report(&low, "update check failed");
         updater_handle(UPDATER_EV_TROUBLE);
         return;
     }
@@ -437,9 +455,23 @@ static void s_run_update(void)
         ESP_LOGI(TAG, "Running %s, offered %s: nothing to do",
                  running->version, offered.version);
         esp_https_ota_abort(handle);
+        heap_low_report(&low, "update check");
         updater_handle(UPDATER_EV_NOTHING);
         return;
     }
+
+#ifdef ENDURANCE_TEST
+    static unsigned s_endurance_round = 0;
+    s_endurance_round++;
+    if (s_endurance_round % FULL_DOWNLOAD_EVERY != 0) {
+        ESP_LOGW(TAG, "Endurance check %u: header only", s_endurance_round);
+        esp_https_ota_abort(handle);
+        heap_low_report(&low, "update check");
+        updater_handle(UPDATER_EV_NOTHING);
+        return;
+    }
+    ESP_LOGW(TAG, "Endurance check %u: full download, then thrown away", s_endurance_round);
+#endif
 
     ESP_LOGW(TAG, "Updating from %s to %s", running->version, offered.version);
     updater_handle(UPDATER_EV_FOUND);
@@ -457,9 +489,19 @@ static void s_run_update(void)
                  esp_err_to_name(err), s_http_status,
                  esp_https_ota_get_image_len_read(handle), total);
         esp_https_ota_abort(handle);
+        heap_low_report(&low, "update download failed");
         updater_handle(UPDATER_EV_TROUBLE);
         return;
     }
+
+#ifdef ENDURANCE_TEST
+    esp_https_ota_abort(handle);
+    heap_low_report(&low, "update download");
+    updater_handle(UPDATER_EV_NOTHING);
+    return;
+#endif
+
+    heap_low_report(&low, "update download");
 
     err = esp_https_ota_finish(handle);
     if (err != ESP_OK) {

@@ -16,6 +16,7 @@ idf_component_register(
         "src/display.c"
         "src/input.c"
         "src/updater.c"
+        "src/heap_report.c"
         "src/uri_decode.c"
         "src/form_text.c"
         "src/web_page.c"
@@ -78,3 +79,11 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
 #  file makes the next update harder, so it keeps the milder default set.
 set_source_files_properties(src/dns_server.c PROPERTIES COMPILE_OPTIONS
     "-Wno-shadow;-Wno-extra;-Wno-unused-parameter;-Wno-missing-prototypes")
+
+#  ENDURANCE_TEST=1 idf.py build makes a test build that presses weeks of use
+#  into a night, and never installs an update. See "Duurtest" in docs/OTA.md.
+#  Never for a release: the release workflow does not set it.
+if(DEFINED ENV{ENDURANCE_TEST})
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE ENDURANCE_TEST=1)
+    message(WARNING "ENDURANCE_TEST build: not for release")
+endif()
