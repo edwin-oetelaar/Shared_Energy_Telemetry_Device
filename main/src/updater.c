@@ -526,13 +526,38 @@ static void s_run_update(void)
 }
 
 
+//  --------------------------------------------------------------------------
+//  The update task exists once, from start-up, and sleeps until a check is
+//  asked for. Its stack is reserved here, in internal RAM, for good.
+//
+//  It used to be created for every check and deleted afterwards. That asked
+//  the heap for 8 KB in one piece every hour, and after weeks of running the
+//  heap could no longer give it. The stack must be internal in any case: this
+//  task writes flash, and while it does the cache is off and PSRAM cannot be
+//  reached.
+
+#define UPDATE_STACK_BYTES  8192
+
+static StackType_t s_update_stack [UPDATE_STACK_BYTES];
+static StaticTask_t s_update_tcb;
+static TaskHandle_t s_update_task_handle = NULL;
+
 static void s_update_task(void *arguments)
 {
     (void) arguments;
+    bool stack_reported = false;
 
-    s_run_update();
+    while (true) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        s_run_update();
 
-    vTaskDelete(NULL);
+        if (!stack_reported) {
+            //  ESP-IDF returns bytes here, not words as plain FreeRTOS does.
+            ESP_LOGI(TAG, "Update task stack: %u bytes still free",
+                     (unsigned) uxTaskGetStackHighWaterMark(NULL));
+            stack_reported = true;
+        }
+    }
 }
 
 
@@ -549,14 +574,16 @@ void updater_check_now(void)
         return;
     }
 
+    if (s_update_task_handle == NULL) {
+        ESP_LOGE(TAG, "No update task; updater_init () has not run");
+        return;
+    }
+
     updater_handle(UPDATER_EV_CHECK);
 
-    //  Its own task: downloading takes minutes and must not hold up whatever
-    //  called this, which may be a button on the screen.
-    if (xTaskCreate(s_update_task, "updater", 8192, NULL, 4, NULL) != pdPASS) {
-        ESP_LOGE(TAG, "No room for the update task");
-        updater_handle(UPDATER_EV_TROUBLE);
-    }
+    //  The task does the work: downloading takes minutes and must not hold up
+    //  whatever called this, which may be a button on the screen.
+    xTaskNotifyGive(s_update_task_handle);
 }
 
 
@@ -671,6 +698,12 @@ esp_err_t updater_init(void)
             ESP_LOGE(TAG, "No room for the probation task");
         }
     }
+
+    //  Static: it cannot fail for want of memory, now or after weeks.
+    s_update_task_handle = xTaskCreateStatic(s_update_task, "updater",
+                                             sizeof(s_update_stack), NULL, 4,
+                                             s_update_stack, &s_update_tcb);
+    assert (s_update_task_handle);
 
     const esp_timer_create_args_t args = {
         .callback = s_timer_fired,
