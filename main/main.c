@@ -1,3 +1,5 @@
+#include <assert.h>
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -140,12 +142,22 @@ static bool
 //  first: without a network the energy state says nothing about the community,
 //  only about how stale our last answer is.
 
+//  Which updater states take over the screen. Only the two that end in a
+//  restart: somebody standing in front of the device should know that before
+//  the screen goes dark rather than after. Checking does not. It happens every
+//  hour on every device and nearly always finds nothing, and the About page
+//  already says "zoeken" for whoever pressed the button (M14).
+
+static const bool s_update_takes_screen [UPDATER_STATE_COUNT] = {
+    [UPDATER_DOWNLOADING] = true,
+    [UPDATER_READY]       = true
+};
+
 static status_view_state_t s_state_to_show(void)
 {
-    //  An update takes over the screen. It ends in a restart, and somebody
-    //  standing in front of the device should know that before the screen goes
-    //  dark rather than after.
-    if (updater_get_state() != UPDATER_IDLE && updater_get_state() != UPDATER_FAILED) {
+    updater_state_t update = updater_get_state();
+    assert (update < UPDATER_STATE_COUNT);      //  The updater's contract
+    if (s_update_takes_screen [update]) {
         return STATUS_VIEW_UPDATING;
     }
 
