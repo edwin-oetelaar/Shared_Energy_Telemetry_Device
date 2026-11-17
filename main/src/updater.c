@@ -105,6 +105,32 @@ static const struct {
     {   0, "GitHub gave no usable answer" }
 };
 
+//  Where the last attempt failed. Set by the update task where it gives up,
+//  read by the screen. One table turns it into words.
+
+typedef enum {
+    FAILURE_NONE = 0,
+    FAILURE_CONNECT,            //  No answer at all: network, DNS or TLS
+    FAILURE_SERVER,             //  An answer, but not the file
+    FAILURE_UNREADABLE,         //  The file has no readable description
+    FAILURE_DOWNLOAD,           //  The download broke off
+    FAILURE_REFUSED,            //  The file arrived but did not check out
+    FAILURE_COUNT
+} failure_t;
+
+static const char *s_failure_words [FAILURE_COUNT] = {
+    [FAILURE_NONE]       = "",
+    [FAILURE_CONNECT]    = "verbinding",
+    [FAILURE_SERVER]     = "server",
+    [FAILURE_UNREADABLE] = "onleesbaar",
+    [FAILURE_DOWNLOAD]   = "download",
+    [FAILURE_REFUSED]    = "geweigerd"
+};
+
+static failure_t s_failure = FAILURE_NONE;
+static int s_failure_detail = 0;        //  HTTP status, or percent downloaded
+static char s_failure_text [32];
+
 //  The status of the last answer from GitHub, or zero when there was none.
 //  --------------------------------------------------------------------------
 //  Remembering which version did not stick.
@@ -330,6 +356,28 @@ int updater_progress_percent(void)
 }
 
 
+const char *updater_failure_text(void)
+{
+    failure_t failure = s_failure;
+    assert (failure < FAILURE_COUNT);
+
+    switch (failure) {
+        case FAILURE_SERVER:
+            snprintf(s_failure_text, sizeof(s_failure_text), "%s %d",
+                     s_failure_words [failure], s_failure_detail);
+            break;
+        case FAILURE_DOWNLOAD:
+            snprintf(s_failure_text, sizeof(s_failure_text), "%s %d%%",
+                     s_failure_words [failure], s_failure_detail);
+            break;
+        default:
+            snprintf(s_failure_text, sizeof(s_failure_text), "%s", s_failure_words [failure]);
+            break;
+    }
+    return s_failure_text;
+}
+
+
 bool updater_image_on_probation(void)
 {
     return s_on_probation;
@@ -415,6 +463,8 @@ static void s_run_update(void)
     esp_https_ota_handle_t handle = NULL;
 
     s_http_status = 0;
+    s_failure = FAILURE_NONE;
+    s_failure_detail = 0;
 
     //  What memory looked like before, and how far the check pushed it down.
     //  When an update fails after weeks, these two lines say whether memory
@@ -426,6 +476,8 @@ static void s_run_update(void)
     esp_err_t err = esp_https_ota_begin(&config, &handle);
     if (err != ESP_OK || handle == NULL) {
         s_report_failure(err);
+        s_failure = s_http_status == 0 ? FAILURE_CONNECT : FAILURE_SERVER;
+        s_failure_detail = s_http_status;
         heap_low_report(&low, "update check failed");
         updater_handle(UPDATER_EV_TROUBLE);
         return;
@@ -435,6 +487,7 @@ static void s_run_update(void)
     err = esp_https_ota_get_img_desc(handle, &offered);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Update has no description: %s", esp_err_to_name(err));
+        s_failure = FAILURE_UNREADABLE;
         esp_https_ota_abort(handle);
         updater_handle(UPDATER_EV_TROUBLE);
         return;
@@ -488,6 +541,8 @@ static void s_run_update(void)
         ESP_LOGE(TAG, "Update did not arrive whole: %s (HTTP %d, %d of %d bytes)",
                  esp_err_to_name(err), s_http_status,
                  esp_https_ota_get_image_len_read(handle), total);
+        s_failure = FAILURE_DOWNLOAD;
+        s_failure_detail = s_percent;
         esp_https_ota_abort(handle);
         heap_low_report(&low, "update download failed");
         updater_handle(UPDATER_EV_TROUBLE);
@@ -506,6 +561,7 @@ static void s_run_update(void)
     err = esp_https_ota_finish(handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Update refused: %s", esp_err_to_name(err));
+        s_failure = FAILURE_REFUSED;
         updater_handle(UPDATER_EV_TROUBLE);
         return;
     }

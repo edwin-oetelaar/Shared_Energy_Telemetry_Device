@@ -11,6 +11,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 
@@ -245,7 +246,21 @@ static char s_qr [96];
 
 //  Zes regels sinds de meting er met vermogen bij staat, en die moeten er
 //  allemaal in passen; wat niet past wordt stil afgekapt.
-static char s_report [384];
+//  What the updater is doing, in words a tester can read out over the phone.
+//  One row per state, so the enum and the screen cannot drift apart.
+
+static const char *s_update_words [UPDATER_STATE_COUNT] = {
+    [UPDATER_IDLE]        = "niets te doen",
+    [UPDATER_CHECKING]    = "zoeken",
+    [UPDATER_DOWNLOADING] = "bezig",
+    [UPDATER_READY]       = "klaar, herstart",
+    [UPDATER_FAILED]      = "mislukt"
+};
+
+//  Six lines at most: wifi 127, keys 47, data 127, portal 15, update 47 and
+//  memory about 40 characters, with the line breaks. 512 holds all of them at
+//  their longest, so nothing is cut off and the compiler can prove it.
+static char s_report [512];
 
 //  Verderop gedefinieerd, bij de andere getallen op het scherm.
 static void s_dutch_decimals(char *text);
@@ -311,9 +326,29 @@ static void s_build_report(void)
         snprintf(data_line, sizeof(data_line), "Meting    %d s geleden", since_data);
     }
 
-    snprintf(s_report, sizeof(s_report), "%s\n%s\n%s\nPortaal   %s",
+    //  The last two lines are for whoever has to work out from a photo why an
+    //  update did not arrive: what the updater is doing, why the last attempt
+    //  failed, and how much internal memory is free and in one piece. A TLS
+    //  connection needs 16 KB in one piece.
+    char update_line [48];
+    const char *failure = updater_failure_text();
+    if (updater_get_state() == UPDATER_FAILED && failure [0] != '\0') {
+        snprintf(update_line, sizeof(update_line), "Update    %s: %s",
+                 s_update_words [UPDATER_FAILED], failure);
+    }
+    else {
+        snprintf(update_line, sizeof(update_line), "Update    %s",
+                 s_update_words [updater_get_state()]);
+    }
+
+    size_t free_kb = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024;
+    size_t block_kb = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024;
+
+    snprintf(s_report, sizeof(s_report),
+             "%s\n%s\n%s\nPortaal   %s\n%s\nGeheugen  %u KB vrij, blok %u KB",
              wifi_line, keys_line, data_line,
-             wifi_prov_portal_is_open() ? "open" : "dicht");
+             wifi_prov_portal_is_open() ? "open" : "dicht",
+             update_line, (unsigned) free_kb, (unsigned) block_kb);
 }
 
 
@@ -332,16 +367,6 @@ static void s_build_report(void)
 
 static char s_about [384];
 
-//  What the updater is doing, in words a tester can read out over the phone.
-//  One row per state, so the enum and the screen cannot drift apart.
-
-static const char *s_update_words [UPDATER_STATE_COUNT] = {
-    [UPDATER_IDLE]        = "niets te doen",
-    [UPDATER_CHECKING]    = "zoeken",
-    [UPDATER_DOWNLOADING] = "bezig",
-    [UPDATER_READY]       = "klaar, herstart",
-    [UPDATER_FAILED]      = "mislukt"
-};
 
 static char s_update_line [40];
 
