@@ -189,7 +189,25 @@ Controleer twee dingen:
 | `draft` | `true` — de release staat nog stil |
 | Bijlage | `energy-owl.bin` staat erbij |
 
-### Stap 8 — Publiceer
+### Stap 8 — Zet de vorige release op het testbord
+
+De apparaten van de klanten werken bij met de updater van de **vorige release**, niet met die van
+de nieuwe. Het testbord moet daarom precies dat draaien: het binaire bestand van de vorige release,
+van GitHub. Een ontwikkelbuild of een vers geflashte kandidaat bewijst dit pad niet.
+
+```
+gh release download v0.2.2 -p energy-owl.bin -D /tmp/vorige
+python -m esptool --chip esp32s3 -p /dev/ttyACM0 write-flash 0x30000 /tmp/vorige/energy-owl.bin
+python -m esptool --chip esp32s3 -p /dev/ttyACM0 erase-region 0x19000 0x2000
+```
+
+De laatste opdracht wist `otadata`, zodat het bord vanuit `ota_0` met de vorige release opstart.
+De NVS blijft staan. Controleer in het log dat er `App version: v0.2.2` staat.
+
+Op 2026-11-17 bleek waarom deze stap nodig is: v0.3.4 kon v0.4.0 bij klanten niet installeren,
+terwijl alle tests groen waren. Die tests liepen allemaal met de updater van nieuwe code.
+
+### Stap 9 — Publiceer
 
 ```
 gh release edit v0.2.3 --draft=false
@@ -197,7 +215,7 @@ gh release edit v0.2.3 --draft=false
 
 Dit is het moment waarop de update naar de apparaten gaat.
 
-### Stap 9 — Controleer wat de apparaten krijgen
+### Stap 10 — Controleer wat de apparaten krijgen
 
 ```
 curl -sL -o /tmp/served.bin \
@@ -208,14 +226,22 @@ python -m esptool image_info /tmp/served.bin | grep "App version"
 Er hoort `App version: v0.2.3` te staan. Staat er een ouder nummer, wacht dan een minuut: GitHub
 bewaart het antwoord op de vaste URL kort in een tussengeheugen.
 
-### Stap 10 — Kijk mee bij het eerste apparaat
+### Stap 11 — Kijk mee bij het eerste apparaat
 
 ```
 python3 tools/monitor.py /dev/ttyACM0 600
 ```
 
-Het apparaat kijkt vijf minuten na het opstarten en daarna elk uur. Wilt u niet wachten, druk dan
-op **Nu bijwerken** op de About-pagina.
+Het testbord draait de vorige release (stap 8). Het kijkt vijf minuten na het opstarten en daarna
+elk uur. Wilt u niet wachten, druk dan op **Nu bijwerken** op de About-pagina. Wat u hoort te
+zien:
+
+1. `Updating from v0.2.2 to v0.2.3`.
+2. `Restarting into v0.2.3`.
+3. `This image works and is now permanent`.
+
+Mislukt dit, trek de release dan meteen in (zie hieronder). De meeste apparaten kijken pas binnen
+het uur.
 
 ## Een release intrekken
 
@@ -287,6 +313,101 @@ Een hogere versie heeft een ander nummer en komt er gewoon door — een reparati
 apparaat dus altijd nog. Zodra een versie zich bewijst, worden de streep en de belofte gewist.
 
 Zie **H16** in [REVIEW.md](REVIEW.md).
+
+## Het vangnet: herstarten na mislukte updates
+
+Na weken draaien kan een update steeds mislukken, tot het apparaat opnieuw opstart. Wat zich in
+het geheugen ophoopt, is na een herstart weg, en de eerste controle na de start slaagt dan. Een
+klant liet dat op 2026-11-17 zien met de stekker.
+
+Sinds v0.4.1 doet het apparaat dit zelf. Na elke mislukte poging beslist een tabel van regels in
+`main/src/recovery.c`:
+
+| Regel (de eerste die past, beslist) | Uitkomst |
+| --- | --- |
+| Het portaal is open | Wachten |
+| Minder dan 3 pogingen op rij mislukt | Wachten |
+| Geen klok, en 12 of meer mislukt | Herstarten |
+| Geen klok | Wachten |
+| Tussen 03:00 en 05:00 Nederlandse tijd | Herstarten |
+| Anders | Wachten op de nacht |
+
+Na een herstart begint de telling weer bij nul. Hooguit één herstel per nacht dus, en nooit een
+lus. Een herstart door de software telt niet mee voor de drie stroomonderbrekingen die de
+instellingen wissen.
+
+Het log toont elke beslissing:
+
+```text
+[updater]: Recovery: 3 update attempts failed in a row; waiting for the night
+[updater]: Recovery: 4 update attempts failed in a row; night
+[updater]: Recovery: restarting for fresh memory; the first check after start-up comes 5 minutes later
+```
+
+Het statusscherm toont waarom de laatste poging mislukte:
+
+```text
+Update    mislukt: verbinding
+```
+
+| Reden | Betekenis |
+| --- | --- |
+| `verbinding` | Geen antwoord: netwerk, DNS of TLS. Ook een TLS-verbinding zonder geheugen valt hieronder |
+| `server 404` | GitHub antwoordde, maar niet met het bestand. Het getal is de HTTP-status |
+| `download 37%` | De download brak af bij dat percentage |
+| `onleesbaar` | Het bestand heeft geen leesbare beschrijving |
+| `geweigerd` | Het bestand kwam binnen, maar klopte niet |
+
+Het geheugen staat in het log, elke 10 minuten en vóór elke controle:
+
+```text
+[heap]: update check: internal 74283 free, 31744 largest, 34312 lowest ever | psram ...
+```
+
+Een TLS-verbinding heeft 16 KB in één stuk nodig. Staat "largest" daaronder, dan is geheugen de
+reden.
+
+## Duurtest
+
+Een duurtest perst weken gebruik samen in uren. Gebruik hem vóór een release die iets verandert
+aan het netwerk, het geheugen of de updater.
+
+```
+ENDURANCE_TEST=1 idf.py -B build-duurtest -D SDKCONFIG=build-duurtest/sdkconfig \
+    -DPROJECT_VER=v0.0.1-duurtest build
+```
+
+Een duurtestbuild:
+
+| Onderdeel | Normaal | Duurtest |
+| --- | --- | --- |
+| Telemetrie | elke 60 s | elke 10 s |
+| Updatecontrole | elk uur | elke 2 min |
+| Volledige download | alleen bij een nieuwere versie | elke 10e controle, daarna weggegooid |
+| Geheugenregel in het log | elke 10 min | elke minuut |
+
+Een duurtestbuild installeert nooit iets. Hij meldt bij de start `ENDURANCE TEST BUILD`. De
+releaseworkflow zet `ENDURANCE_TEST` niet, dus zo'n build komt nooit in een release.
+
+Let op: een duurtest vraagt zes keer zo vaak telemetrie bij Energyboxx. Laat hem niet langer
+draaien dan nodig.
+
+Wat u in het log zoekt:
+
+| Regel | Betekenis |
+| --- | --- |
+| `mbedtls_ssl_setup returned -0x008D` | Een TLS-verbinding kreeg geen geheugen (`ALLOC_FAILED`) |
+| `No update: …` | Een updatecontrole mislukte |
+| `[heap] update download: … (N used by it)` | Hoeveel geheugen een download vroeg |
+| `[heap] periodic: … largest` | Het grootste vrije blok; onder de 16384 is TLS in gevaar |
+
+Gemeten op 2026-11-17, één uur per variant:
+
+| | v0.3.4 (TLS intern) | v0.4.x (TLS in PSRAM) |
+| --- | --- | --- |
+| Mislukte updatecontroles | 4 van 31 | 0 van 29 |
+| `ALLOC_FAILED` | 18 | 0 |
+| Intern gebruikt bij een download | 57–59 KB | 39–41 KB |
 
 ## Regels voor het versienummer
 

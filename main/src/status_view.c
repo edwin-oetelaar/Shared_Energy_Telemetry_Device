@@ -11,7 +11,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 
@@ -257,9 +256,9 @@ static const char *s_update_words [UPDATER_STATE_COUNT] = {
     [UPDATER_FAILED]      = "mislukt"
 };
 
-//  Six lines at most: wifi 127, keys 47, data 127, portal 15, update 47 and
-//  memory about 40 characters, with the line breaks. 512 holds all of them at
-//  their longest, so nothing is cut off and the compiler can prove it.
+//  Wifi 127, keys 47, data 127, portal 15 and update 47 characters, with the
+//  line breaks. 512 holds all of them at their longest, so nothing is cut off
+//  and the compiler can prove it.
 static char s_report [512];
 
 //  Verderop gedefinieerd, bij de andere getallen op het scherm.
@@ -326,10 +325,11 @@ static void s_build_report(void)
         snprintf(data_line, sizeof(data_line), "Meting    %d s geleden", since_data);
     }
 
-    //  The last two lines are for whoever has to work out from a photo why an
-    //  update did not arrive: what the updater is doing, why the last attempt
-    //  failed, and how much internal memory is free and in one piece. A TLS
-    //  connection needs 16 KB in one piece.
+    //  The last line is for whoever has to work out from a photo why an update
+    //  did not arrive: what the updater is doing, and why the last attempt
+    //  failed. One line only: with the wifi and meter lines running over two
+    //  and three lines, this makes eight, which ends at y=176, just above the
+    //  arrow strip at 180. Memory figures go to the log (heap_report).
     char update_line [48];
     const char *failure = updater_failure_text();
     if (updater_get_state() == UPDATER_FAILED && failure [0] != '\0') {
@@ -341,14 +341,10 @@ static void s_build_report(void)
                  s_update_words [updater_get_state()]);
     }
 
-    size_t free_kb = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024;
-    size_t block_kb = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024;
-
-    snprintf(s_report, sizeof(s_report),
-             "%s\n%s\n%s\nPortaal   %s\n%s\nGeheugen  %u KB vrij, blok %u KB",
+    snprintf(s_report, sizeof(s_report), "%s\n%s\n%s\nPortaal   %s\n%s",
              wifi_line, keys_line, data_line,
              wifi_prov_portal_is_open() ? "open" : "dicht",
-             update_line, (unsigned) free_kb, (unsigned) block_kb);
+             update_line);
 }
 
 
